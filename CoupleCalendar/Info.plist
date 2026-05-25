@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>CoupleCalendar</string>
+	<string>ShareCal</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -19,15 +19,15 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
 	<key>CKSharingSupported</key>
 	<true/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>CoupleCalendar needs full calendar access to mirror selected calendars with your partner.</string>
+	<string>ShareCal needs full calendar access to mirror selected calendars with your partner.</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>CoupleCalendar needs calendar access to show your selected schedules.</string>
+	<string>ShareCal needs calendar access to show your selected schedules.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

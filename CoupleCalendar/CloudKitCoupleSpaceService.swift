@@ -293,15 +293,47 @@ final class CloudKitCoupleSpaceService {
 
     func fetchSharedEventMirrors() async throws -> [EventMirror] {
         let query = CKQuery(recordType: EventMirrorRecordMapper.recordType, predicate: NSPredicate(value: true))
-        let result = try await sharedDatabase.records(matching: query, inZoneWith: zoneID)
+        let records = try await fetchRecords(matching: query, in: zoneID, database: sharedDatabase)
 
-        return try result.matchResults.compactMap { _, recordResult in
-            switch recordResult {
-            case .success(let record):
-                return try EventMirrorRecordMapper.eventMirror(from: record)
-            case .failure:
-                return nil
+        return try records.map {
+            try EventMirrorRecordMapper.eventMirror(from: $0)
+        }
+    }
+
+    private func fetchRecords(
+        matching query: CKQuery,
+        in zoneID: CKRecordZone.ID,
+        database: CKDatabase
+    ) async throws -> [CKRecord] {
+        try await withCheckedThrowingContinuation { continuation in
+            let recordsLock = NSLock()
+            var fetchedRecords: [CKRecord] = []
+
+            func add(_ operation: CKQueryOperation) {
+                operation.zoneID = zoneID
+                operation.recordMatchedBlock = { _, recordResult in
+                    guard case .success(let record) = recordResult else { return }
+                    recordsLock.withLock {
+                        fetchedRecords.append(record)
+                    }
+                }
+                operation.queryResultBlock = { result in
+                    switch result {
+                    case .success(let cursor):
+                        if let cursor {
+                            add(CKQueryOperation(cursor: cursor))
+                        } else {
+                            let records = recordsLock.withLock { fetchedRecords }
+                            continuation.resume(returning: records)
+                        }
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
+                }
+                database.add(operation)
             }
+
+            add(CKQueryOperation(query: query))
         }
     }
 

@@ -1,0 +1,71 @@
+name: iOS CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Xcode environment
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
+          xcrun simctl list devicetypes
+
+      - name: Create iOS simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+
+          DEVICE_TYPE=$(
+            xcrun simctl list devicetypes \
+              | awk -F '[()]' '/iPhone 16 Pro/ { print $2; exit } /iPhone 16/ { print $2; exit } /iPhone 15/ { print $2; exit } /iPhone/ { print $2; exit }'
+          )
+
+          RUNTIME_ID=$(
+            xcrun simctl list runtimes \
+              | awk -F ' - ' '/iOS/ && !/unavailable/ { runtime=$NF } END { print runtime }'
+          )
+
+          if [[ -z "${DEVICE_TYPE}" || -z "${RUNTIME_ID}" ]]; then
+            echo "No available iOS simulator device type or runtime found." >&2
+            exit 1
+          fi
+
+          SIMULATOR_UDID=$(xcrun simctl create "CoupleCalendar CI iPhone" "${DEVICE_TYPE}" "${RUNTIME_ID}")
+          xcrun simctl boot "${SIMULATOR_UDID}" || true
+          xcrun simctl bootstatus "${SIMULATOR_UDID}" -b
+
+          echo "udid=${SIMULATOR_UDID}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run tests
+        run: |
+          set -euo pipefail
+
+          xcodebuild test \
+            -project CoupleCalendar.xcodeproj \
+            -scheme CoupleCalendar \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath "${RUNNER_TEMP}/CoupleCalendarDerivedData" \
+            CODE_SIGNING_ALLOWED=NO

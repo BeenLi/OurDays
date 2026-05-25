@@ -1,0 +1,607 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		11A000010000000000000001 /* CoupleCalendarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000020000000000000001 /* CoupleCalendarApp.swift */; };
+		11A000030000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 11A000040000000000000001 /* Assets.xcassets */; };
+		11A000050000000000000001 /* CoupleCalendarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000060000000000000001 /* CoupleCalendarTests.swift */; };
+		11A000070000000000000001 /* CoupleCalendarUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000080000000000000001 /* CoupleCalendarUITests.swift */; };
+		11A000490000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000480000000000000001 /* Models.swift */; };
+		11A0004B0000000000000001 /* EventServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004A0000000000000001 /* EventServices.swift */; };
+		11A0004D0000000000000001 /* CloudKitCoupleSpaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */; };
+		11A0004F0000000000000001 /* CalendarAccessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004E0000000000000001 /* CalendarAccessService.swift */; };
+		11A000510000000000000001 /* AppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000500000000000000001 /* AppServices.swift */; };
+		11A000530000000000000001 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000520000000000000001 /* RootView.swift */; };
+		11A000540000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000480000000000000001 /* Models.swift */; };
+		11A000550000000000000001 /* EventServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004A0000000000000001 /* EventServices.swift */; };
+		11A000560000000000000001 /* CloudKitCoupleSpaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		11A000120000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 11A000100000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 11A000110000000000000001;
+			remoteInfo = CoupleCalendar;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		11A000020000000000000001 /* CoupleCalendarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoupleCalendarApp.swift; sourceTree = "<group>"; };
+		11A000040000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		11A000060000000000000001 /* CoupleCalendarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoupleCalendarTests.swift; sourceTree = "<group>"; };
+		11A000080000000000000001 /* CoupleCalendarUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoupleCalendarUITests.swift; sourceTree = "<group>"; };
+		11A000130000000000000001 /* CoupleCalendar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CoupleCalendar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		11A000140000000000000001 /* CoupleCalendarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CoupleCalendarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		11A000150000000000000001 /* CoupleCalendarUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CoupleCalendarUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		11A000160000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		11A000170000000000000001 /* CoupleCalendar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CoupleCalendar.entitlements; sourceTree = "<group>"; };
+		11A000480000000000000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		11A0004A0000000000000001 /* EventServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventServices.swift; sourceTree = "<group>"; };
+		11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitCoupleSpaceService.swift; sourceTree = "<group>"; };
+		11A0004E0000000000000001 /* CalendarAccessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarAccessService.swift; sourceTree = "<group>"; };
+		11A000500000000000000001 /* AppServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppServices.swift; sourceTree = "<group>"; };
+		11A000520000000000000001 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		11A000570000000000000001 /* CoupleCalendarLocal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CoupleCalendarLocal.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		11A000180000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		11A000190000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		11A000200000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		11A000210000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				11A000220000000000000001 /* CoupleCalendar */,
+				11A000230000000000000001 /* CoupleCalendarTests */,
+				11A000240000000000000001 /* CoupleCalendarUITests */,
+				11A000250000000000000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		11A000220000000000000001 /* CoupleCalendar */ = {
+			isa = PBXGroup;
+			children = (
+				11A000020000000000000001 /* CoupleCalendarApp.swift */,
+				11A000520000000000000001 /* RootView.swift */,
+				11A000500000000000000001 /* AppServices.swift */,
+				11A000480000000000000001 /* Models.swift */,
+				11A0004A0000000000000001 /* EventServices.swift */,
+				11A0004E0000000000000001 /* CalendarAccessService.swift */,
+				11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */,
+				11A000160000000000000001 /* Info.plist */,
+				11A000170000000000000001 /* CoupleCalendar.entitlements */,
+				11A000570000000000000001 /* CoupleCalendarLocal.entitlements */,
+				11A000040000000000000001 /* Assets.xcassets */,
+			);
+			path = CoupleCalendar;
+			sourceTree = "<group>";
+		};
+		11A000230000000000000001 /* CoupleCalendarTests */ = {
+			isa = PBXGroup;
+			children = (
+				11A000060000000000000001 /* CoupleCalendarTests.swift */,
+			);
+			path = CoupleCalendarTests;
+			sourceTree = "<group>";
+		};
+		11A000240000000000000001 /* CoupleCalendarUITests */ = {
+			isa = PBXGroup;
+			children = (
+				11A000080000000000000001 /* CoupleCalendarUITests.swift */,
+			);
+			path = CoupleCalendarUITests;
+			sourceTree = "<group>";
+		};
+		11A000250000000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				11A000130000000000000001 /* CoupleCalendar.app */,
+				11A000140000000000000001 /* CoupleCalendarTests.xctest */,
+				11A000150000000000000001 /* CoupleCalendarUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		11A000110000000000000001 /* CoupleCalendar */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 11A000260000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendar" */;
+			buildPhases = (
+				11A000270000000000000001 /* Sources */,
+				11A000180000000000000001 /* Frameworks */,
+				11A000280000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CoupleCalendar;
+			productName = CoupleCalendar;
+			productReference = 11A000130000000000000001 /* CoupleCalendar.app */;
+			productType = "com.apple.product-type.application";
+		};
+		11A000290000000000000001 /* CoupleCalendarTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 11A000300000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendarTests" */;
+			buildPhases = (
+				11A000310000000000000001 /* Sources */,
+				11A000190000000000000001 /* Frameworks */,
+				11A000320000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CoupleCalendarTests;
+			productName = CoupleCalendarTests;
+			productReference = 11A000140000000000000001 /* CoupleCalendarTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		11A000340000000000000001 /* CoupleCalendarUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 11A000350000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendarUITests" */;
+			buildPhases = (
+				11A000360000000000000001 /* Sources */,
+				11A000200000000000000001 /* Frameworks */,
+				11A000370000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				11A000380000000000000001 /* PBXTargetDependency */,
+			);
+			name = CoupleCalendarUITests;
+			productName = CoupleCalendarUITests;
+			productReference = 11A000150000000000000001 /* CoupleCalendarUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		11A000100000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2630;
+				LastUpgradeCheck = 2630;
+				TargetAttributes = {
+					11A000110000000000000001 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					11A000290000000000000001 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					11A000340000000000000001 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 11A000110000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = 11A000390000000000000001 /* Build configuration list for PBXProject "CoupleCalendar" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 11A000210000000000000001;
+			productRefGroup = 11A000250000000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				11A000110000000000000001 /* CoupleCalendar */,
+				11A000290000000000000001 /* CoupleCalendarTests */,
+				11A000340000000000000001 /* CoupleCalendarUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		11A000280000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				11A000030000000000000001 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		11A000320000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		11A000370000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		11A000270000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				11A000010000000000000001 /* CoupleCalendarApp.swift in Sources */,
+				11A000530000000000000001 /* RootView.swift in Sources */,
+				11A000510000000000000001 /* AppServices.swift in Sources */,
+				11A000490000000000000001 /* Models.swift in Sources */,
+				11A0004B0000000000000001 /* EventServices.swift in Sources */,
+				11A0004F0000000000000001 /* CalendarAccessService.swift in Sources */,
+				11A0004D0000000000000001 /* CloudKitCoupleSpaceService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		11A000310000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				11A000050000000000000001 /* CoupleCalendarTests.swift in Sources */,
+				11A000540000000000000001 /* Models.swift in Sources */,
+				11A000550000000000000001 /* EventServices.swift in Sources */,
+				11A000560000000000000001 /* CloudKitCoupleSpaceService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		11A000360000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				11A000070000000000000001 /* CoupleCalendarUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		11A000380000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 11A000110000000000000001 /* CoupleCalendar */;
+			targetProxy = 11A000120000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		11A000400000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		11A000410000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		11A000420000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = CoupleCalendar/CoupleCalendarLocal.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 3SF92B92JF;
+				ENABLE_DEBUG_DYLIB = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CoupleCalendar/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leeberty.CoupleCalendar;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "LOCAL_SIGNING $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		11A000430000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = CoupleCalendar/CoupleCalendar.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 3SF92B92JF;
+				ENABLE_DEBUG_DYLIB = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CoupleCalendar/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leeberty.CoupleCalendar;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		11A000440000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.leeberty.CoupleCalendarTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		11A000450000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.leeberty.CoupleCalendarTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		11A000460000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.leeberty.CoupleCalendarUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = CoupleCalendar;
+			};
+			name = Debug;
+		};
+		11A000470000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.leeberty.CoupleCalendarUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = CoupleCalendar;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		11A000260000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendar" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				11A000420000000000000001 /* Debug */,
+				11A000430000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		11A000300000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendarTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				11A000440000000000000001 /* Debug */,
+				11A000450000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		11A000350000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendarUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				11A000460000000000000001 /* Debug */,
+				11A000470000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		11A000390000000000000001 /* Build configuration list for PBXProject "CoupleCalendar" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				11A000400000000000000001 /* Debug */,
+				11A000410000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 11A000100000000000000001 /* Project object */;
+}

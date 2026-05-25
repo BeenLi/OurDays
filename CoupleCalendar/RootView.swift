@@ -1,0 +1,720 @@
+import CloudKit
+import SwiftData
+import SwiftUI
+
+enum CalendarMode: String, CaseIterable, Identifiable {
+    case day = "Day"
+    case week = "Week"
+
+    var id: String { rawValue }
+}
+
+struct RootView: View {
+    var body: some View {
+        TabView {
+            NavigationStack {
+                CalendarTabView()
+            }
+            .tabItem {
+                Label("Calendar", systemImage: "calendar")
+            }
+
+            NavigationStack {
+                InvitesTabView()
+            }
+            .tabItem {
+                Label("Invites", systemImage: "envelope")
+            }
+
+            NavigationStack {
+                SettingsTabView()
+            }
+            .tabItem {
+                Label("Settings", systemImage: "gearshape")
+            }
+        }
+    }
+}
+
+struct CalendarTabView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(SettingsStore.self) private var settings
+    @Environment(AppServices.self) private var services
+    @Query(sort: \EventMirror.startDate) private var mirrors: [EventMirror]
+    @State private var selectedDate = Date()
+    @State private var mode: CalendarMode = .day
+    @State private var selectedEvent: EventMirror?
+
+    var visibleMirrors: [EventMirror] {
+        mirrors.filter { mirror in
+            mirror.deletedAt == nil && visibleInterval.contains(mirror.startDate)
+        }
+    }
+
+    var myEvents: [EventMirror] {
+        visibleMirrors.filter { $0.ownerMemberID == settings.currentMemberID }
+    }
+
+    var partnerEvents: [EventMirror] {
+        visibleMirrors.filter { $0.ownerMemberID != settings.currentMemberID }
+    }
+
+    var visibleInterval: DateInterval {
+        let calendar = Calendar.current
+        switch mode {
+        case .day:
+            let start = calendar.startOfDay(for: selectedDate)
+            let end = calendar.date(byAdding: .day, value: 1, to: start) ?? selectedDate
+            return DateInterval(start: start, end: end)
+        case .week:
+            let components = calendar.dateInterval(of: .weekOfYear, for: selectedDate)
+            return components ?? DateInterval(start: selectedDate, duration: 7 * 24 * 60 * 60)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            DateStrip(selectedDate: $selectedDate)
+
+            Picker("Mode", selection: $mode) {
+                ForEach(CalendarMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+
+            SyncStatusBar()
+
+            GeometryReader { proxy in
+                ScrollView {
+                    HStack(alignment: .top, spacing: 10) {
+                        TimelineColumn(
+                            title: "我",
+                            subtitle: settings.currentMemberID,
+                            events: myEvents,
+                            tint: .blue,
+                            width: max(160, (proxy.size.width - 30) / 2),
+                            onSelect: { selectedEvent = $0 }
+                        )
+
+                        TimelineColumn(
+                            title: "对方",
+                            subtitle: settings.partnerMemberID,
+                            events: partnerEvents,
+                            tint: .pink,
+                            width: max(160, (proxy.size.width - 30) / 2),
+                            onSelect: { selectedEvent = $0 }
+                        )
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 24)
+                }
+            }
+        }
+        .navigationTitle("CoupleCalendar")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task {
+                        let coordinator = SyncCoordinator(
+                            calendarAccess: services.calendarAccess,
+                            eventMirrorService: services.eventMirrorService,
+                            cloudKit: services.cloudKitIfAvailable
+                        )
+                        await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
+                    }
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
+                .accessibilityLabel("Sync")
+            }
+        }
+        .sheet(item: $selectedEvent) { event in
+            EventDetailView(event: event)
+        }
+    }
+}
+
+struct DateStrip: View {
+    @Binding var selectedDate: Date
+
+    var dates: [Date] {
+        let calendar = Calendar.current
+        return (-3...3).compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: Date()))
+        }
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(dates, id: \.self) { date in
+                    let isSelected = Calendar.current.isDate(date, inSameDayAs: selectedDate)
+                    Button {
+                        selectedDate = date
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text(date, format: .dateTime.weekday(.abbreviated))
+                                .font(.caption2)
+                            Text(date, format: .dateTime.day())
+                                .font(.headline)
+                        }
+                        .frame(width: 52, height: 56)
+                        .foregroundStyle(isSelected ? .white : .primary)
+                        .background(isSelected ? Color.accentColor : Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+        }
+    }
+}
+
+struct SyncStatusBar: View {
+    @Environment(SettingsStore.self) private var settings
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+
+            Text(statusText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+        .padding(.horizontal)
+    }
+
+    var color: Color {
+        switch settings.syncPhase {
+        case .idle: settings.lastSyncError == nil ? .green : .orange
+        case .syncing: .blue
+        case .failed: .red
+        }
+    }
+
+    var statusText: String {
+        if settings.syncPhase == .syncing {
+            return "Syncing selected calendars..."
+        }
+        if let error = settings.lastSyncError {
+            return error
+        }
+        if let lastSyncAt = settings.lastSyncAt {
+            return "Last sync \(lastSyncAt.formatted(date: .omitted, time: .shortened))"
+        }
+        return "Not synced yet"
+    }
+}
+
+struct TimelineColumn: View {
+    let title: String
+    let subtitle: String
+    let events: [EventMirror]
+    let tint: Color
+    let width: CGFloat
+    let onSelect: (EventMirror) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.headline)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(events.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tint)
+            }
+
+            if events.isEmpty {
+                ContentUnavailableView("No events", systemImage: "calendar.badge.clock")
+                    .frame(minHeight: 220)
+            } else {
+                LazyVStack(spacing: 8) {
+                    ForEach(events) { event in
+                        Button {
+                            onSelect(event)
+                        } label: {
+                            EventCard(event: event, tint: tint)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(width: width, alignment: .top)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+struct EventCard: View {
+    let event: EventMirror
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                Rectangle()
+                    .fill(Color(hex: event.calendarColorHex) ?? tint)
+                    .frame(width: 4)
+                    .clipShape(Capsule())
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(event.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+
+                    Text(timeText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if let location = event.location, !location.isEmpty {
+                        Label(location, systemImage: "mappin.and.ellipse")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    var timeText: String {
+        if event.isAllDay {
+            return "All day"
+        }
+        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
+struct EventDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Environment(SettingsStore.self) private var settings
+    @Environment(AppServices.self) private var services
+    @Query(sort: \EventComment.createdAt) private var comments: [EventComment]
+    @State private var commentBody = ""
+    @State private var inviteError: String?
+    let event: EventMirror
+
+    var eventComments: [EventComment] {
+        comments.filter { $0.eventMirrorID == event.id && $0.deletedAt == nil }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Owner", value: event.ownerMemberID == settings.currentMemberID ? "Me" : "Partner")
+                    LabeledContent("Calendar", value: event.sourceCalendarTitle)
+                    LabeledContent("Starts", value: event.startDate.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent("Ends", value: event.endDate.formatted(date: .abbreviated, time: .shortened))
+                    if let location = event.location {
+                        LabeledContent("Location", value: location)
+                    }
+                    if let notes = event.notes {
+                        Text(notes)
+                    }
+                } header: {
+                    Text(event.title)
+                }
+
+                Section("Invite") {
+                    Button {
+                        createInvite()
+                    } label: {
+                        Label("Invite partner", systemImage: "person.badge.plus")
+                    }
+
+                    if let inviteError {
+                        Text(inviteError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                Section("Comments") {
+                    ForEach(eventComments) { comment in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(comment.authorMemberID)
+                                    .font(.caption.weight(.semibold))
+                                Spacer()
+                                Text(comment.createdAt, format: .dateTime.hour().minute())
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(comment.body)
+                        }
+                        .swipeActions {
+                            Button(role: .destructive) {
+                                services.commentService.delete(comment)
+                                try? modelContext.save()
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+
+                    HStack {
+                        TextField("Add a comment", text: $commentBody, axis: .vertical)
+                        Button {
+                            addComment()
+                        } label: {
+                            Image(systemName: "paperplane.fill")
+                        }
+                        .disabled(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            .navigationTitle("Event")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func createInvite() {
+        let invitation = EventInvitation(
+            creatorMemberID: settings.currentMemberID,
+            inviteeMemberID: settings.partnerMemberID,
+            title: event.title,
+            startDate: event.startDate,
+            endDate: event.endDate,
+            isAllDay: event.isAllDay,
+            location: event.location,
+            notes: event.notes,
+            statusRawValue: InvitationStatus.pending.rawValue
+        )
+        modelContext.insert(invitation)
+        do {
+            try modelContext.save()
+            services.cloudKitIfAvailable?.queueInvitationsForSync([invitation])
+        } catch {
+            inviteError = error.localizedDescription
+        }
+    }
+
+    private func addComment() {
+        let comment = services.commentService.createComment(
+            eventMirrorID: event.id,
+            authorMemberID: settings.currentMemberID,
+            body: commentBody
+        )
+        modelContext.insert(comment)
+        do {
+            try modelContext.save()
+            services.cloudKitIfAvailable?.queueCommentsForSync([comment])
+            commentBody = ""
+        } catch {
+            inviteError = error.localizedDescription
+        }
+    }
+}
+
+struct InvitesTabView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(AppServices.self) private var services
+    @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
+    @State private var errorMessage: String?
+
+    var body: some View {
+        List {
+            ForEach(InvitationStatus.allCases) { status in
+                let filtered = invitations.filter { $0.status == status }
+                if !filtered.isEmpty {
+                    Section(status.rawValue.capitalized) {
+                        ForEach(filtered) { invitation in
+                            InvitationRow(invitation: invitation) {
+                                accept(invitation)
+                            } decline: {
+                                services.invitationService.decline(invitation)
+                                try? modelContext.save()
+                                services.cloudKitIfAvailable?.queueInvitationsForSync([invitation])
+                            }
+                        }
+                    }
+                }
+            }
+
+            if invitations.isEmpty {
+                ContentUnavailableView("No invitations", systemImage: "envelope.open")
+            }
+
+            if let errorMessage {
+                Section {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .navigationTitle("Invites")
+    }
+
+    private func accept(_ invitation: EventInvitation) {
+        do {
+            let draft = services.invitationService.draft(from: invitation)
+            let localEventID = try services.calendarAccess.createLocalEvent(from: draft)
+            _ = try services.invitationService.accept(invitation, createdLocalEventID: localEventID)
+            try modelContext.save()
+            services.cloudKitIfAvailable?.queueInvitationsForSync([invitation])
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct InvitationRow: View {
+    let invitation: EventInvitation
+    let accept: () -> Void
+    let decline: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(invitation.title)
+                .font(.headline)
+            Text("\(invitation.startDate.formatted(date: .abbreviated, time: .shortened)) - \(invitation.endDate.formatted(date: .omitted, time: .shortened))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let location = invitation.location {
+                Label(location, systemImage: "mappin.and.ellipse")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if invitation.status == .pending {
+                HStack {
+                    Button("Accept", action: accept)
+                        .buttonStyle(.borderedProminent)
+                    Button("Decline", role: .destructive, action: decline)
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+struct SettingsTabView: View {
+    @Environment(\.openURL) private var openURL
+    @Environment(SettingsStore.self) private var settings
+    @Environment(AppServices.self) private var services
+    @State private var authorizationState: CalendarAuthorizationState = .unknown
+    @State private var calendars: [CalendarDescriptor] = []
+    @State private var preparedShare: PreparedCloudShare?
+    @State private var errorMessage: String?
+    @State private var calendarAccessMessage: String?
+    @State private var isRequestingCalendarAccess = false
+
+    private var calendarAccessButtonTitle: String {
+        switch authorizationState {
+        case .denied, .restricted, .writeOnly:
+            "Open Calendar Settings"
+        case .fullAccess, .legacyAuthorized:
+            "Calendar Access Granted"
+        default:
+            "Request Full Calendar Access"
+        }
+    }
+
+    var body: some View {
+        @Bindable var settings = settings
+
+        List {
+            Section("Members") {
+                TextField("My member ID", text: $settings.currentMemberID)
+                    .textInputAutocapitalization(.never)
+                TextField("Partner member ID", text: $settings.partnerMemberID)
+                    .textInputAutocapitalization(.never)
+            }
+
+            Section("Calendar Access") {
+                LabeledContent("Status", value: String(describing: authorizationState))
+                Button(calendarAccessButtonTitle) {
+                    Task { await requestAccess() }
+                }
+                .disabled(isRequestingCalendarAccess || authorizationState.canReadEvents)
+                if isRequestingCalendarAccess {
+                    HStack {
+                        ProgressView()
+                        Text("Requesting calendar access...")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if let calendarAccessMessage {
+                    Text(calendarAccessMessage)
+                        .font(.caption)
+                        .foregroundStyle(authorizationState.canReadEvents ? .green : .orange)
+                }
+                Button("Refresh Calendars") {
+                    refreshCalendars()
+                }
+            }
+
+            Section("Shared Calendars") {
+                if calendars.isEmpty {
+                    Text("No calendars loaded")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(calendars) { calendar in
+                        Toggle(isOn: Binding(
+                            get: { settings.selectedCalendarIDs.contains(calendar.id) },
+                            set: { settings.toggleCalendarSelection(calendar.id, isSelected: $0) }
+                        )) {
+                            HStack {
+                                Circle()
+                                    .fill(Color(hex: calendar.colorHex) ?? .accentColor)
+                                    .frame(width: 10, height: 10)
+                                Text(calendar.title)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section("Privacy") {
+                Picker("Default visibility", selection: $settings.defaultVisibility) {
+                    ForEach(EventVisibility.allCases) { visibility in
+                        Text(visibility.label).tag(visibility)
+                    }
+                }
+            }
+
+            Section("CloudKit Share") {
+                Button("Create or Open CoupleSpace Share") {
+                    Task { await prepareShare() }
+                }
+                .disabled(!services.isCloudKitEnabled)
+                Text("Uses iCloud.com.leeberty.CoupleCalendar and CKShare with write access for the partner.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !services.isCloudKitEnabled {
+                    Text("Disabled for Personal Team debug signing. Use a paid Apple Developer Team and Release CloudKit entitlements for sharing.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            Section("Debug") {
+                LabeledContent("Sync window", value: "90 days past / 365 days future")
+                LabeledContent("Last sync", value: settings.lastSyncAt?.formatted(date: .abbreviated, time: .shortened) ?? "Never")
+                if let errorMessage {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .navigationTitle("Settings")
+        .task {
+            authorizationState = services.calendarAccess.authorizationState()
+            refreshCalendars()
+        }
+        .sheet(item: $preparedShare) { share in
+            CloudSharingController(preparedShare: share)
+        }
+    }
+
+    private func requestAccess() async {
+        errorMessage = nil
+        calendarAccessMessage = nil
+        authorizationState = services.calendarAccess.authorizationState()
+
+        if authorizationState.canReadEvents {
+            refreshCalendars()
+            calendarAccessMessage = "Calendar access is already enabled."
+            return
+        }
+
+        switch authorizationState {
+        case .denied, .restricted, .writeOnly:
+            calendarAccessMessage = "Calendar access must be changed in iPhone Settings."
+            openAppSettings()
+            return
+        default:
+            break
+        }
+
+        isRequestingCalendarAccess = true
+        defer { isRequestingCalendarAccess = false }
+
+        do {
+            let granted = try await services.calendarAccess.requestFullAccess()
+            authorizationState = services.calendarAccess.authorizationState()
+            refreshCalendars()
+            calendarAccessMessage = granted
+                ? "Calendar access granted. Select calendars below, then sync."
+                : "Calendar access was not granted. Open Settings to enable it."
+            if !granted {
+                openAppSettings()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            calendarAccessMessage = "Calendar access request failed."
+        }
+    }
+
+    private func refreshCalendars() {
+        authorizationState = services.calendarAccess.authorizationState()
+        calendars = services.calendarAccess.calendars()
+    }
+
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
+    }
+
+    private func prepareShare() async {
+        guard let cloudKit = services.cloudKitIfAvailable else {
+            errorMessage = "CloudKit sharing requires a paid Apple Developer Team. The current Debug build is configured for Personal Team local testing."
+            return
+        }
+
+        do {
+            preparedShare = try await cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private extension Color {
+    init?(hex: String) {
+        var raw = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.hasPrefix("#") {
+            raw.removeFirst()
+        }
+
+        guard raw.count == 6, let value = Int(raw, radix: 16) else {
+            return nil
+        }
+
+        let red = Double((value >> 16) & 0xFF) / 255
+        let green = Double((value >> 8) & 0xFF) / 255
+        let blue = Double(value & 0xFF) / 255
+        self.init(red: red, green: green, blue: blue)
+    }
+}

@@ -572,6 +572,8 @@ struct SettingsTabView: View {
     @State private var errorMessage: String?
     @State private var calendarAccessMessage: String?
     @State private var isRequestingCalendarAccess = false
+    @State private var cloudKitDiagnosticMessage: String?
+    @State private var isCheckingCloudKitAccount = false
 
     private var calendarAccessButtonTitle: String {
         switch authorizationState {
@@ -652,6 +654,10 @@ struct SettingsTabView: View {
                     Task { await prepareShare() }
                 }
                 .disabled(!services.isCloudKitEnabled)
+                Button(isCheckingCloudKitAccount ? "Checking iCloud Status..." : "Check iCloud Status") {
+                    Task { await checkCloudKitStatus() }
+                }
+                .disabled(!services.isCloudKitEnabled || isCheckingCloudKitAccount)
                 Text("Creates a private iCloud share for the invited partner.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -659,6 +665,11 @@ struct SettingsTabView: View {
                     Text("iCloud sharing is unavailable in this local build.")
                         .font(.caption)
                         .foregroundStyle(.orange)
+                }
+                if let cloudKitDiagnosticMessage {
+                    Text(cloudKitDiagnosticMessage)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -739,6 +750,24 @@ struct SettingsTabView: View {
             preparedShare = try await cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func checkCloudKitStatus() async {
+        errorMessage = nil
+        cloudKitDiagnosticMessage = nil
+        guard let cloudKit = services.cloudKitIfAvailable else {
+            cloudKitDiagnosticMessage = "iCloud sharing is unavailable in this local build."
+            return
+        }
+
+        isCheckingCloudKitAccount = true
+        defer { isCheckingCloudKitAccount = false }
+
+        let diagnostic = await cloudKit.accountDiagnostic()
+        cloudKitDiagnosticMessage = diagnostic.displayText
+        if !diagnostic.isAccountAvailable {
+            errorMessage = "CloudKit account status is \(diagnostic.accountStatus)."
         }
     }
 }

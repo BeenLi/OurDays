@@ -215,6 +215,31 @@ struct PreparedCloudShare: Identifiable {
     let container: CKContainer
 }
 
+struct CloudKitAccountDiagnostic {
+    let containerIdentifier: String
+    let accountStatus: String
+    let userRecordName: String?
+    let errorDescription: String?
+
+    var isAccountAvailable: Bool {
+        accountStatus == "available"
+    }
+
+    var displayText: String {
+        var lines = [
+            "Container: \(containerIdentifier)",
+            "Account: \(accountStatus)"
+        ]
+        if let userRecordName {
+            lines.append("User Record: \(userRecordName)")
+        }
+        if let errorDescription {
+            lines.append("Error: \(errorDescription)")
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
 final class CloudKitCoupleSpaceService {
     static let containerIdentifier = "iCloud.com.leeberty.CoupleCalendar"
     static let zoneName = "CoupleSpace"
@@ -232,6 +257,31 @@ final class CloudKitCoupleSpaceService {
 
     var privateDatabase: CKDatabase { container.privateCloudDatabase }
     var sharedDatabase: CKDatabase { container.sharedCloudDatabase }
+
+    func accountDiagnostic() async -> CloudKitAccountDiagnostic {
+        let (status, accountError) = await withCheckedContinuation { continuation in
+            container.accountStatus { status, error in
+                continuation.resume(returning: (status, error?.localizedDescription))
+            }
+        }
+
+        var userRecordName: String?
+        var userRecordError: String?
+        if status == .available {
+            (userRecordName, userRecordError) = await withCheckedContinuation { continuation in
+                container.fetchUserRecordID { recordID, error in
+                    continuation.resume(returning: (recordID?.recordName, error?.localizedDescription))
+                }
+            }
+        }
+
+        return CloudKitAccountDiagnostic(
+            containerIdentifier: Self.containerIdentifier,
+            accountStatus: Self.describe(status),
+            userRecordName: userRecordName,
+            errorDescription: accountError ?? userRecordError
+        )
+    }
 
     private func ensureSyncDriverStarted() {
         guard !hasStartedSyncDriver else { return }
@@ -289,6 +339,23 @@ final class CloudKitCoupleSpaceService {
         ensureSyncDriverStarted()
         try await syncDriver.sendChangesNow()
         try await syncDriver.fetchChangesNow()
+    }
+
+    private static func describe(_ status: CKAccountStatus) -> String {
+        switch status {
+        case .available:
+            "available"
+        case .couldNotDetermine:
+            "couldNotDetermine"
+        case .noAccount:
+            "noAccount"
+        case .restricted:
+            "restricted"
+        case .temporarilyUnavailable:
+            "temporarilyUnavailable"
+        @unknown default:
+            "unknown(\(status.rawValue))"
+        }
     }
 
     func fetchSharedEventMirrors() async throws -> [EventMirror] {

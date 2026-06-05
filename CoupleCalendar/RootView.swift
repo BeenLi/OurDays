@@ -687,7 +687,9 @@ struct SettingsTabView: View {
             refreshCalendars()
         }
         .sheet(item: $preparedShare) { share in
-            CloudSharingController(preparedShare: share)
+            CloudSharingController(preparedShare: share) { message in
+                errorMessage = "CloudKit share failed: \(message)"
+            }
         }
     }
 

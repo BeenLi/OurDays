@@ -211,8 +211,30 @@ final class CloudKitSyncDriver: NSObject, CKSyncEngineDelegate, @unchecked Senda
 struct PreparedCloudShare: Identifiable {
     let id = UUID()
     let rootRecord: CKRecord
-    let share: CKShare
+    let existingShare: CKShare?
     let container: CKContainer
+    let service: CloudKitCoupleSpaceService
+
+    var isExistingShare: Bool {
+        existingShare != nil
+    }
+}
+
+enum CloudKitSharingError: LocalizedError {
+    case missingShareRecord(CKRecord.ID)
+    case invalidShareRecord(CKRecord.ID)
+    case missingSavedShare(CKRecord.ID)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingShareRecord(let recordID):
+            "CloudKit share record \(recordID.recordName) could not be found."
+        case .invalidShareRecord(let recordID):
+            "CloudKit record \(recordID.recordName) is not a CKShare."
+        case .missingSavedShare(let recordID):
+            "CloudKit did not return saved share \(recordID.recordName)."
+        }
+    }
 }
 
 struct CloudKitAccountDiagnostic {
@@ -297,24 +319,79 @@ final class CloudKitCoupleSpaceService {
     func prepareShare(ownerMemberID: String) async throws -> PreparedCloudShare {
         try await ensureZone()
 
-        let rootRecordID = CKRecord.ID(recordName: Self.rootRecordName, zoneID: zoneID)
-        let root = CKRecord(recordType: "CoupleSpace", recordID: rootRecordID)
-        root["schemaVersion"] = 1 as CKRecordValue
-        root["createdAt"] = Date() as CKRecordValue
-        root["ownerMemberID"] = ownerMemberID as CKRecordValue
+        let root = try await rootRecordForSharing(ownerMemberID: ownerMemberID)
+        if let shareReference = root.share {
+            let share = try await fetchShare(with: shareReference.recordID)
+            return PreparedCloudShare(rootRecord: root, existingShare: share, container: container, service: self)
+        }
 
-        let share = CKShare(rootRecord: root)
-        share[CKShare.SystemFieldKey.title] = "CoupleCalendar" as CKRecordValue
+        return PreparedCloudShare(rootRecord: root, existingShare: nil, container: container, service: self)
+    }
+
+    func saveNewShare(rootRecord: CKRecord) async throws -> CKShare {
+        let share = CKShare(rootRecord: rootRecord)
+        share[CKShare.SystemFieldKey.title] = "ShareCal" as CKRecordValue
         share.publicPermission = .none
 
-        _ = try await privateDatabase.modifyRecords(
-            saving: [root, share],
+        let result = try await privateDatabase.modifyRecords(
+            saving: [rootRecord, share],
             deleting: [],
             savePolicy: .changedKeys,
             atomically: true
         )
 
-        return PreparedCloudShare(rootRecord: root, share: share, container: container)
+        guard let shareSaveResult = result.saveResults[share.recordID] else {
+            throw CloudKitSharingError.missingSavedShare(share.recordID)
+        }
+
+        let savedShareRecord = try shareSaveResult.get()
+        guard let savedShare = savedShareRecord as? CKShare else {
+            throw CloudKitSharingError.invalidShareRecord(share.recordID)
+        }
+        return savedShare
+    }
+
+    private func rootRecordForSharing(ownerMemberID: String) async throws -> CKRecord {
+        let rootRecordID = CKRecord.ID(recordName: Self.rootRecordName, zoneID: zoneID)
+        if let existingRoot = try await fetchRecordIfPresent(with: rootRecordID) {
+            existingRoot["schemaVersion"] = 1 as CKRecordValue
+            existingRoot["ownerMemberID"] = ownerMemberID as CKRecordValue
+            return existingRoot
+        }
+
+        let root = CKRecord(recordType: "CoupleSpace", recordID: rootRecordID)
+        root["schemaVersion"] = 1 as CKRecordValue
+        root["createdAt"] = Date() as CKRecordValue
+        root["ownerMemberID"] = ownerMemberID as CKRecordValue
+        return root
+    }
+
+    private func fetchShare(with recordID: CKRecord.ID) async throws -> CKShare {
+        let record = try await fetchRecord(with: recordID)
+        guard let share = record as? CKShare else {
+            throw CloudKitSharingError.invalidShareRecord(recordID)
+        }
+        return share
+    }
+
+    private func fetchRecordIfPresent(with recordID: CKRecord.ID) async throws -> CKRecord? {
+        do {
+            return try await fetchRecord(with: recordID)
+        } catch let error as CKError where error.code == .unknownItem {
+            return nil
+        }
+    }
+
+    private func fetchRecord(with recordID: CKRecord.ID) async throws -> CKRecord {
+        let results = try await withCheckedThrowingContinuation { continuation in
+            privateDatabase.fetch(withRecordIDs: [recordID]) { result in
+                continuation.resume(with: result)
+            }
+        }
+        guard let recordResult = results[recordID] else {
+            throw CloudKitSharingError.missingShareRecord(recordID)
+        }
+        return try recordResult.get()
     }
 
     func queueMirrorsForSync(_ mirrors: [EventMirror]) {
@@ -426,10 +503,48 @@ final class CloudKitCoupleSpaceService {
 
 struct CloudSharingController: UIViewControllerRepresentable {
     let preparedShare: PreparedCloudShare
+    let onError: (String) -> Void
 
     func makeUIViewController(context: Context) -> UICloudSharingController {
-        UICloudSharingController(share: preparedShare.share, container: preparedShare.container)
+        let controller: UICloudSharingController
+        if let existingShare = preparedShare.existingShare {
+            controller = UICloudSharingController(share: existingShare, container: preparedShare.container)
+        } else {
+            controller = UICloudSharingController { _, completion in
+                Task {
+                    do {
+                        let share = try await preparedShare.service.saveNewShare(rootRecord: preparedShare.rootRecord)
+                        completion(share, preparedShare.container, nil)
+                    } catch {
+                        completion(nil, nil, error)
+                    }
+                }
+            }
+        }
+        controller.availablePermissions = [.allowPrivate, .allowReadWrite]
+        controller.delegate = context.coordinator
+        return controller
     }
 
     func updateUIViewController(_ uiViewController: UICloudSharingController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onError: onError)
+    }
+
+    final class Coordinator: NSObject, UICloudSharingControllerDelegate {
+        let onError: (String) -> Void
+
+        init(onError: @escaping (String) -> Void) {
+            self.onError = onError
+        }
+
+        func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: Error) {
+            onError(error.localizedDescription)
+        }
+
+        func itemTitle(for csc: UICloudSharingController) -> String? {
+            "ShareCal"
+        }
+    }
 }

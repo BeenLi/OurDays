@@ -247,6 +247,247 @@ final class DayTimelineLayoutPlanTests: XCTestCase {
     }
 }
 
+final class JointSchedulePlanTests: XCTestCase {
+    func testAcceptedInvitationCreatesJointEventForBothMembers() {
+        let invitation = EventInvitation(
+            id: "invite-1",
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            location: "Bistro",
+            notes: "Window seat",
+            statusRawValue: InvitationStatus.accepted.rawValue
+        )
+
+        let jointEvents = JointSchedulePlan.jointEvents(
+            from: [invitation],
+            currentMemberID: "me",
+            partnerMemberID: "partner"
+        )
+
+        XCTAssertEqual(jointEvents.count, 1)
+        XCTAssertEqual(jointEvents[0].id, "invite-1")
+        XCTAssertEqual(jointEvents[0].title, "Dinner")
+        XCTAssertEqual(jointEvents[0].calendarTitle, "ShareCal")
+        XCTAssertEqual(jointEvents[0].startDate, Date(timeIntervalSince1970: 10_000))
+        XCTAssertEqual(jointEvents[0].endDate, Date(timeIntervalSince1970: 12_000))
+    }
+
+    func testOrdinaryMirrorsMatchingAcceptedJointEventAreHiddenFromSplitColumns() {
+        let start = Date(timeIntervalSince1970: 10_000)
+        let end = Date(timeIntervalSince1970: 12_000)
+        let jointEvent = JointScheduleEvent(
+            id: "invite-1",
+            title: "Dinner",
+            startDate: start,
+            endDate: end,
+            isAllDay: false,
+            location: nil,
+            notes: nil
+        )
+        let myCopy = eventMirror(id: "my-copy", ownerMemberID: "me", title: "Dinner", startDate: start, endDate: end)
+        let partnerCopy = eventMirror(id: "partner-copy", ownerMemberID: "partner", title: "Dinner", startDate: start, endDate: end)
+        let unrelated = eventMirror(
+            id: "unrelated",
+            ownerMemberID: "me",
+            title: "Focus",
+            startDate: Date(timeIntervalSince1970: 20_000),
+            endDate: Date(timeIntervalSince1970: 21_000)
+        )
+
+        let ordinary = JointSchedulePlan.ordinaryMirrors(
+            [myCopy, partnerCopy, unrelated],
+            excluding: [jointEvent]
+        )
+
+        XCTAssertEqual(ordinary.map(\.id), ["unrelated"])
+    }
+
+    private func eventMirror(
+        id: String,
+        ownerMemberID: String,
+        title: String,
+        startDate: Date,
+        endDate: Date
+    ) -> EventMirror {
+        EventMirror(
+            id: id,
+            ownerMemberID: ownerMemberID,
+            mirrorKey: id,
+            sourceCalendarID: "sharecal",
+            sourceCalendarTitle: "ShareCal",
+            occurrenceStartDate: startDate,
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: title,
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#FF2D55",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: id
+        )
+    }
+}
+
+final class AcceptedInvitationMirrorPlanTests: XCTestCase {
+    func testCreatesCurrentMemberShareCalMirrorForAcceptedInvitation() {
+        let invitation = EventInvitation(
+            id: "invite-1",
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            isAllDay: false,
+            location: "Bistro",
+            notes: "Window seat",
+            statusRawValue: InvitationStatus.accepted.rawValue
+        )
+        let createdEvent = CreatedCalendarEvent(
+            eventIdentifier: "local-1",
+            calendarIdentifier: "sharecal-calendar",
+            calendarTitle: "ShareCal",
+            calendarColorHex: "#FF2D55"
+        )
+
+        let mirror = AcceptedInvitationMirrorPlan.mirror(
+            from: invitation,
+            createdEvent: createdEvent,
+            ownerMemberID: "partner",
+            timeZoneIdentifier: "Asia/Singapore"
+        )
+
+        XCTAssertEqual(mirror.ownerMemberID, "partner")
+        XCTAssertEqual(mirror.mirrorKey, "sharecal-calendar:local-1:10000")
+        XCTAssertEqual(mirror.id, mirror.mirrorKey)
+        XCTAssertEqual(mirror.sourceCalendarID, "sharecal-calendar")
+        XCTAssertEqual(mirror.sourceCalendarTitle, "ShareCal")
+        XCTAssertEqual(mirror.calendarColorHex, "#FF2D55")
+        XCTAssertEqual(mirror.title, "Dinner")
+        XCTAssertEqual(mirror.startDate, Date(timeIntervalSince1970: 10_000))
+        XCTAssertEqual(mirror.endDate, Date(timeIntervalSince1970: 12_000))
+        XCTAssertEqual(mirror.location, "Bistro")
+        XCTAssertEqual(mirror.notes, "Window seat")
+        XCTAssertEqual(mirror.visibility, .fullDetails)
+        XCTAssertNil(mirror.deletedAt)
+        XCTAssertEqual(mirror.cloudKitRecordName, mirror.mirrorKey)
+    }
+}
+
+final class DayTimelineJointLayoutPlanTests: XCTestCase {
+    func testAssignsOverlappingJointEventsToSeparateColumns() {
+        let first = jointEvent(
+            id: "first",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000)
+        )
+        let second = jointEvent(
+            id: "second",
+            startDate: Date(timeIntervalSince1970: 11_000),
+            endDate: Date(timeIntervalSince1970: 13_000)
+        )
+        let third = jointEvent(
+            id: "third",
+            startDate: Date(timeIntervalSince1970: 13_000),
+            endDate: Date(timeIntervalSince1970: 14_000)
+        )
+
+        let placements = DayTimelineJointLayoutPlan.placements(for: [first, second, third])
+
+        XCTAssertEqual(placements["first"], DayTimelineJointPlacement(columnIndex: 0, columnCount: 2))
+        XCTAssertEqual(placements["second"], DayTimelineJointPlacement(columnIndex: 1, columnCount: 2))
+        XCTAssertEqual(placements["third"], DayTimelineJointPlacement(columnIndex: 0, columnCount: 1))
+    }
+
+    private func jointEvent(id: String, startDate: Date, endDate: Date) -> JointScheduleEvent {
+        JointScheduleEvent(
+            id: id,
+            title: id,
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            location: nil,
+            notes: nil
+        )
+    }
+}
+
+final class InvitationConflictPlanTests: XCTestCase {
+    func testFindsOnlyOverlappingPartnerEvents() {
+        let candidate = eventMirror(
+            id: "candidate",
+            ownerMemberID: "me",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000)
+        )
+        let partnerOverlap = eventMirror(
+            id: "partner-overlap",
+            ownerMemberID: "partner",
+            title: "Gym",
+            startDate: Date(timeIntervalSince1970: 11_000),
+            endDate: Date(timeIntervalSince1970: 13_000)
+        )
+        let partnerBoundary = eventMirror(
+            id: "partner-boundary",
+            ownerMemberID: "partner",
+            title: "No overlap",
+            startDate: Date(timeIntervalSince1970: 12_000),
+            endDate: Date(timeIntervalSince1970: 13_000)
+        )
+        let myOverlap = eventMirror(
+            id: "my-overlap",
+            ownerMemberID: "me",
+            title: "Focus",
+            startDate: Date(timeIntervalSince1970: 11_000),
+            endDate: Date(timeIntervalSince1970: 13_000)
+        )
+
+        let conflicts = InvitationConflictPlan.conflicts(
+            for: candidate,
+            partnerMemberID: "partner",
+            mirrors: [partnerOverlap, partnerBoundary, myOverlap]
+        )
+
+        XCTAssertEqual(conflicts.map(\.id), ["partner-overlap"])
+    }
+
+    private func eventMirror(
+        id: String,
+        ownerMemberID: String,
+        title: String,
+        startDate: Date,
+        endDate: Date
+    ) -> EventMirror {
+        EventMirror(
+            id: id,
+            ownerMemberID: ownerMemberID,
+            mirrorKey: id,
+            sourceCalendarID: "sharecal",
+            sourceCalendarTitle: "ShareCal",
+            occurrenceStartDate: startDate,
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: title,
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#FF2D55",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: id
+        )
+    }
+}
+
 final class CloudKitRecordMappingTests: XCTestCase {
     func testEventMirrorRoundTripsThroughCloudKitRecord() throws {
         let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
@@ -833,6 +1074,92 @@ final class InvitationServiceTests: XCTestCase {
         invitation.status = .accepted
 
         XCTAssertFalse(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "partner"))
+    }
+}
+
+final class InvitationListPlanTests: XCTestCase {
+    func testOnlyAcceptedInvitationsCanOpenInCalendar() {
+        let accepted = invitation(id: "accepted", status: .accepted)
+        let pending = invitation(id: "pending", status: .pending)
+        let declined = invitation(id: "declined", status: .declined)
+
+        XCTAssertTrue(InvitationListPlan.canOpenInCalendar(accepted))
+        XCTAssertFalse(InvitationListPlan.canOpenInCalendar(pending))
+        XCTAssertFalse(InvitationListPlan.canOpenInCalendar(declined))
+    }
+
+    func testAllVisibleInvitationsCanBeDeletedFromList() {
+        XCTAssertTrue(InvitationListPlan.canDelete(invitation(id: "accepted", status: .accepted)))
+        XCTAssertTrue(InvitationListPlan.canDelete(invitation(id: "declined", status: .declined)))
+        XCTAssertTrue(InvitationListPlan.canDelete(invitation(id: "pending", status: .pending)))
+        XCTAssertTrue(InvitationListPlan.canDelete(invitation(id: "canceled", status: .canceled)))
+    }
+
+    func testArchivedInvitationsAreHiddenFromInvitesList() {
+        let visible = invitation(id: "visible", status: .accepted)
+        let archived = invitation(
+            id: "archived",
+            status: .declined,
+            archivedAt: Date(timeIntervalSince1970: 20_000)
+        )
+
+        let invitations = InvitationListPlan.visibleInvitations([visible, archived])
+
+        XCTAssertEqual(invitations.map(\.id), ["visible"])
+    }
+
+    func testAcceptedInvitationBuildsCalendarFocusRequest() throws {
+        let accepted = invitation(id: "accepted", status: .accepted)
+
+        let request = try XCTUnwrap(CalendarFocusPlan.request(for: accepted))
+
+        XCTAssertEqual(request.invitationID, "accepted")
+        XCTAssertEqual(request.startDate, Date(timeIntervalSince1970: 10_000))
+    }
+
+    private func invitation(
+        id: String,
+        status: InvitationStatus,
+        archivedAt: Date? = nil
+    ) -> EventInvitation {
+        EventInvitation(
+            id: id,
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: status.rawValue,
+            archivedAt: archivedAt
+        )
+    }
+}
+
+final class DayTimelineScrollTargetPlanTests: XCTestCase {
+    func testTargetsEventStartTimeInsteadOfOffsetLayoutOrigin() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
+        let startDate = dayStart.addingTimeInterval(15 * 60 * 60)
+        let event = JointScheduleEvent(
+            id: "invite-1",
+            title: "Dinner",
+            startDate: startDate,
+            endDate: startDate.addingTimeInterval(60 * 60),
+            isAllDay: false,
+            location: nil,
+            notes: nil
+        )
+
+        let targetY = DayTimelineScrollTargetPlan.targetY(
+            for: event,
+            dayStart: dayStart,
+            hourHeight: 58,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(targetY, 870, accuracy: 0.001)
     }
 }
 

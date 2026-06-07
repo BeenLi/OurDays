@@ -9,27 +9,41 @@ enum CalendarMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum ShareCalTab {
+    case calendar
+    case invites
+    case settings
+}
+
 struct RootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SettingsStore.self) private var settings
     @Environment(AppServices.self) private var services
     @State private var isSyncingAcceptedShare = false
+    @State private var selectedTab: ShareCalTab = .calendar
+    @State private var calendarFocusRequest: CalendarFocusRequest?
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             NavigationStack {
-                CalendarTabView()
+                CalendarTabView(focusRequest: $calendarFocusRequest)
             }
             .tabItem {
                 Label(settings.strings.calendarTab, systemImage: "calendar")
             }
+            .tag(ShareCalTab.calendar)
 
             NavigationStack {
-                InvitesTabView()
+                InvitesTabView { invitation in
+                    guard let request = CalendarFocusPlan.request(for: invitation) else { return }
+                    calendarFocusRequest = request
+                    selectedTab = .calendar
+                }
             }
             .tabItem {
                 Label(settings.strings.invitesTab, systemImage: "envelope")
             }
+            .tag(ShareCalTab.invites)
 
             NavigationStack {
                 SettingsTabView()
@@ -37,6 +51,7 @@ struct RootView: View {
             .tabItem {
                 Label(settings.strings.settingsTab, systemImage: "gearshape")
             }
+            .tag(ShareCalTab.settings)
         }
         .task {
             await syncAfterAcceptedShareIfNeeded()
@@ -69,10 +84,13 @@ struct CalendarTabView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SettingsStore.self) private var settings
     @Environment(AppServices.self) private var services
+    @Binding var focusRequest: CalendarFocusRequest?
     @Query(sort: \EventMirror.startDate) private var mirrors: [EventMirror]
+    @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
     @State private var selectedDate = Date()
     @State private var mode: CalendarMode = .day
     @State private var selectedEvent: EventMirror?
+    @State private var focusedJointEventID: String?
 
     var activeMirrors: [EventMirror] {
         mirrors.filter { $0.deletedAt == nil }
@@ -84,12 +102,30 @@ struct CalendarTabView: View {
         }
     }
 
+    var acceptedJointEvents: [JointScheduleEvent] {
+        JointSchedulePlan.jointEvents(
+            from: invitations,
+            currentMemberID: settings.currentMemberID,
+            partnerMemberID: settings.partnerMemberID
+        )
+    }
+
+    var visibleJointEvents: [JointScheduleEvent] {
+        acceptedJointEvents.filter { jointEvent in
+            visibleInterval.contains(jointEvent.startDate)
+        }
+    }
+
+    var visibleOrdinaryMirrors: [EventMirror] {
+        JointSchedulePlan.ordinaryMirrors(visibleMirrors, excluding: visibleJointEvents)
+    }
+
     var myEvents: [EventMirror] {
-        visibleMirrors.filter { $0.ownerMemberID == settings.currentMemberID }
+        visibleOrdinaryMirrors.filter { $0.ownerMemberID == settings.currentMemberID }
     }
 
     var partnerEvents: [EventMirror] {
-        visibleMirrors.filter { $0.ownerMemberID != settings.currentMemberID }
+        visibleOrdinaryMirrors.filter { $0.ownerMemberID != settings.currentMemberID }
     }
 
     var selectedDayStart: Date {
@@ -125,7 +161,7 @@ struct CalendarTabView: View {
 
             SyncStatusBar()
 
-            if activeMirrors.isEmpty {
+            if activeMirrors.isEmpty && acceptedJointEvents.isEmpty {
                 ShareCalEmptyState {
                     loadReviewSampleData()
                 }
@@ -140,6 +176,8 @@ struct CalendarTabView: View {
                             myTitle: strings.meTitle,
                             mySubtitle: settings.currentMemberID,
                             myEvents: myEvents,
+                            jointEvents: visibleJointEvents,
+                            focusedJointEventID: focusedJointEventID,
                             partnerTitle: strings.partnerTitle,
                             partnerSubtitle: settings.partnerMemberID,
                             partnerEvents: partnerEvents,
@@ -152,6 +190,7 @@ struct CalendarTabView: View {
                                 myTitle: strings.meTitle,
                                 mySubtitle: settings.currentMemberID,
                                 myEvents: myEvents,
+                                jointEvents: visibleJointEvents,
                                 partnerTitle: strings.partnerTitle,
                                 partnerSubtitle: settings.partnerMemberID,
                                 partnerEvents: partnerEvents,
@@ -186,6 +225,12 @@ struct CalendarTabView: View {
         .sheet(item: $selectedEvent) { event in
             EventDetailView(event: event)
         }
+        .onAppear {
+            consumeFocusRequestIfNeeded()
+        }
+        .onChange(of: focusRequest) { _, _ in
+            consumeFocusRequestIfNeeded()
+        }
     }
 
     private func loadReviewSampleData() {
@@ -202,6 +247,14 @@ struct CalendarTabView: View {
         sample.invitations.forEach(modelContext.insert)
         sample.comments.forEach(modelContext.insert)
         try? modelContext.save()
+    }
+
+    private func consumeFocusRequestIfNeeded() {
+        guard let request = focusRequest else { return }
+        selectedDate = request.startDate
+        mode = .day
+        focusedJointEventID = request.invitationID
+        focusRequest = nil
     }
 }
 
@@ -304,6 +357,7 @@ struct TwoColumnTimelineList: View {
     let myTitle: String
     let mySubtitle: String
     let myEvents: [EventMirror]
+    let jointEvents: [JointScheduleEvent]
     let partnerTitle: String
     let partnerSubtitle: String
     let partnerEvents: [EventMirror]
@@ -315,33 +369,42 @@ struct TwoColumnTimelineList: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            TimelineColumn(
-                title: myTitle,
-                subtitle: mySubtitle,
-                events: myEvents,
-                tint: .blue,
-                width: columnWidth,
-                onSelect: onSelect
-            )
+        VStack(spacing: 10) {
+            if !jointEvents.isEmpty {
+                JointTimelineList(jointEvents: jointEvents)
+            }
 
-            TimelineColumn(
-                title: partnerTitle,
-                subtitle: partnerSubtitle,
-                events: partnerEvents,
-                tint: .pink,
-                width: columnWidth,
-                onSelect: onSelect
-            )
+            HStack(alignment: .top, spacing: 10) {
+                TimelineColumn(
+                    title: myTitle,
+                    subtitle: mySubtitle,
+                    events: myEvents,
+                    tint: .blue,
+                    width: columnWidth,
+                    onSelect: onSelect
+                )
+
+                TimelineColumn(
+                    title: partnerTitle,
+                    subtitle: partnerSubtitle,
+                    events: partnerEvents,
+                    tint: .pink,
+                    width: columnWidth,
+                    onSelect: onSelect
+                )
+            }
         }
     }
 }
 
 struct DayAlignedTimelineView: View {
+    @Environment(SettingsStore.self) private var settings
     let dayStart: Date
     let myTitle: String
     let mySubtitle: String
     let myEvents: [EventMirror]
+    let jointEvents: [JointScheduleEvent]
+    let focusedJointEventID: String?
     let partnerTitle: String
     let partnerSubtitle: String
     let partnerEvents: [EventMirror]
@@ -383,44 +446,131 @@ struct DayAlignedTimelineView: View {
             )
             .padding(.horizontal, horizontalPadding)
 
-            ScrollView(.vertical) {
-                ZStack(alignment: .topLeading) {
-                    DayTimelineHourGrid(
-                        hourHeight: hourHeight,
-                        railWidth: railWidth,
-                        railSpacing: railSpacing,
-                        contentWidth: contentWidth
-                    )
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    ZStack(alignment: .topLeading) {
+                        let jointPlacements = DayTimelineJointLayoutPlan.placements(for: jointEvents)
 
-                    HStack(alignment: .top, spacing: railSpacing) {
-                        DayTimelineHourRail(hourHeight: hourHeight, width: railWidth)
+                        DayTimelineHourGrid(
+                            hourHeight: hourHeight,
+                            railWidth: railWidth,
+                            railSpacing: railSpacing,
+                            contentWidth: contentWidth
+                        )
 
-                        HStack(alignment: .top, spacing: laneSpacing) {
-                            DayTimelineLane(
-                                events: myEvents,
-                                tint: .blue,
-                                dayStart: dayStart,
-                                hourHeight: hourHeight,
-                                width: laneWidth,
-                                onSelect: onSelect
+                        HStack(alignment: .top, spacing: railSpacing) {
+                            DayTimelineHourRail(hourHeight: hourHeight, width: railWidth)
+
+                            HStack(alignment: .top, spacing: laneSpacing) {
+                                DayTimelineLane(
+                                    events: myEvents,
+                                    tint: .blue,
+                                    dayStart: dayStart,
+                                    hourHeight: hourHeight,
+                                    width: laneWidth,
+                                    onSelect: onSelect
+                                )
+
+                                DayTimelineLane(
+                                    events: partnerEvents,
+                                    tint: .pink,
+                                    dayStart: dayStart,
+                                    hourHeight: hourHeight,
+                                    width: laneWidth,
+                                    onSelect: onSelect
+                                )
+                            }
+                        }
+
+                        ForEach(jointEvents) { event in
+                            jointScrollMarker(for: event)
+                        }
+
+                        ForEach(jointEvents) { event in
+                            let frame = frame(for: event)
+                            let eventHeight = min(max(frame.height, 44), dayHeight)
+                            let eventY = min(frame.y, max(0, dayHeight - eventHeight))
+                            let jointWidth = (laneWidth * 2) + laneSpacing
+                            let placement = jointPlacements[event.id] ?? DayTimelineJointPlacement(columnIndex: 0, columnCount: 1)
+                            let slotWidth = max(44, (jointWidth - 8) / CGFloat(placement.columnCount))
+
+                            DayTimelineJointEventBlock(
+                                event: event,
+                                isFocused: event.id == focusedJointEventID
                             )
-
-                            DayTimelineLane(
-                                events: partnerEvents,
-                                tint: .pink,
-                                dayStart: dayStart,
-                                hourHeight: hourHeight,
-                                width: laneWidth,
-                                onSelect: onSelect
+                            .frame(width: max(44, slotWidth - 4), height: eventHeight, alignment: .top)
+                            .offset(
+                                x: railWidth + railSpacing + 4 + (CGFloat(placement.columnIndex) * slotWidth),
+                                y: eventY
                             )
+                            .accessibilityLabel("\(event.title), \(timeText(for: event)), \(event.calendarTitle), \(settings.strings.jointScheduleLabel)")
                         }
                     }
+                    .frame(width: contentWidth, height: dayHeight, alignment: .topLeading)
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.bottom, 24)
                 }
-                .frame(width: contentWidth, height: dayHeight, alignment: .topLeading)
-                .padding(.horizontal, horizontalPadding)
-                .padding(.bottom, 24)
+                .onAppear {
+                    scrollToFocusedJointEvent(with: proxy)
+                }
+                .onChange(of: focusedJointEventID) { _, _ in
+                    scrollToFocusedJointEvent(with: proxy)
+                }
             }
         }
+    }
+
+    private func frame(for event: JointScheduleEvent) -> DayTimelineEventFrame {
+        if event.isAllDay {
+            return DayTimelineEventFrame(y: 0, height: hourHeight)
+        }
+
+        return DayTimelineLayoutPlan.eventFrame(
+            startDate: event.startDate,
+            endDate: event.endDate,
+            dayStart: dayStart,
+            hourHeight: hourHeight
+        )
+    }
+
+    private func timeText(for event: JointScheduleEvent) -> String {
+        if event.isAllDay {
+            return settings.strings.allDay
+        }
+
+        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private func jointScrollID(for eventID: String) -> String {
+        "joint-\(eventID)"
+    }
+
+    private func scrollToFocusedJointEvent(with proxy: ScrollViewProxy) {
+        guard let focusedJointEventID else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                proxy.scrollTo(jointScrollID(for: focusedJointEventID), anchor: .center)
+            }
+        }
+    }
+
+    private func jointScrollMarker(for event: JointScheduleEvent) -> some View {
+        let targetY = DayTimelineScrollTargetPlan.targetY(
+            for: event,
+            dayStart: dayStart,
+            hourHeight: hourHeight
+        )
+
+        return VStack(spacing: 0) {
+            Color.clear
+                .frame(height: max(0, targetY))
+            Color.clear
+                .frame(width: 1, height: 1)
+                .id(jointScrollID(for: event.id))
+            Spacer(minLength: 0)
+        }
+        .frame(width: 1, height: dayHeight, alignment: .top)
+        .allowsHitTesting(false)
     }
 }
 
@@ -629,6 +779,133 @@ struct DayTimelineEventBlock: View {
     }
 }
 
+struct DayTimelineJointEventBlock: View {
+    @Environment(SettingsStore.self) private var settings
+    let event: JointScheduleEvent
+    let isFocused: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Rectangle()
+                .fill(Color.green)
+                .frame(width: 3)
+                .clipShape(Capsule())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                Text("\(event.calendarTitle) · \(settings.strings.jointScheduleLabel)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .lineLimit(1)
+
+                Text(timeText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(7)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.green.opacity(isFocused ? 0.22 : 0.12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.green.opacity(isFocused ? 0.9 : 0.45), lineWidth: isFocused ? 2 : 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: Color.green.opacity(isFocused ? 0.22 : 0.04), radius: isFocused ? 5 : 2, x: 0, y: 1)
+    }
+
+    var timeText: String {
+        if event.isAllDay {
+            return settings.strings.allDay
+        }
+        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
+struct JointTimelineList: View {
+    @Environment(SettingsStore.self) private var settings
+    let jointEvents: [JointScheduleEvent]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(settings.strings.jointScheduleLabel, systemImage: "person.2.fill")
+                    .font(.headline)
+                    .foregroundStyle(.green)
+                Spacer()
+                Text("\(jointEvents.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
+            }
+
+            ForEach(jointEvents) { event in
+                JointEventCard(event: event)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color.green.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+struct JointEventCard: View {
+    @Environment(SettingsStore.self) private var settings
+    let event: JointScheduleEvent
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Rectangle()
+                .fill(Color.green)
+                .frame(width: 4)
+                .clipShape(Capsule())
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(event.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+
+                Text("\(event.calendarTitle) · \(settings.strings.jointScheduleLabel)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .lineLimit(1)
+
+                Text(timeText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let location = event.location, !location.isEmpty {
+                    Label(location, systemImage: "mappin.and.ellipse")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    var timeText: String {
+        if event.isAllDay {
+            return settings.strings.allDay
+        }
+        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
 struct TimelineColumn: View {
     @Environment(SettingsStore.self) private var settings
     let title: String
@@ -729,8 +1006,13 @@ struct EventDetailView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AppServices.self) private var services
     @Query(sort: \EventComment.createdAt) private var comments: [EventComment]
+    @Query(sort: \EventMirror.startDate) private var mirrors: [EventMirror]
     @State private var commentBody = ""
     @State private var inviteError: String?
+    @State private var inviteSuccessMessage: String?
+    @State private var isSendingInvite = false
+    @State private var conflictMessage: String?
+    @State private var isShowingInviteConflict = false
     let event: EventMirror
 
     var eventComments: [EventComment] {
@@ -759,9 +1041,23 @@ struct EventDetailView: View {
 
                 Section(strings.inviteSection) {
                     Button {
-                        createInvite()
+                        createInviteAfterConflictCheck()
                     } label: {
-                        Label(strings.invitePartnerButton, systemImage: "person.badge.plus")
+                        Label(
+                            isSendingInvite ? strings.sendingInvitationButton : strings.invitePartnerButton,
+                            systemImage: isSendingInvite ? "clock.arrow.circlepath" : "person.badge.plus"
+                        )
+                    }
+                    .disabled(isSendingInvite)
+
+                    if isSendingInvite {
+                        ProgressView()
+                    }
+
+                    if let inviteSuccessMessage {
+                        Text(inviteSuccessMessage)
+                            .font(.caption)
+                            .foregroundStyle(.green)
                     }
 
                     if let inviteError {
@@ -814,10 +1110,46 @@ struct EventDetailView: View {
                     }
                 }
             }
+            .alert(strings.invitationConflictTitle, isPresented: $isShowingInviteConflict) {
+                Button(strings.cancelButton, role: .cancel) {}
+                Button(strings.inviteAnywayButton) {
+                    createInvite()
+                }
+            } message: {
+                if let conflictMessage {
+                    Text(conflictMessage)
+                }
+            }
         }
     }
 
+    private func createInviteAfterConflictCheck() {
+        guard !isSendingInvite else { return }
+        inviteError = nil
+        inviteSuccessMessage = nil
+        let conflicts = InvitationConflictPlan.conflicts(
+            for: event,
+            partnerMemberID: settings.partnerMemberID,
+            mirrors: mirrors
+        )
+        guard let firstConflict = conflicts.first else {
+            createInvite()
+            return
+        }
+
+        conflictMessage = settings.strings.invitationConflictMessage(
+            eventTitle: firstConflict.title,
+            timeText: timeText(for: firstConflict),
+            additionalConflictCount: conflicts.count - 1
+        )
+        isShowingInviteConflict = true
+    }
+
     private func createInvite() {
+        guard !isSendingInvite else { return }
+        isSendingInvite = true
+        inviteError = nil
+        inviteSuccessMessage = nil
         let invitation = EventInvitation(
             creatorMemberID: settings.currentMemberID,
             inviteeMemberID: settings.partnerMemberID,
@@ -836,14 +1168,27 @@ struct EventDetailView: View {
                 Task {
                     do {
                         try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                        inviteSuccessMessage = settings.strings.invitationSentMessage
                     } catch {
                         inviteError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
                     }
+                    isSendingInvite = false
                 }
+            } else {
+                inviteSuccessMessage = settings.strings.invitationSentMessage
+                isSendingInvite = false
             }
         } catch {
             inviteError = error.localizedDescription
+            isSendingInvite = false
         }
+    }
+
+    private func timeText(for event: EventMirror) -> String {
+        if event.isAllDay {
+            return settings.strings.allDay
+        }
+        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
     }
 
     private func addComment() {
@@ -885,13 +1230,15 @@ struct InvitesTabView: View {
     @Environment(AppServices.self) private var services
     @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
     @State private var errorMessage: String?
+    let openInCalendar: (EventInvitation) -> Void
 
     var body: some View {
         let strings = settings.strings
+        let visibleInvitations = InvitationListPlan.visibleInvitations(invitations)
 
         List {
             ForEach(InvitationStatus.allCases) { status in
-                let filtered = invitations.filter { $0.status == status }
+                let filtered = visibleInvitations.filter { $0.status == status }
                 if !filtered.isEmpty {
                     Section(strings.invitationStatusTitle(for: status)) {
                         ForEach(filtered) { invitation in
@@ -899,13 +1246,24 @@ struct InvitesTabView: View {
                                 accept(invitation)
                             } decline: {
                                 decline(invitation)
+                            } openInCalendar: {
+                                openInCalendar(invitation)
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                if InvitationListPlan.canDelete(invitation) {
+                                    Button(role: .destructive) {
+                                        archive(invitation)
+                                    } label: {
+                                        Label(strings.deleteButton, systemImage: "trash")
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
 
-            if invitations.isEmpty {
+            if visibleInvitations.isEmpty {
                 ContentUnavailableView(strings.noInvitations, systemImage: "envelope.open")
             }
 
@@ -922,12 +1280,54 @@ struct InvitesTabView: View {
     private func accept(_ invitation: EventInvitation) {
         do {
             let draft = services.invitationService.draft(from: invitation)
-            let localEventID = try services.calendarAccess.createLocalEvent(from: draft)
-            _ = try services.invitationService.accept(invitation, createdLocalEventID: localEventID)
+            let createdEvent = try services.calendarAccess.createShareCalEvent(from: draft)
+            _ = try services.invitationService.accept(invitation, createdLocalEventID: createdEvent.eventIdentifier)
+            let mirror = AcceptedInvitationMirrorPlan.mirror(
+                from: invitation,
+                createdEvent: createdEvent,
+                ownerMemberID: settings.currentMemberID
+            )
+            try upsertAcceptedMirror(mirror)
+            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
+                afterEnsuring: CalendarDescriptor(
+                    id: createdEvent.calendarIdentifier,
+                    title: createdEvent.calendarTitle,
+                    colorHex: createdEvent.calendarColorHex,
+                    allowsContentModifications: true
+                ),
+                currentSelection: settings.selectedCalendarIDs
+            )
             try modelContext.save()
             saveInvitationStatusToCloudKit(invitation)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func upsertAcceptedMirror(_ mirror: EventMirror) throws {
+        let mirrorKey = mirror.mirrorKey
+        let descriptor = FetchDescriptor<EventMirror>(
+            predicate: #Predicate { $0.mirrorKey == mirrorKey }
+        )
+        if let existing = try modelContext.fetch(descriptor).first {
+            existing.ownerMemberID = mirror.ownerMemberID
+            existing.sourceCalendarID = mirror.sourceCalendarID
+            existing.sourceCalendarTitle = mirror.sourceCalendarTitle
+            existing.occurrenceStartDate = mirror.occurrenceStartDate
+            existing.startDate = mirror.startDate
+            existing.endDate = mirror.endDate
+            existing.isAllDay = mirror.isAllDay
+            existing.timeZoneIdentifier = mirror.timeZoneIdentifier
+            existing.title = mirror.title
+            existing.location = mirror.location
+            existing.notes = mirror.notes
+            existing.urlString = mirror.urlString
+            existing.calendarColorHex = mirror.calendarColorHex
+            existing.visibilityRawValue = mirror.visibilityRawValue
+            existing.deletedAt = mirror.deletedAt
+            existing.cloudKitRecordName = mirror.cloudKitRecordName
+        } else {
+            modelContext.insert(mirror)
         }
     }
 
@@ -936,6 +1336,15 @@ struct InvitesTabView: View {
         do {
             try modelContext.save()
             saveInvitationStatusToCloudKit(invitation)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func archive(_ invitation: EventInvitation) {
+        invitation.archivedAt = .now
+        do {
+            try modelContext.save()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -959,9 +1368,11 @@ struct InvitationRow: View {
     let currentMemberID: String
     let accept: () -> Void
     let decline: () -> Void
+    let openInCalendar: () -> Void
 
     var body: some View {
         let strings = settings.strings
+        let canOpenInCalendar = InvitationListPlan.canOpenInCalendar(invitation)
 
         VStack(alignment: .leading, spacing: 8) {
             Text(invitation.title)
@@ -985,6 +1396,11 @@ struct InvitationRow: View {
             }
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard canOpenInCalendar else { return }
+            openInCalendar()
+        }
     }
 }
 

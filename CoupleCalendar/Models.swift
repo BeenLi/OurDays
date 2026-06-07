@@ -62,6 +62,12 @@ struct ShareCalStrings {
     var locationLabel: String { text("Location", "地点") }
     var inviteSection: String { text("Invite", "邀请") }
     var invitePartnerButton: String { text("Invite partner", "邀请对方") }
+    var sendingInvitationButton: String { text("Sending invitation...", "正在发送邀请...") }
+    var invitationSentMessage: String { text("Invitation sent.", "邀请已发送。") }
+    var inviteAnywayButton: String { text("Invite anyway", "仍然邀请") }
+    var cancelButton: String { text("Cancel", "取消") }
+    var invitationConflictTitle: String { text("Schedule conflict", "日程冲突") }
+    var jointScheduleLabel: String { text("Together", "共同") }
     var commentsSection: String { text("Comments", "评论") }
     var deleteButton: String { text("Delete", "删除") }
     var addCommentPlaceholder: String { text("Add a comment", "添加评论") }
@@ -170,6 +176,19 @@ struct ShareCalStrings {
         }
     }
 
+    func invitationConflictMessage(eventTitle: String, timeText: String, additionalConflictCount: Int) -> String {
+        let suffix: String
+        if additionalConflictCount > 0 {
+            suffix = text(" and \(additionalConflictCount) more conflict(s)", "，另有 \(additionalConflictCount) 个冲突")
+        } else {
+            suffix = ""
+        }
+        return text(
+            "Your partner already has \(eventTitle) at \(timeText)\(suffix).",
+            "对方在 \(timeText) 已有 \(eventTitle)\(suffix)。"
+        )
+    }
+
     private func text(_ english: String, _ chinese: String) -> String {
         switch language {
         case .english: english
@@ -205,6 +224,59 @@ struct DayTimelineHourMark: Equatable {
 struct DayTimelineEventFrame: Equatable {
     let y: CGFloat
     let height: CGFloat
+}
+
+struct DayTimelineJointPlacement: Equatable {
+    let columnIndex: Int
+    let columnCount: Int
+}
+
+enum DayTimelineJointLayoutPlan {
+    static func placements(for events: [JointScheduleEvent]) -> [String: DayTimelineJointPlacement] {
+        var placements: [String: DayTimelineJointPlacement] = [:]
+        let sortedEvents = events.sorted {
+            if $0.startDate == $1.startDate {
+                return $0.id < $1.id
+            }
+            return $0.startDate < $1.startDate
+        }
+
+        for event in sortedEvents {
+            let overlapping = sortedEvents.filter { candidate in
+                overlaps(event, candidate)
+            }
+            let orderedOverlappingIDs = overlapping.map(\.id)
+            let columnIndex = orderedOverlappingIDs.firstIndex(of: event.id) ?? 0
+            placements[event.id] = DayTimelineJointPlacement(
+                columnIndex: columnIndex,
+                columnCount: max(1, overlapping.count)
+            )
+        }
+
+        return placements
+    }
+
+    private static func overlaps(_ lhs: JointScheduleEvent, _ rhs: JointScheduleEvent) -> Bool {
+        lhs.startDate < rhs.endDate && rhs.startDate < lhs.endDate
+    }
+}
+
+enum DayTimelineScrollTargetPlan {
+    static func targetY(
+        for event: JointScheduleEvent,
+        dayStart: Date,
+        hourHeight: CGFloat,
+        calendar: Calendar = .current
+    ) -> CGFloat {
+        guard !event.isAllDay else { return 0 }
+        return DayTimelineLayoutPlan.eventFrame(
+            startDate: event.startDate,
+            endDate: event.endDate,
+            dayStart: dayStart,
+            hourHeight: hourHeight,
+            calendar: calendar
+        ).y
+    }
 }
 
 enum DayTimelineLayoutPlan {
@@ -344,6 +416,13 @@ struct LocalCalendarEventDraft: Equatable {
     let isAllDay: Bool
     let location: String?
     let notes: String?
+}
+
+struct CreatedCalendarEvent: Equatable {
+    let eventIdentifier: String
+    let calendarIdentifier: String
+    let calendarTitle: String
+    let calendarColorHex: String
 }
 
 @Model
@@ -519,6 +598,7 @@ final class EventInvitation: Identifiable {
     var updatedAt: Date
     var createdLocalEventID: String?
     var cloudKitRecordName: String?
+    var archivedAt: Date?
 
     var status: InvitationStatus {
         get { InvitationStatus(rawValue: statusRawValue) ?? .pending }
@@ -542,7 +622,8 @@ final class EventInvitation: Identifiable {
         createdAt: Date = .now,
         updatedAt: Date = .now,
         createdLocalEventID: String? = nil,
-        cloudKitRecordName: String? = nil
+        cloudKitRecordName: String? = nil,
+        archivedAt: Date? = nil
     ) {
         self.id = id
         self.creatorMemberID = creatorMemberID
@@ -558,6 +639,7 @@ final class EventInvitation: Identifiable {
         self.updatedAt = updatedAt
         self.createdLocalEventID = createdLocalEventID
         self.cloudKitRecordName = cloudKitRecordName
+        self.archivedAt = archivedAt
     }
 }
 

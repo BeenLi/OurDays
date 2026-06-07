@@ -119,6 +119,176 @@ enum InvitationInteractionPlan {
     }
 }
 
+struct CalendarFocusRequest: Identifiable, Equatable {
+    let id: String
+    let invitationID: String
+    let startDate: Date
+
+    init(invitationID: String, startDate: Date) {
+        self.id = invitationID
+        self.invitationID = invitationID
+        self.startDate = startDate
+    }
+}
+
+enum CalendarFocusPlan {
+    static func request(for invitation: EventInvitation) -> CalendarFocusRequest? {
+        guard InvitationListPlan.canOpenInCalendar(invitation) else { return nil }
+        return CalendarFocusRequest(invitationID: invitation.id, startDate: invitation.startDate)
+    }
+}
+
+enum InvitationListPlan {
+    static func visibleInvitations(_ invitations: [EventInvitation]) -> [EventInvitation] {
+        invitations.filter { $0.archivedAt == nil }
+    }
+
+    static func canOpenInCalendar(_ invitation: EventInvitation) -> Bool {
+        invitation.status == .accepted
+    }
+
+    static func canDelete(_ invitation: EventInvitation) -> Bool {
+        invitation.archivedAt == nil
+    }
+}
+
+struct JointScheduleEvent: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let calendarTitle: String = ShareCalCalendarBootstrapPlan.calendarTitle
+    let startDate: Date
+    let endDate: Date
+    let isAllDay: Bool
+    let location: String?
+    let notes: String?
+}
+
+enum JointSchedulePlan {
+    static func jointEvents(
+        from invitations: [EventInvitation],
+        currentMemberID: String,
+        partnerMemberID: String
+    ) -> [JointScheduleEvent] {
+        invitations
+            .filter { invitation in
+                invitation.status == .accepted
+                    && involvesPair(invitation, currentMemberID: currentMemberID, partnerMemberID: partnerMemberID)
+            }
+            .map { invitation in
+                JointScheduleEvent(
+                    id: invitation.id,
+                    title: invitation.title,
+                    startDate: invitation.startDate,
+                    endDate: invitation.endDate,
+                    isAllDay: invitation.isAllDay,
+                    location: invitation.location,
+                    notes: invitation.notes
+                )
+            }
+    }
+
+    static func ordinaryMirrors(
+        _ mirrors: [EventMirror],
+        excluding jointEvents: [JointScheduleEvent]
+    ) -> [EventMirror] {
+        mirrors.filter { mirror in
+            !jointEvents.contains { jointEvent in
+                representsSameSchedule(mirror, jointEvent)
+            }
+        }
+    }
+
+    private static func involvesPair(
+        _ invitation: EventInvitation,
+        currentMemberID: String,
+        partnerMemberID: String
+    ) -> Bool {
+        let members = Set([invitation.creatorMemberID, invitation.inviteeMemberID])
+        return members == Set([currentMemberID, partnerMemberID])
+    }
+
+    private static func representsSameSchedule(
+        _ mirror: EventMirror,
+        _ jointEvent: JointScheduleEvent
+    ) -> Bool {
+        mirror.deletedAt == nil
+            && mirror.title == jointEvent.title
+            && mirror.startDate == jointEvent.startDate
+            && mirror.endDate == jointEvent.endDate
+            && mirror.isAllDay == jointEvent.isAllDay
+    }
+}
+
+enum InvitationConflictPlan {
+    static func conflicts(
+        for event: EventMirror,
+        partnerMemberID: String,
+        mirrors: [EventMirror]
+    ) -> [EventMirror] {
+        mirrors
+            .filter { mirror in
+                mirror.deletedAt == nil
+                    && mirror.id != event.id
+                    && mirror.ownerMemberID == partnerMemberID
+                    && overlaps(
+                        startA: event.startDate,
+                        endA: event.endDate,
+                        startB: mirror.startDate,
+                        endB: mirror.endDate
+                    )
+            }
+            .sorted { $0.startDate < $1.startDate }
+    }
+
+    private static func overlaps(startA: Date, endA: Date, startB: Date, endB: Date) -> Bool {
+        startA < endB && startB < endA
+    }
+}
+
+enum AcceptedInvitationMirrorPlan {
+    static func mirror(
+        from invitation: EventInvitation,
+        createdEvent: CreatedCalendarEvent,
+        ownerMemberID: String,
+        timeZoneIdentifier: String = TimeZone.current.identifier
+    ) -> EventMirror {
+        let fingerprint = [
+            invitation.id,
+            createdEvent.eventIdentifier,
+            "\(Int(invitation.startDate.timeIntervalSince1970.rounded()))",
+            "\(Int(invitation.endDate.timeIntervalSince1970.rounded()))",
+            invitation.title
+        ].joined(separator: "|")
+        let mirrorKey = EventMirrorService.makeMirrorKey(
+            calendarIdentifier: createdEvent.calendarIdentifier,
+            eventIdentifier: createdEvent.eventIdentifier,
+            occurrenceStartDate: invitation.startDate,
+            fingerprint: fingerprint
+        )
+
+        return EventMirror(
+            id: mirrorKey,
+            ownerMemberID: ownerMemberID,
+            mirrorKey: mirrorKey,
+            sourceCalendarID: createdEvent.calendarIdentifier,
+            sourceCalendarTitle: createdEvent.calendarTitle,
+            occurrenceStartDate: invitation.startDate,
+            startDate: invitation.startDate,
+            endDate: invitation.endDate,
+            isAllDay: invitation.isAllDay,
+            timeZoneIdentifier: timeZoneIdentifier,
+            title: invitation.title,
+            location: invitation.location,
+            notes: invitation.notes,
+            urlString: nil,
+            calendarColorHex: createdEvent.calendarColorHex,
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: mirrorKey
+        )
+    }
+}
+
 struct InvitationService {
     func accept(_ invitation: EventInvitation, createdLocalEventID: String) throws -> LocalCalendarEventDraft {
         guard invitation.status == .pending else {

@@ -141,6 +141,15 @@ final class CalendarAccessService {
     }
 
     func createLocalEvent(from draft: LocalCalendarEventDraft) throws -> String {
+        let createdEvent = try createEvent(from: draft, calendar: writableCalendarForNewEvents())
+        return createdEvent.eventIdentifier
+    }
+
+    func createShareCalEvent(from draft: LocalCalendarEventDraft) throws -> CreatedCalendarEvent {
+        try createEvent(from: draft, calendar: ensureShareCalEKCalendar())
+    }
+
+    private func createEvent(from draft: LocalCalendarEventDraft, calendar: EKCalendar) throws -> CreatedCalendarEvent {
         let event = EKEvent(eventStore: eventStore)
         event.title = draft.title
         event.startDate = draft.startDate
@@ -148,9 +157,14 @@ final class CalendarAccessService {
         event.isAllDay = draft.isAllDay
         event.location = draft.location
         event.notes = draft.notes
-        event.calendar = try writableCalendarForNewEvents()
+        event.calendar = calendar
         try eventStore.save(event, span: .thisEvent, commit: true)
-        return event.eventIdentifier ?? UUID().uuidString
+        return CreatedCalendarEvent(
+            eventIdentifier: event.eventIdentifier ?? UUID().uuidString,
+            calendarIdentifier: calendar.calendarIdentifier,
+            calendarTitle: calendar.title,
+            calendarColorHex: UIColor(cgColor: calendar.cgColor).hexString
+        )
     }
 
     private func writableCalendarForNewEvents() throws -> EKCalendar {

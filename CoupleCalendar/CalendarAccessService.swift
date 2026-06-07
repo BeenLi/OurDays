@@ -140,6 +140,33 @@ final class CalendarAccessService {
         }
     }
 
+    func existingEventIdentifiers(for eventIdentifiers: Set<String>) -> Set<String> {
+        Set(eventIdentifiers.filter { eventStore.event(withIdentifier: $0) != nil })
+    }
+
+    func localEventExists(for invitation: EventInvitation) -> Bool {
+        if let localEventID = invitation.createdLocalEventID,
+           !localEventID.isEmpty,
+           eventStore.event(withIdentifier: localEventID) != nil {
+            return true
+        }
+
+        let searchStart = invitation.startDate.addingTimeInterval(-60)
+        let searchEnd = invitation.endDate.addingTimeInterval(60)
+        let predicate = eventStore.predicateForEvents(
+            withStart: searchStart,
+            end: searchEnd,
+            calendars: eventStore.calendars(for: .event)
+        )
+
+        return eventStore.events(matching: predicate).contains { event in
+            event.title == invitation.title
+                && event.isAllDay == invitation.isAllDay
+                && abs(event.startDate.timeIntervalSince(invitation.startDate)) <= 60
+                && abs(event.endDate.timeIntervalSince(invitation.endDate)) <= 60
+        }
+    }
+
     func createLocalEvent(from draft: LocalCalendarEventDraft) throws -> String {
         let createdEvent = try createEvent(from: draft, calendar: writableCalendarForNewEvents())
         return createdEvent.eventIdentifier

@@ -16,6 +16,13 @@ enum AppLanguage: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum CalendarMode: String, CaseIterable, Identifiable {
+    case day = "Day"
+    case week = "Week"
+
+    var id: String { rawValue }
+}
+
 enum AppLanguagePreference {
     static let defaultLanguage: AppLanguage = .english
     static let key = "appLanguage"
@@ -46,6 +53,20 @@ struct ShareCalStrings {
     var meTitle: String { text("Me", "我") }
     var partnerTitle: String { text("Partner", "对方") }
     var syncAccessibilityLabel: String { text("Sync", "同步") }
+    var createInviteAccessibilityLabel: String { text("Create invite", "新建邀请") }
+    var previousDateAccessibilityLabel: String { text("Previous date", "上一个日期") }
+    var nextDateAccessibilityLabel: String { text("Next date", "下一个日期") }
+    var selectDateAccessibilityLabel: String { text("Select date", "选择日期") }
+    var todayButton: String { text("Today", "今天") }
+    var datePickerTitle: String { text("Select Date", "选择日期") }
+    var newInviteTitle: String { text("New Invite", "新建邀请") }
+    var titleLabel: String { text("Title", "标题") }
+    var dateLabel: String { text("Date", "日期") }
+    var notesLabel: String { text("Notes", "备注") }
+    var sendInviteButton: String { text("Send Invite", "发送邀请") }
+    var createInviteSection: String { text("Details", "详情") }
+    var emptyTitleError: String { text("Title is required.", "请输入标题。") }
+    var invalidDateRangeError: String { text("End time must be after start time.", "结束时间必须晚于开始时间。") }
     var noSharedSchedulesTitle: String { text("No shared schedules", "暂无共享日程") }
     var noSharedSchedulesDescription: String {
         text("Preview a paired schedule or choose calendars in Settings.", "预览双方日程，或在设置中选择要共享的日历。")
@@ -226,6 +247,190 @@ struct DayTimelineEventFrame: Equatable {
     let height: CGFloat
 }
 
+enum CalendarNavigationDirection {
+    case previous
+    case next
+}
+
+struct CalendarDateSelectionResult: Equatable {
+    let selectedDate: Date
+    let mode: CalendarMode
+}
+
+enum CalendarDateNavigationPlan {
+    static func date(
+        afterMoving selectedDate: Date,
+        mode: CalendarMode,
+        direction: CalendarNavigationDirection,
+        calendar: Calendar = .current
+    ) -> Date {
+        let value: Int
+        let component: Calendar.Component
+        switch mode {
+        case .day:
+            value = direction == .next ? 1 : -1
+            component = .day
+        case .week:
+            value = direction == .next ? 7 : -7
+            component = .day
+        }
+        return calendar.date(byAdding: component, value: value, to: selectedDate) ?? selectedDate
+    }
+
+    static func dateStrip(
+        around selectedDate: Date,
+        range: ClosedRange<Int> = -3...3,
+        calendar: Calendar = .current
+    ) -> [Date] {
+        let dayStart = calendar.startOfDay(for: selectedDate)
+        return range.compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: dayStart)
+        }
+    }
+
+    static func selectionResult(for date: Date) -> CalendarDateSelectionResult {
+        CalendarDateSelectionResult(selectedDate: date, mode: .day)
+    }
+
+    static func title(for selectedDate: Date, mode: CalendarMode, calendar: Calendar = .current) -> String {
+        switch mode {
+        case .day:
+            return selectedDate.formatted(date: .abbreviated, time: .omitted)
+        case .week:
+            let interval = calendar.dateInterval(of: .weekOfYear, for: selectedDate)
+                ?? DateInterval(start: selectedDate, duration: 7 * 24 * 60 * 60)
+            let end = calendar.date(byAdding: .day, value: -1, to: interval.end) ?? interval.end
+            return "\(interval.start.formatted(date: .abbreviated, time: .omitted)) - \(end.formatted(date: .abbreviated, time: .omitted))"
+        }
+    }
+
+    static func compactTitle(
+        for selectedDate: Date,
+        mode: CalendarMode,
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        switch mode {
+        case .day:
+            return monthDayText(for: selectedDate, calendar: calendar, locale: locale)
+        case .week:
+            let interval = calendar.dateInterval(of: .weekOfYear, for: selectedDate)
+                ?? DateInterval(start: selectedDate, duration: 7 * 24 * 60 * 60)
+            let weekStart = calendar.startOfDay(for: interval.start)
+            let weekEnd = calendar.date(byAdding: .day, value: -1, to: interval.end) ?? interval.end
+            if calendar.component(.year, from: weekStart) == calendar.component(.year, from: weekEnd),
+               calendar.component(.month, from: weekStart) == calendar.component(.month, from: weekEnd) {
+                return "\(monthText(for: weekStart, calendar: calendar, locale: locale)) \(dayText(for: weekStart, calendar: calendar, locale: locale))-\(dayText(for: weekEnd, calendar: calendar, locale: locale))"
+            }
+            return "\(monthDayText(for: weekStart, calendar: calendar, locale: locale))-\(monthDayText(for: weekEnd, calendar: calendar, locale: locale))"
+        }
+    }
+
+    private static func monthDayText(for date: Date, calendar: Calendar, locale: Locale) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = locale
+        formatter.timeZone = calendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate("MMM d")
+        return formatter.string(from: date)
+    }
+
+    private static func monthText(for date: Date, calendar: Calendar, locale: Locale) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = locale
+        formatter.timeZone = calendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate("MMM")
+        return formatter.string(from: date)
+    }
+
+    private static func dayText(for date: Date, calendar: Calendar, locale: Locale) -> String {
+        String(calendar.component(.day, from: date))
+    }
+}
+
+enum HierarchicalDatePickerLevel: Equatable {
+    case month
+    case months
+    case years
+}
+
+struct HierarchicalMonthDay: Identifiable, Equatable {
+    let date: Date
+    let isInDisplayedMonth: Bool
+
+    var id: Date { date }
+}
+
+struct HierarchicalDatePickerNavigation: Equatable {
+    let level: HierarchicalDatePickerLevel
+    let visibleMonth: Date
+    let selectedDate: Date?
+}
+
+enum HierarchicalDatePickerPlan {
+    static func normalizedMonth(containing date: Date, calendar: Calendar = .current) -> Date {
+        let components = calendar.dateComponents([.year, .month], from: date)
+        return calendar.date(from: components) ?? calendar.startOfDay(for: date)
+    }
+
+    static func monthGrid(containing date: Date, calendar: Calendar = .current) -> [HierarchicalMonthDay] {
+        let monthStart = normalizedMonth(containing: date, calendar: calendar)
+        guard let monthInterval = calendar.dateInterval(of: .month, for: monthStart),
+              let weekInterval = calendar.dateInterval(of: .weekOfYear, for: monthInterval.start) else {
+            return []
+        }
+
+        let displayedMonth = calendar.component(.month, from: monthStart)
+        return (0..<42).compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: weekInterval.start) else {
+                return nil
+            }
+            return HierarchicalMonthDay(
+                date: calendar.startOfDay(for: day),
+                isInDisplayedMonth: calendar.component(.month, from: day) == displayedMonth
+            )
+        }
+    }
+
+    static func months(inYearContaining date: Date, calendar: Calendar = .current) -> [Date] {
+        let year = calendar.component(.year, from: date)
+        return (1...12).compactMap { month in
+            calendar.date(from: DateComponents(year: year, month: month, day: 1))
+        }
+    }
+
+    static func years(centeredOn date: Date, calendar: Calendar = .current) -> [Date] {
+        let currentYear = calendar.component(.year, from: date)
+        let firstYear = currentYear - 5
+        return (0..<12).compactMap { offset in
+            calendar.date(from: DateComponents(year: firstYear + offset, month: 1, day: 1))
+        }
+    }
+
+    static func selectYear(_ date: Date, calendar: Calendar = .current) -> HierarchicalDatePickerNavigation {
+        let year = calendar.component(.year, from: date)
+        let visibleMonth = calendar.date(from: DateComponents(year: year, month: 1, day: 1)) ?? date
+        return HierarchicalDatePickerNavigation(level: .months, visibleMonth: visibleMonth, selectedDate: nil)
+    }
+
+    static func selectMonth(_ date: Date, calendar: Calendar = .current) -> HierarchicalDatePickerNavigation {
+        HierarchicalDatePickerNavigation(
+            level: .month,
+            visibleMonth: normalizedMonth(containing: date, calendar: calendar),
+            selectedDate: nil
+        )
+    }
+
+    static func selectDay(_ date: Date, calendar: Calendar = .current) -> HierarchicalDatePickerNavigation {
+        HierarchicalDatePickerNavigation(
+            level: .month,
+            visibleMonth: normalizedMonth(containing: date, calendar: calendar),
+            selectedDate: calendar.startOfDay(for: date)
+        )
+    }
+}
+
 struct DayTimelineJointPlacement: Equatable {
     let columnIndex: Int
     let columnCount: Int
@@ -262,6 +467,12 @@ enum DayTimelineJointLayoutPlan {
 }
 
 enum DayTimelineScrollTargetPlan {
+    static let defaultStartHour = 8
+
+    static func defaultTargetY(hourHeight: CGFloat, startHour: Int = defaultStartHour) -> CGFloat {
+        CGFloat(startHour) * hourHeight
+    }
+
     static func targetY(
         for event: JointScheduleEvent,
         dayStart: Date,

@@ -121,6 +121,7 @@ struct SyncCoordinator {
         settings.lastSyncError = nil
 
         do {
+            let syncedAt = Date()
             if settings.selectedCalendarIDs.isEmpty {
                 let calendar = try calendarAccess.ensureShareCalCalendar()
                 settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
@@ -141,11 +142,61 @@ struct SyncCoordinator {
                 ownerMemberID: settings.currentMemberID,
                 visibility: settings.defaultVisibility
             )
+            let activeShadows = eventMirrorService.makeShadows(
+                from: sourceEvents,
+                selectedCalendarIDs: settings.selectedCalendarIDs,
+                uploadedAt: syncedAt
+            )
+            let currentMirrorKeys = Set(mirrors.map(\.mirrorKey))
+            let existingShadows = try modelContext.fetch(FetchDescriptor<LocalEventShadow>())
+            let deletedShadows = eventMirrorService.deletedShadows(
+                existingEventKeys: currentMirrorKeys,
+                shadows: existingShadows,
+                selectedCalendarIDs: settings.selectedCalendarIDs,
+                syncWindow: window
+            )
+            let existingLocalMirrors = try localMirrors(
+                ownerMemberID: settings.currentMemberID,
+                modelContext: modelContext
+            )
+            let deletedMirrorsFromShadows = eventMirrorService.deletedMirrorTombstones(
+                for: deletedShadows,
+                existingMirrors: existingLocalMirrors,
+                deletedAt: syncedAt
+            )
+            let deletedMirrorsFromExistingLocalState = eventMirrorService.deletedMirrorTombstones(
+                existingEventKeys: currentMirrorKeys,
+                existingMirrors: existingLocalMirrors,
+                selectedCalendarIDs: settings.selectedCalendarIDs,
+                syncWindow: window,
+                deletedAt: syncedAt
+            )
+            var deletedMirrorByKey: [String: EventMirror] = [:]
+            for mirror in deletedMirrorsFromShadows + deletedMirrorsFromExistingLocalState {
+                deletedMirrorByKey[mirror.mirrorKey] = mirror
+            }
+            let deletedMirrors = deletedMirrorByKey.keys.sorted().compactMap { deletedMirrorByKey[$0] }
+            let mirrorsForSync = mirrors + deletedMirrors
 
-            try upsert(mirrors: mirrors, modelContext: modelContext)
+            try upsert(mirrors: mirrorsForSync, modelContext: modelContext)
+            try upsert(shadows: activeShadows + deletedShadows, modelContext: modelContext)
+            let localInvitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
+            let canceledInvitations = InvitationLocalEventSyncPlan.cancelAcceptedInvitationsMissingLocalEvents(
+                localInvitations,
+                now: syncedAt,
+                localEventExists: { invitation in
+                    calendarAccess.localEventExists(for: invitation)
+                }
+            )
+            if !canceledInvitations.isEmpty {
+                try modelContext.save()
+            }
             if let cloudKit {
                 try await cloudKit.ensureShareRoot(ownerMemberID: settings.currentMemberID)
-                try await cloudKit.saveMirrorsForSync(mirrors)
+                try await cloudKit.saveMirrorsForSync(mirrorsForSync)
+                for invitation in canceledInvitations {
+                    try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                }
                 try await cloudKit.foregroundSync()
                 let sharedMirrors = try await cloudKit.fetchSharedEventMirrors()
                 let importableSharedMirrors = CloudKitSharedDatabaseImportPlan.localizedMirrors(
@@ -167,6 +218,13 @@ struct SyncCoordinator {
             settings.lastSyncError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
             settings.syncPhase = .failed
         }
+    }
+
+    private func localMirrors(ownerMemberID: String, modelContext: ModelContext) throws -> [EventMirror] {
+        let descriptor = FetchDescriptor<EventMirror>(
+            predicate: #Predicate { $0.ownerMemberID == ownerMemberID }
+        )
+        return try modelContext.fetch(descriptor)
     }
 
     private func upsert(mirrors: [EventMirror], modelContext: ModelContext) throws {
@@ -194,6 +252,27 @@ struct SyncCoordinator {
                 existing.cloudKitRecordName = mirror.cloudKitRecordName
             } else {
                 modelContext.insert(mirror)
+            }
+        }
+        try modelContext.save()
+    }
+
+    private func upsert(shadows: [LocalEventShadow], modelContext: ModelContext) throws {
+        for shadow in shadows {
+            let shadowID = shadow.id
+            let descriptor = FetchDescriptor<LocalEventShadow>(
+                predicate: #Predicate { $0.id == shadowID }
+            )
+            if let existing = try modelContext.fetch(descriptor).first {
+                existing.localEventIdentifier = shadow.localEventIdentifier
+                existing.calendarIdentifier = shadow.calendarIdentifier
+                existing.occurrenceStartDate = shadow.occurrenceStartDate
+                existing.fingerprint = shadow.fingerprint
+                existing.cloudKitRecordName = shadow.cloudKitRecordName
+                existing.lastUploadedAt = shadow.lastUploadedAt
+                existing.isTombstone = shadow.isTombstone
+            } else {
+                modelContext.insert(shadow)
             }
         }
         try modelContext.save()

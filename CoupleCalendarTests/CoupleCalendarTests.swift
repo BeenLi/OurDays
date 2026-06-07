@@ -99,6 +99,119 @@ final class EventMirrorServiceTests: XCTestCase {
         XCTAssertEqual(tombstones.map(\.cloudKitRecordName), ["record-1"])
         XCTAssertTrue(tombstones[0].isTombstone)
     }
+
+    func testBuildsLocalEventShadowsForUploadedMirrors() {
+        let event = CalendarSourceEvent(
+            eventIdentifier: "event-1",
+            calendarIdentifier: "work",
+            calendarTitle: "Work",
+            calendarColorHex: "#3A86FF",
+            startDate: Date(timeIntervalSince1970: 1_800),
+            endDate: Date(timeIntervalSince1970: 3_600),
+            occurrenceStartDate: Date(timeIntervalSince1970: 1_800),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: "Planning",
+            location: "Cafe",
+            notes: "Bring notes",
+            url: URL(string: "https://example.com")
+        )
+
+        let shadows = EventMirrorService().makeShadows(
+            from: [event],
+            selectedCalendarIDs: ["work"],
+            uploadedAt: Date(timeIntervalSince1970: 5_000)
+        )
+
+        XCTAssertEqual(shadows.count, 1)
+        XCTAssertEqual(shadows[0].id, "work:event-1:1800")
+        XCTAssertEqual(shadows[0].mirrorKey, "work:event-1:1800")
+        XCTAssertEqual(shadows[0].cloudKitRecordName, "work:event-1:1800")
+        XCTAssertEqual(shadows[0].lastUploadedAt, Date(timeIntervalSince1970: 5_000))
+        XCTAssertFalse(shadows[0].isTombstone)
+    }
+
+    func testDeletedLocalEventProducesDeletedMirrorTombstone() {
+        let deletedAt = Date(timeIntervalSince1970: 6_000)
+        let existingMirror = EventMirror(
+            id: "work:event-1:1800",
+            ownerMemberID: "me",
+            mirrorKey: "work:event-1:1800",
+            sourceCalendarID: "work",
+            sourceCalendarTitle: "Work",
+            occurrenceStartDate: Date(timeIntervalSince1970: 1_800),
+            startDate: Date(timeIntervalSince1970: 1_800),
+            endDate: Date(timeIntervalSince1970: 3_600),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: "Planning",
+            location: "Cafe",
+            notes: "Bring notes",
+            urlString: "https://example.com",
+            calendarColorHex: "#3A86FF",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: "record-1"
+        )
+        let deletedShadow = LocalEventShadow(
+            id: "work:event-1:1800",
+            localEventIdentifier: "event-1",
+            calendarIdentifier: "work",
+            occurrenceStartDate: Date(timeIntervalSince1970: 1_800),
+            fingerprint: "old",
+            cloudKitRecordName: "record-1",
+            lastUploadedAt: Date(timeIntervalSince1970: 5_000),
+            isTombstone: true
+        )
+
+        let tombstones = EventMirrorService().deletedMirrorTombstones(
+            for: [deletedShadow],
+            existingMirrors: [existingMirror],
+            deletedAt: deletedAt
+        )
+
+        XCTAssertEqual(tombstones.count, 1)
+        XCTAssertEqual(tombstones[0].mirrorKey, "work:event-1:1800")
+        XCTAssertEqual(tombstones[0].title, "Planning")
+        XCTAssertEqual(tombstones[0].cloudKitRecordName, "record-1")
+        XCTAssertEqual(tombstones[0].deletedAt, deletedAt)
+    }
+
+    func testMissingLocalMirrorProducesDeletedTombstoneEvenWithoutShadow() {
+        let deletedAt = Date(timeIntervalSince1970: 6_000)
+        let existingMirror = EventMirror(
+            id: "work:event-1:1800",
+            ownerMemberID: "me",
+            mirrorKey: "work:event-1:1800",
+            sourceCalendarID: "work",
+            sourceCalendarTitle: "Work",
+            occurrenceStartDate: Date(timeIntervalSince1970: 1_800),
+            startDate: Date(timeIntervalSince1970: 1_800),
+            endDate: Date(timeIntervalSince1970: 3_600),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: "Planning",
+            location: "Cafe",
+            notes: "Bring notes",
+            urlString: nil,
+            calendarColorHex: "#3A86FF",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: "record-1"
+        )
+
+        let tombstones = EventMirrorService().deletedMirrorTombstones(
+            existingEventKeys: [],
+            existingMirrors: [existingMirror],
+            selectedCalendarIDs: ["work"],
+            syncWindow: DateInterval(start: Date(timeIntervalSince1970: 1_000), end: Date(timeIntervalSince1970: 5_000)),
+            deletedAt: deletedAt
+        )
+
+        XCTAssertEqual(tombstones.count, 1)
+        XCTAssertEqual(tombstones[0].mirrorKey, "work:event-1:1800")
+        XCTAssertEqual(tombstones[0].deletedAt, deletedAt)
+    }
 }
 
 final class ShareCalCalendarBootstrapPlanTests: XCTestCase {
@@ -1075,6 +1188,85 @@ final class InvitationServiceTests: XCTestCase {
 
         XCTAssertFalse(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "partner"))
     }
+
+    func testCancelsAcceptedInvitationWhenCreatedLocalEventIsMissing() {
+        let missingLocalEvent = EventInvitation(
+            id: "missing",
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.accepted.rawValue,
+            createdLocalEventID: "local-missing"
+        )
+        let existingLocalEvent = EventInvitation(
+            id: "existing",
+            creatorMemberID: "partner",
+            inviteeMemberID: "me",
+            title: "Lunch",
+            startDate: Date(timeIntervalSince1970: 13_000),
+            endDate: Date(timeIntervalSince1970: 14_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.accepted.rawValue,
+            createdLocalEventID: "local-existing"
+        )
+        let pending = EventInvitation(
+            id: "pending",
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Pending",
+            startDate: Date(timeIntervalSince1970: 15_000),
+            endDate: Date(timeIntervalSince1970: 16_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.pending.rawValue,
+            createdLocalEventID: "local-pending"
+        )
+
+        let canceled = InvitationLocalEventSyncPlan.cancelAcceptedInvitationsMissingLocalEvents(
+            [missingLocalEvent, existingLocalEvent, pending],
+            existingLocalEventIDs: ["local-existing"],
+            now: Date(timeIntervalSince1970: 20_000)
+        )
+
+        XCTAssertEqual(canceled.map(\.id), ["missing"])
+        XCTAssertEqual(missingLocalEvent.status, .canceled)
+        XCTAssertEqual(missingLocalEvent.updatedAt, Date(timeIntervalSince1970: 20_000))
+        XCTAssertEqual(existingLocalEvent.status, .accepted)
+        XCTAssertEqual(pending.status, .pending)
+    }
+
+    func testKeepsAcceptedInvitationWhenFallbackLocalEventMatcherFindsIt() {
+        let invitation = EventInvitation(
+            id: "accepted",
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.accepted.rawValue,
+            createdLocalEventID: "stale-local-id"
+        )
+
+        let canceled = InvitationLocalEventSyncPlan.cancelAcceptedInvitationsMissingLocalEvents(
+            [invitation],
+            now: Date(timeIntervalSince1970: 20_000),
+            localEventExists: { candidate in
+                candidate.title == "Dinner"
+                    && candidate.startDate == Date(timeIntervalSince1970: 10_000)
+                    && candidate.endDate == Date(timeIntervalSince1970: 12_000)
+            }
+        )
+
+        XCTAssertTrue(canceled.isEmpty)
+        XCTAssertEqual(invitation.status, .accepted)
+    }
 }
 
 final class InvitationListPlanTests: XCTestCase {
@@ -1138,6 +1330,12 @@ final class InvitationListPlanTests: XCTestCase {
 }
 
 final class DayTimelineScrollTargetPlanTests: XCTestCase {
+    func testDefaultsInitialScrollTargetToEightAM() {
+        let targetY = DayTimelineScrollTargetPlan.defaultTargetY(hourHeight: 58)
+
+        XCTAssertEqual(targetY, 464, accuracy: 0.001)
+    }
+
     func testTargetsEventStartTimeInsteadOfOffsetLayoutOrigin() throws {
         let calendar = Calendar(identifier: .gregorian)
         let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
@@ -1160,6 +1358,230 @@ final class DayTimelineScrollTargetPlanTests: XCTestCase {
         )
 
         XCTAssertEqual(targetY, 870, accuracy: 0.001)
+    }
+}
+
+final class CalendarDateNavigationPlanTests: XCTestCase {
+    func testMovesByDayOrWeekAndBuildsStripAroundSelectedDate() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let selected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
+
+        XCTAssertEqual(
+            CalendarDateNavigationPlan.date(afterMoving: selected, mode: .day, direction: .previous, calendar: calendar),
+            try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 6)))
+        )
+        XCTAssertEqual(
+            CalendarDateNavigationPlan.date(afterMoving: selected, mode: .week, direction: .next, calendar: calendar),
+            try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 14)))
+        )
+
+        let strip = CalendarDateNavigationPlan.dateStrip(around: selected, calendar: calendar)
+
+        XCTAssertEqual(strip.first, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 4))))
+        XCTAssertEqual(strip.last, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 10))))
+    }
+
+    func testSelectingDateFromHierarchySwitchesToDayMode() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let selected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 15)))
+
+        let result = CalendarDateNavigationPlan.selectionResult(for: selected)
+
+        XCTAssertEqual(result.selectedDate, selected)
+        XCTAssertEqual(result.mode, .day)
+    }
+
+    func testBuildsCompactDayAndWeekTitles() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 2
+        let locale = Locale(identifier: "en_US_POSIX")
+        let selected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 25)))
+
+        let dayTitle = CalendarDateNavigationPlan.compactTitle(
+            for: selected,
+            mode: .day,
+            calendar: calendar,
+            locale: locale
+        )
+        let weekTitle = CalendarDateNavigationPlan.compactTitle(
+            for: selected,
+            mode: .week,
+            calendar: calendar,
+            locale: locale
+        )
+
+        XCTAssertEqual(dayTitle, "Sep 25")
+        XCTAssertEqual(weekTitle, "Sep 21-27")
+    }
+}
+
+final class HierarchicalDatePickerPlanTests: XCTestCase {
+    func testMonthGridIncludesLeadingAndTrailingDays() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 1
+        let month = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 15)))
+
+        let days = HierarchicalDatePickerPlan.monthGrid(containing: month, calendar: calendar)
+
+        XCTAssertEqual(days.count, 42)
+        XCTAssertEqual(days.first?.date, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 31))))
+        XCTAssertEqual(days.first { $0.isInDisplayedMonth }?.date, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1))))
+    }
+
+    func testMonthAndYearSelectionNavigateWithoutProducingDate() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let visibleMonth = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 15)))
+        let selectedYear = try XCTUnwrap(calendar.date(from: DateComponents(year: 2030, month: 1, day: 1)))
+        let selectedMonth = try XCTUnwrap(calendar.date(from: DateComponents(year: 2030, month: 11, day: 1)))
+
+        let yearNavigation = HierarchicalDatePickerPlan.selectYear(selectedYear, calendar: calendar)
+        let monthNavigation = HierarchicalDatePickerPlan.selectMonth(selectedMonth, calendar: calendar)
+        let days = HierarchicalDatePickerPlan.months(inYearContaining: visibleMonth, calendar: calendar)
+
+        XCTAssertEqual(yearNavigation.level, .months)
+        XCTAssertEqual(calendar.component(.year, from: yearNavigation.visibleMonth), 2030)
+        XCTAssertNil(yearNavigation.selectedDate)
+        XCTAssertEqual(monthNavigation.level, .month)
+        XCTAssertEqual(calendar.component(.month, from: monthNavigation.visibleMonth), 11)
+        XCTAssertNil(monthNavigation.selectedDate)
+        XCTAssertEqual(days.count, 12)
+    }
+}
+
+final class WeekAgendaPlanTests: XCTestCase {
+    func testBuildsSevenDayAgendaAndSortsMixedItemsByTime() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 2
+        let selected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 10)))
+        let monday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8)))
+        let myEvent = eventMirror(
+            id: "me-late",
+            ownerMemberID: "me",
+            title: "Late",
+            startDate: monday.addingTimeInterval(15 * 60 * 60),
+            endDate: monday.addingTimeInterval(16 * 60 * 60)
+        )
+        let partnerEvent = eventMirror(
+            id: "partner-early",
+            ownerMemberID: "partner",
+            title: "Early",
+            startDate: monday.addingTimeInterval(9 * 60 * 60),
+            endDate: monday.addingTimeInterval(10 * 60 * 60)
+        )
+        let jointEvent = JointScheduleEvent(
+            id: "joint-mid",
+            title: "Together",
+            startDate: monday.addingTimeInterval(12 * 60 * 60),
+            endDate: monday.addingTimeInterval(13 * 60 * 60),
+            isAllDay: false,
+            location: nil,
+            notes: nil
+        )
+
+        let days = WeekAgendaPlan.days(
+            containing: selected,
+            mirrors: [myEvent, partnerEvent],
+            jointEvents: [jointEvent],
+            currentMemberID: "me",
+            calendar: calendar
+        )
+
+        XCTAssertEqual(days.count, 7)
+        XCTAssertEqual(days[0].date, monday)
+        XCTAssertEqual(days[0].items.map(\.title), ["Early", "Together", "Late"])
+        XCTAssertEqual(days[0].items.map(\.kind), [.partner, .joint, .currentMember])
+    }
+
+    private func eventMirror(
+        id: String,
+        ownerMemberID: String,
+        title: String,
+        startDate: Date,
+        endDate: Date
+    ) -> EventMirror {
+        EventMirror(
+            id: id,
+            ownerMemberID: ownerMemberID,
+            mirrorKey: id,
+            sourceCalendarID: "sharecal",
+            sourceCalendarTitle: "ShareCal",
+            occurrenceStartDate: startDate,
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: title,
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#FF2D55",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: id
+        )
+    }
+}
+
+final class CreateInvitePlanTests: XCTestCase {
+    func testBuildsFutureInviteArtifactsForShareCalCalendar() throws {
+        let start = Date(timeIntervalSince1970: 20_000)
+        let draft = CreateInviteDraft(
+            title: "Weekend trip",
+            startDate: start,
+            endDate: start.addingTimeInterval(2 * 60 * 60),
+            isAllDay: false,
+            location: "Beach",
+            notes: "Bring camera"
+        )
+        let createdEvent = CreatedCalendarEvent(
+            eventIdentifier: "event-1",
+            calendarIdentifier: "sharecal",
+            calendarTitle: "ShareCal",
+            calendarColorHex: "#FF2D55"
+        )
+
+        let localDraft = try CreateInvitePlan.localCalendarDraft(from: draft)
+        let mirror = try CreateInvitePlan.mirror(
+            from: draft,
+            createdEvent: createdEvent,
+            ownerMemberID: "me",
+            timeZoneIdentifier: "Asia/Singapore"
+        )
+        let invitation = try CreateInvitePlan.invitation(
+            from: draft,
+            creatorMemberID: "me",
+            inviteeMemberID: "partner"
+        )
+
+        XCTAssertEqual(localDraft.title, "Weekend trip")
+        XCTAssertEqual(mirror.mirrorKey, "sharecal:event-1:20000")
+        XCTAssertEqual(mirror.ownerMemberID, "me")
+        XCTAssertEqual(invitation.status, .pending)
+        XCTAssertEqual(invitation.title, "Weekend trip")
+        XCTAssertEqual(invitation.location, "Beach")
+    }
+
+    func testRejectsEmptyTitleAndInvalidDateRange() {
+        let start = Date(timeIntervalSince1970: 20_000)
+        let emptyTitle = CreateInviteDraft(
+            title: "  ",
+            startDate: start,
+            endDate: start.addingTimeInterval(60),
+            isAllDay: false,
+            location: nil,
+            notes: nil
+        )
+        let invalidRange = CreateInviteDraft(
+            title: "Weekend trip",
+            startDate: start,
+            endDate: start,
+            isAllDay: false,
+            location: nil,
+            notes: nil
+        )
+
+        XCTAssertThrowsError(try CreateInvitePlan.localCalendarDraft(from: emptyTitle))
+        XCTAssertThrowsError(try CreateInvitePlan.localCalendarDraft(from: invalidRange))
     }
 }
 

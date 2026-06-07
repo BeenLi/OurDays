@@ -139,6 +139,19 @@ final class ShareCalSmokeTestEventPlanTests: XCTestCase {
         XCTAssertFalse(draft.isAllDay)
         XCTAssertEqual(draft.notes, "Created by ShareCal simulator validation.")
     }
+
+    func testUsesCustomLaunchSeedTitleWhenProvided() {
+        let title = ShareCalLaunchDiagnosticPlan.seedCalendarEventTitle(
+            arguments: [
+                "ShareCal",
+                "-ShareCalSeedCalendarEvent",
+                "-ShareCalSeedCalendarEventTitle",
+                "Owner bidirectional event"
+            ]
+        )
+
+        XCTAssertEqual(title, "Owner bidirectional event")
+    }
 }
 
 final class CloudKitRecordMappingTests: XCTestCase {

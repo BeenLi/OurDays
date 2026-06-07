@@ -82,9 +82,9 @@ final class CalendarAccessService {
     }
 
     @discardableResult
-    func ensureShareCalSmokeTestEvent(now: Date = .now) throws -> String {
+    func ensureShareCalSmokeTestEvent(now: Date = .now, title: String = ShareCalSmokeTestEventPlan.title) throws -> String {
         let calendar = try ensureShareCalEKCalendar()
-        let draft = ShareCalSmokeTestEventPlan.draft(now: now)
+        let draft = ShareCalSmokeTestEventPlan.draft(now: now, title: title)
         let searchStart = draft.startDate.addingTimeInterval(-24 * 60 * 60)
         let searchEnd = draft.endDate.addingTimeInterval(24 * 60 * 60)
         let predicate = eventStore.predicateForEvents(

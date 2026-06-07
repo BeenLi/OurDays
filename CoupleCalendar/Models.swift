@@ -64,7 +64,7 @@ enum ShareCalSmokeTestEventPlan {
     static let title = "ShareCal E2E Smoke Test"
     static let notes = "Created by ShareCal simulator validation."
 
-    static func draft(now: Date = .now) -> LocalCalendarEventDraft {
+    static func draft(now: Date = .now, title: String = title) -> LocalCalendarEventDraft {
         LocalCalendarEventDraft(
             title: title,
             startDate: now.addingTimeInterval(15 * 60),

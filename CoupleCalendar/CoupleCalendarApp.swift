@@ -33,7 +33,10 @@ enum ShareCalLaunchDiagnostics {
     ) async {
         if ShareCalLaunchDiagnosticPlan.shouldSeedCalendarEvent(arguments: arguments) {
             do {
-                let eventID = try services.calendarAccess.ensureShareCalSmokeTestEvent()
+                let eventID = try services.calendarAccess.ensureShareCalSmokeTestEvent(
+                    title: ShareCalLaunchDiagnosticPlan.seedCalendarEventTitle(arguments: arguments)
+                        ?? ShareCalSmokeTestEventPlan.title
+                )
                 NSLog("ShareCal seeded calendar event: \(eventID)")
             } catch {
                 NSLog("ShareCal failed to seed calendar event: \(error)")

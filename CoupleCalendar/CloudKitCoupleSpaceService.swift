@@ -278,6 +278,7 @@ enum CloudKitCommentWritePlan {
 enum ShareCalLaunchDiagnosticPlan {
     static let cloudKitWriteProbeArgument = "-ShareCalCloudKitWriteProbe"
     static let seedCalendarEventArgument = "-ShareCalSeedCalendarEvent"
+    static let seedCalendarEventTitleArgument = "-ShareCalSeedCalendarEventTitle"
     static let cloudKitWriteProbeRecordType = "CoupleSpace"
 
     static func shouldRunCloudKitWriteProbe(arguments: [String]) -> Bool {
@@ -286,6 +287,20 @@ enum ShareCalLaunchDiagnosticPlan {
 
     static func shouldSeedCalendarEvent(arguments: [String]) -> Bool {
         arguments.contains(seedCalendarEventArgument)
+    }
+
+    static func seedCalendarEventTitle(arguments: [String]) -> String? {
+        guard let argumentIndex = arguments.firstIndex(of: seedCalendarEventTitleArgument) else {
+            return nil
+        }
+
+        let valueIndex = arguments.index(after: argumentIndex)
+        guard arguments.indices.contains(valueIndex) else {
+            return nil
+        }
+
+        let title = arguments[valueIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? nil : title
     }
 }
 

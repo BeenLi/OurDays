@@ -92,11 +92,15 @@ struct CalendarTabView: View {
         visibleMirrors.filter { $0.ownerMemberID != settings.currentMemberID }
     }
 
+    var selectedDayStart: Date {
+        Calendar.current.startOfDay(for: selectedDate)
+    }
+
     var visibleInterval: DateInterval {
         let calendar = Calendar.current
         switch mode {
         case .day:
-            let start = calendar.startOfDay(for: selectedDate)
+            let start = selectedDayStart
             let end = calendar.date(byAdding: .day, value: 1, to: start) ?? selectedDate
             return DateInterval(start: start, end: end)
         case .week:
@@ -127,28 +131,34 @@ struct CalendarTabView: View {
                 .frame(maxHeight: .infinity, alignment: .center)
             } else {
                 GeometryReader { proxy in
-                    ScrollView {
-                        HStack(alignment: .top, spacing: 10) {
-                            TimelineColumn(
-                                title: "Me",
-                                subtitle: settings.currentMemberID,
-                                events: myEvents,
-                                tint: .blue,
-                                width: max(160, (proxy.size.width - 30) / 2),
+                    switch mode {
+                    case .day:
+                        DayAlignedTimelineView(
+                            dayStart: selectedDayStart,
+                            myTitle: "Me",
+                            mySubtitle: settings.currentMemberID,
+                            myEvents: myEvents,
+                            partnerTitle: "Partner",
+                            partnerSubtitle: settings.partnerMemberID,
+                            partnerEvents: partnerEvents,
+                            availableWidth: proxy.size.width,
+                            onSelect: { selectedEvent = $0 }
+                        )
+                    case .week:
+                        ScrollView {
+                            TwoColumnTimelineList(
+                                myTitle: "Me",
+                                mySubtitle: settings.currentMemberID,
+                                myEvents: myEvents,
+                                partnerTitle: "Partner",
+                                partnerSubtitle: settings.partnerMemberID,
+                                partnerEvents: partnerEvents,
+                                availableWidth: proxy.size.width,
                                 onSelect: { selectedEvent = $0 }
                             )
-
-                            TimelineColumn(
-                                title: "Partner",
-                                subtitle: settings.partnerMemberID,
-                                events: partnerEvents,
-                                tint: .pink,
-                                width: max(160, (proxy.size.width - 30) / 2),
-                                onSelect: { selectedEvent = $0 }
-                            )
+                            .padding(.horizontal)
+                            .padding(.bottom, 24)
                         }
-                        .padding(.horizontal)
-                        .padding(.bottom, 24)
                     }
                 }
             }
@@ -283,6 +293,325 @@ struct SyncStatusBar: View {
             return "Last sync \(lastSyncAt.formatted(date: .omitted, time: .shortened))"
         }
         return "Not synced yet"
+    }
+}
+
+struct TwoColumnTimelineList: View {
+    let myTitle: String
+    let mySubtitle: String
+    let myEvents: [EventMirror]
+    let partnerTitle: String
+    let partnerSubtitle: String
+    let partnerEvents: [EventMirror]
+    let availableWidth: CGFloat
+    let onSelect: (EventMirror) -> Void
+
+    var columnWidth: CGFloat {
+        max(160, (availableWidth - 30) / 2)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            TimelineColumn(
+                title: myTitle,
+                subtitle: mySubtitle,
+                events: myEvents,
+                tint: .blue,
+                width: columnWidth,
+                onSelect: onSelect
+            )
+
+            TimelineColumn(
+                title: partnerTitle,
+                subtitle: partnerSubtitle,
+                events: partnerEvents,
+                tint: .pink,
+                width: columnWidth,
+                onSelect: onSelect
+            )
+        }
+    }
+}
+
+struct DayAlignedTimelineView: View {
+    let dayStart: Date
+    let myTitle: String
+    let mySubtitle: String
+    let myEvents: [EventMirror]
+    let partnerTitle: String
+    let partnerSubtitle: String
+    let partnerEvents: [EventMirror]
+    let availableWidth: CGFloat
+    let onSelect: (EventMirror) -> Void
+
+    private let hourHeight: CGFloat = 58
+    private let railWidth: CGFloat = 46
+    private let railSpacing: CGFloat = 8
+    private let laneSpacing: CGFloat = 10
+    private let horizontalPadding: CGFloat = 16
+
+    var dayHeight: CGFloat {
+        DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight)
+    }
+
+    var laneWidth: CGFloat {
+        let available = availableWidth - (horizontalPadding * 2) - railWidth - railSpacing - laneSpacing
+        return max(138, available / 2)
+    }
+
+    var contentWidth: CGFloat {
+        railWidth + railSpacing + (laneWidth * 2) + laneSpacing
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            DayTimelineHeader(
+                railWidth: railWidth,
+                railSpacing: railSpacing,
+                laneSpacing: laneSpacing,
+                laneWidth: laneWidth,
+                myTitle: myTitle,
+                mySubtitle: mySubtitle,
+                myCount: myEvents.count,
+                partnerTitle: partnerTitle,
+                partnerSubtitle: partnerSubtitle,
+                partnerCount: partnerEvents.count
+            )
+            .padding(.horizontal, horizontalPadding)
+
+            ScrollView(.vertical) {
+                ZStack(alignment: .topLeading) {
+                    DayTimelineHourGrid(
+                        hourHeight: hourHeight,
+                        railWidth: railWidth,
+                        railSpacing: railSpacing,
+                        contentWidth: contentWidth
+                    )
+
+                    HStack(alignment: .top, spacing: railSpacing) {
+                        DayTimelineHourRail(hourHeight: hourHeight, width: railWidth)
+
+                        HStack(alignment: .top, spacing: laneSpacing) {
+                            DayTimelineLane(
+                                events: myEvents,
+                                tint: .blue,
+                                dayStart: dayStart,
+                                hourHeight: hourHeight,
+                                width: laneWidth,
+                                onSelect: onSelect
+                            )
+
+                            DayTimelineLane(
+                                events: partnerEvents,
+                                tint: .pink,
+                                dayStart: dayStart,
+                                hourHeight: hourHeight,
+                                width: laneWidth,
+                                onSelect: onSelect
+                            )
+                        }
+                    }
+                }
+                .frame(width: contentWidth, height: dayHeight, alignment: .topLeading)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.bottom, 24)
+            }
+        }
+    }
+}
+
+struct DayTimelineHeader: View {
+    let railWidth: CGFloat
+    let railSpacing: CGFloat
+    let laneSpacing: CGFloat
+    let laneWidth: CGFloat
+    let myTitle: String
+    let mySubtitle: String
+    let myCount: Int
+    let partnerTitle: String
+    let partnerSubtitle: String
+    let partnerCount: Int
+
+    var body: some View {
+        HStack(alignment: .top, spacing: railSpacing) {
+            Color.clear
+                .frame(width: railWidth, height: 1)
+
+            HStack(alignment: .top, spacing: laneSpacing) {
+                DayTimelineColumnHeader(
+                    title: myTitle,
+                    subtitle: mySubtitle,
+                    count: myCount,
+                    tint: .blue,
+                    width: laneWidth
+                )
+
+                DayTimelineColumnHeader(
+                    title: partnerTitle,
+                    subtitle: partnerSubtitle,
+                    count: partnerCount,
+                    tint: .pink,
+                    width: laneWidth
+                )
+            }
+        }
+    }
+}
+
+struct DayTimelineColumnHeader: View {
+    let title: String
+    let subtitle: String
+    let count: Int
+    let tint: Color
+    let width: CGFloat
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Text("\(count)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+        }
+        .frame(width: width, alignment: .leading)
+    }
+}
+
+struct DayTimelineHourRail: View {
+    let hourHeight: CGFloat
+    let width: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            ForEach(DayTimelineLayoutPlan.hourMarks(hourHeight: hourHeight), id: \.hour) { mark in
+                Text(String(format: "%02d:00", mark.hour))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .offset(y: max(0, mark.y - 7))
+            }
+        }
+        .frame(width: width, height: DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight), alignment: .topTrailing)
+    }
+}
+
+struct DayTimelineHourGrid: View {
+    let hourHeight: CGFloat
+    let railWidth: CGFloat
+    let railSpacing: CGFloat
+    let contentWidth: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(DayTimelineLayoutPlan.hourMarks(hourHeight: hourHeight), id: \.hour) { mark in
+                Rectangle()
+                    .fill(Color(.separator).opacity(mark.hour == 0 ? 0.55 : 0.28))
+                    .frame(width: contentWidth - railWidth - railSpacing, height: 1)
+                    .offset(x: railWidth + railSpacing, y: mark.y)
+            }
+        }
+        .frame(width: contentWidth, height: DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight), alignment: .topLeading)
+    }
+}
+
+struct DayTimelineLane: View {
+    let events: [EventMirror]
+    let tint: Color
+    let dayStart: Date
+    let hourHeight: CGFloat
+    let width: CGFloat
+    let onSelect: (EventMirror) -> Void
+
+    var dayHeight: CGFloat {
+        DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight)
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(.secondarySystemBackground).opacity(0.55))
+
+            ForEach(events) { event in
+                let frame = frame(for: event)
+                let eventHeight = min(max(frame.height, 44), dayHeight)
+                let eventY = min(frame.y, max(0, dayHeight - eventHeight))
+
+                Button {
+                    onSelect(event)
+                } label: {
+                    DayTimelineEventBlock(event: event, tint: tint)
+                }
+                .buttonStyle(.plain)
+                .frame(width: max(44, width - 8), height: eventHeight, alignment: .top)
+                .offset(x: 4, y: eventY)
+                .accessibilityLabel("\(event.title), \(EventCard(event: event, tint: tint).timeText)")
+            }
+        }
+        .frame(width: width, height: dayHeight, alignment: .topLeading)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(.separator).opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func frame(for event: EventMirror) -> DayTimelineEventFrame {
+        if event.isAllDay {
+            return DayTimelineEventFrame(y: 0, height: hourHeight)
+        }
+
+        return DayTimelineLayoutPlan.eventFrame(
+            startDate: event.startDate,
+            endDate: event.endDate,
+            dayStart: dayStart,
+            hourHeight: hourHeight
+        )
+    }
+}
+
+struct DayTimelineEventBlock: View {
+    let event: EventMirror
+    let tint: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Rectangle()
+                .fill(Color(hex: event.calendarColorHex) ?? tint)
+                .frame(width: 3)
+                .clipShape(Capsule())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                Text(timeText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(7)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+    }
+
+    var timeText: String {
+        if event.isAllDay {
+            return "All day"
+        }
+        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
     }
 }
 

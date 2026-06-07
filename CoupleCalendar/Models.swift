@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import SwiftData
 
@@ -17,6 +18,50 @@ enum ShareCalAcceptedShareSignal {
         guard defaults.bool(forKey: pendingSyncKey) else { return false }
         defaults.set(false, forKey: pendingSyncKey)
         return true
+    }
+}
+
+struct DayTimelineHourMark: Equatable {
+    let hour: Int
+    let y: CGFloat
+}
+
+struct DayTimelineEventFrame: Equatable {
+    let y: CGFloat
+    let height: CGFloat
+}
+
+enum DayTimelineLayoutPlan {
+    static let hoursPerDay = 24
+
+    static func dayHeight(hourHeight: CGFloat) -> CGFloat {
+        CGFloat(hoursPerDay) * hourHeight
+    }
+
+    static func hourMarks(hourHeight: CGFloat) -> [DayTimelineHourMark] {
+        (0..<hoursPerDay).map { hour in
+            DayTimelineHourMark(hour: hour, y: CGFloat(hour) * hourHeight)
+        }
+    }
+
+    static func eventFrame(
+        startDate: Date,
+        endDate: Date,
+        dayStart: Date,
+        hourHeight: CGFloat,
+        calendar: Calendar = .current
+    ) -> DayTimelineEventFrame {
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 60 * 60)
+        let visibleStart = max(startDate, dayStart)
+        let visibleEnd = min(max(endDate, visibleStart), dayEnd)
+        let minutesFromStart = visibleStart.timeIntervalSince(dayStart) / 60
+        let visibleMinutes = max(visibleEnd.timeIntervalSince(visibleStart) / 60, 15)
+        let pointsPerMinute = hourHeight / 60
+
+        return DayTimelineEventFrame(
+            y: CGFloat(minutesFromStart) * pointsPerMinute,
+            height: CGFloat(visibleMinutes) * pointsPerMinute
+        )
     }
 }
 

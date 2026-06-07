@@ -154,6 +154,53 @@ final class ShareCalSmokeTestEventPlanTests: XCTestCase {
     }
 }
 
+final class DayTimelineLayoutPlanTests: XCTestCase {
+    func testProvidesTwentyFourAlignedHourMarks() {
+        let marks = DayTimelineLayoutPlan.hourMarks(hourHeight: 60)
+
+        XCTAssertEqual(marks.count, 24)
+        XCTAssertEqual(marks.first?.hour, 0)
+        XCTAssertEqual(marks.first?.y, 0)
+        XCTAssertEqual(marks.last?.hour, 23)
+        XCTAssertEqual(marks.last?.y, 23 * 60)
+        XCTAssertEqual(DayTimelineLayoutPlan.dayHeight(hourHeight: 60), 24 * 60)
+    }
+
+    func testPositionsEventByMinutesSinceStartOfDay() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
+        let start = try XCTUnwrap(calendar.date(bySettingHour: 9, minute: 30, second: 0, of: dayStart))
+        let end = try XCTUnwrap(calendar.date(bySettingHour: 10, minute: 45, second: 0, of: dayStart))
+
+        let frame = DayTimelineLayoutPlan.eventFrame(
+            startDate: start,
+            endDate: end,
+            dayStart: dayStart,
+            hourHeight: 48
+        )
+
+        XCTAssertEqual(frame.y, 9.5 * 48, accuracy: 0.001)
+        XCTAssertEqual(frame.height, 1.25 * 48, accuracy: 0.001)
+    }
+
+    func testClampsEventFrameToVisibleDay() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
+        let start = dayStart.addingTimeInterval(-30 * 60)
+        let end = dayStart.addingTimeInterval(90 * 60)
+
+        let frame = DayTimelineLayoutPlan.eventFrame(
+            startDate: start,
+            endDate: end,
+            dayStart: dayStart,
+            hourHeight: 60
+        )
+
+        XCTAssertEqual(frame.y, 0, accuracy: 0.001)
+        XCTAssertEqual(frame.height, 90, accuracy: 0.001)
+    }
+}
+
 final class CloudKitRecordMappingTests: XCTestCase {
     func testEventMirrorRoundTripsThroughCloudKitRecord() throws {
         let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")

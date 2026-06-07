@@ -113,6 +113,12 @@ enum InvitationError: LocalizedError {
     }
 }
 
+enum InvitationInteractionPlan {
+    static func canRespond(to invitation: EventInvitation, currentMemberID: String) -> Bool {
+        invitation.status == .pending && invitation.inviteeMemberID == currentMemberID
+    }
+}
+
 struct InvitationService {
     func accept(_ invitation: EventInvitation, createdLocalEventID: String) throws -> LocalCalendarEventDraft {
         guard invitation.status == .pending else {

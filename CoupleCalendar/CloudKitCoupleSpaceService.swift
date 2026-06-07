@@ -266,12 +266,26 @@ enum CloudKitCommentWriteDestination: Equatable {
     case acceptedSharedZone
 }
 
+enum CloudKitInvitationWriteDestination: Equatable {
+    case privateOwnerZone
+    case acceptedSharedZone
+}
+
 enum CloudKitCommentWritePlan {
     static func destination(
         eventOwnerMemberID: String,
         currentMemberID: String
     ) -> CloudKitCommentWriteDestination {
         eventOwnerMemberID == currentMemberID ? .privateOwnerZone : .acceptedSharedZone
+    }
+}
+
+enum CloudKitInvitationWritePlan {
+    static func destination(
+        creatorMemberID: String,
+        currentMemberID: String
+    ) -> CloudKitInvitationWriteDestination {
+        creatorMemberID == currentMemberID ? .privateOwnerZone : .acceptedSharedZone
     }
 }
 
@@ -397,27 +411,72 @@ enum EventMirrorRecordMapper {
 enum InvitationRecordMapper {
     static let recordType = "EventInvitation"
 
+    enum Key {
+        static let creatorMemberID = "creatorMemberID"
+        static let inviteeMemberID = "inviteeMemberID"
+        static let title = "title"
+        static let startDate = "startDate"
+        static let endDate = "endDate"
+        static let isAllDay = "isAllDay"
+        static let location = "location"
+        static let notes = "notes"
+        static let statusRawValue = "statusRawValue"
+        static let createdAt = "createdAt"
+        static let updatedAt = "updatedAt"
+        static let createdLocalEventID = "createdLocalEventID"
+    }
+
     static func record(
         from invitation: EventInvitation,
         zoneID: CKRecordZone.ID,
-        parentRecordID: CKRecord.ID? = nil
+        parentRecordID: CKRecord.ID? = nil,
+        existingRecord: CKRecord? = nil
     ) -> CKRecord {
         let recordName = invitation.cloudKitRecordName ?? invitation.id
-        let record = CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
+        let record = existingRecord ?? CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
         CloudKitShareHierarchyPlan.attach(record, toShareRoot: parentRecordID)
-        record["creatorMemberID"] = invitation.creatorMemberID as CKRecordValue
-        record["inviteeMemberID"] = invitation.inviteeMemberID as CKRecordValue
-        record["title"] = invitation.title as CKRecordValue
-        record["startDate"] = invitation.startDate as CKRecordValue
-        record["endDate"] = invitation.endDate as CKRecordValue
-        record["isAllDay"] = NSNumber(value: invitation.isAllDay)
-        record["location"] = invitation.location as CKRecordValue?
-        record["notes"] = invitation.notes as CKRecordValue?
-        record["statusRawValue"] = invitation.statusRawValue as CKRecordValue
-        record["createdAt"] = invitation.createdAt as CKRecordValue
-        record["updatedAt"] = invitation.updatedAt as CKRecordValue
-        record["createdLocalEventID"] = invitation.createdLocalEventID as CKRecordValue?
+        record[Key.creatorMemberID] = invitation.creatorMemberID as CKRecordValue
+        record[Key.inviteeMemberID] = invitation.inviteeMemberID as CKRecordValue
+        record[Key.title] = invitation.title as CKRecordValue
+        record[Key.startDate] = invitation.startDate as CKRecordValue
+        record[Key.endDate] = invitation.endDate as CKRecordValue
+        record[Key.isAllDay] = NSNumber(value: invitation.isAllDay)
+        record[Key.location] = invitation.location as CKRecordValue?
+        record[Key.notes] = invitation.notes as CKRecordValue?
+        record[Key.statusRawValue] = invitation.statusRawValue as CKRecordValue
+        record[Key.createdAt] = invitation.createdAt as CKRecordValue
+        record[Key.updatedAt] = invitation.updatedAt as CKRecordValue
+        record[Key.createdLocalEventID] = invitation.createdLocalEventID as CKRecordValue?
         return record
+    }
+
+    static func invitation(from record: CKRecord) throws -> EventInvitation {
+        guard let creatorMemberID = record[Key.creatorMemberID] as? String else { throw CloudKitRecordMappingError.missingField(Key.creatorMemberID) }
+        guard let inviteeMemberID = record[Key.inviteeMemberID] as? String else { throw CloudKitRecordMappingError.missingField(Key.inviteeMemberID) }
+        guard let title = record[Key.title] as? String else { throw CloudKitRecordMappingError.missingField(Key.title) }
+        guard let startDate = record[Key.startDate] as? Date else { throw CloudKitRecordMappingError.missingField(Key.startDate) }
+        guard let endDate = record[Key.endDate] as? Date else { throw CloudKitRecordMappingError.missingField(Key.endDate) }
+        guard let isAllDayNumber = record[Key.isAllDay] as? NSNumber else { throw CloudKitRecordMappingError.missingField(Key.isAllDay) }
+        guard let statusRawValue = record[Key.statusRawValue] as? String else { throw CloudKitRecordMappingError.missingField(Key.statusRawValue) }
+        guard let createdAt = record[Key.createdAt] as? Date else { throw CloudKitRecordMappingError.missingField(Key.createdAt) }
+        guard let updatedAt = record[Key.updatedAt] as? Date else { throw CloudKitRecordMappingError.missingField(Key.updatedAt) }
+
+        return EventInvitation(
+            id: record.recordID.recordName,
+            creatorMemberID: creatorMemberID,
+            inviteeMemberID: inviteeMemberID,
+            title: title,
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: isAllDayNumber.boolValue,
+            location: record[Key.location] as? String,
+            notes: record[Key.notes] as? String,
+            statusRawValue: statusRawValue,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            createdLocalEventID: record[Key.createdLocalEventID] as? String,
+            cloudKitRecordName: record.recordID.recordName
+        )
     }
 }
 
@@ -1157,6 +1216,25 @@ final class CloudKitCoupleSpaceService {
         syncDriver.queue(recordsToSave: records)
     }
 
+    @MainActor
+    func saveInvitationForSync(
+        _ invitation: EventInvitation,
+        currentMemberID: String
+    ) async throws {
+        switch CloudKitInvitationWritePlan.destination(
+            creatorMemberID: invitation.creatorMemberID,
+            currentMemberID: currentMemberID
+        ) {
+        case .privateOwnerZone:
+            try await ensureZone()
+            try await ensureShareRoot(ownerMemberID: currentMemberID)
+            try await saveInvitationsForSync([invitation], in: zoneID, database: privateDatabase)
+        case .acceptedSharedZone:
+            let targetZoneID = try await acceptedSharedZoneID(containingInvitationRecordName: invitation.cloudKitRecordName ?? invitation.id)
+            try await saveInvitationsForSync([invitation], in: targetZoneID, database: sharedDatabase)
+        }
+    }
+
     func queueCommentsForSync(_ comments: [EventComment]) {
         ensureSyncDriverStarted()
         let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
@@ -1185,6 +1263,46 @@ final class CloudKitCoupleSpaceService {
             let targetZoneID = try await acceptedSharedZoneID(containingEventRecordName: eventRecordName)
             try await saveCommentsForSync([comment], in: targetZoneID, database: sharedDatabase)
         }
+    }
+
+    @MainActor
+    private func saveInvitationsForSync(
+        _ invitations: [EventInvitation],
+        in targetZoneID: CKRecordZone.ID,
+        database: CKDatabase
+    ) async throws {
+        guard !invitations.isEmpty else {
+            cloudKitSharingInfo("saveInvitationsForSync skipped; no invitations")
+            return
+        }
+
+        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: targetZoneID)
+        var records: [CKRecord] = []
+        for invitation in invitations {
+            let recordName = invitation.cloudKitRecordName ?? invitation.id
+            let recordID = CKRecord.ID(recordName: recordName, zoneID: targetZoneID)
+            let existingRecord = try await fetchRecordForUpsertIfPresent(with: recordID, database: database)
+            records.append(
+                InvitationRecordMapper.record(
+                    from: invitation,
+                    zoneID: targetZoneID,
+                    parentRecordID: parentRecordID,
+                    existingRecord: existingRecord
+                )
+            )
+        }
+
+        cloudKitSharingInfo(
+            "saveInvitationsForSync saving records=\(records.map { "\($0.recordType):\($0.recordID.recordName)" }.joined(separator: ",")) zoneOwner=\(targetZoneID.ownerName)"
+        )
+        _ = try await modifyRecords(
+            saving: records,
+            deleting: [],
+            savePolicy: .changedKeys,
+            atomically: false,
+            database: database
+        )
+        cloudKitSharingInfo("saveInvitationsForSync succeeded count=\(records.count)")
     }
 
     @MainActor
@@ -1286,6 +1404,22 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
+    func fetchEventInvitations() async throws -> [EventInvitation] {
+        let query = CKQuery(recordType: InvitationRecordMapper.recordType, predicate: NSPredicate(value: true))
+        var records = try await fetchRecords(matching: query, in: zoneID, database: privateDatabase)
+
+        let sharedZoneIDs = try await sharedCoupleSpaceZoneIDs()
+        for sharedZoneID in sharedZoneIDs {
+            cloudKitSharingInfo("fetchEventInvitations querying shared zone=\(sharedZoneID.zoneName) owner=\(sharedZoneID.ownerName)")
+            records.append(contentsOf: try await fetchRecords(matching: query, in: sharedZoneID, database: sharedDatabase))
+        }
+
+        cloudKitSharingInfo("fetchEventInvitations fetched records=\(records.count)")
+        return try records.map {
+            try InvitationRecordMapper.invitation(from: $0)
+        }
+    }
+
     private func sharedCoupleSpaceZoneIDs() async throws -> [CKRecordZone.ID] {
         let zones = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[CKRecordZone], Error>) in
             sharedDatabase.fetchAllRecordZones { zones, error in
@@ -1320,6 +1454,27 @@ final class CloudKitCoupleSpaceService {
             domain: CKError.errorDomain,
             code: CKError.Code.unknownItem.rawValue,
             userInfo: [NSLocalizedDescriptionKey: "No accepted CloudKit share contains event \(eventRecordName)."]
+        )
+    }
+
+    private func acceptedSharedZoneID(containingInvitationRecordName invitationRecordName: String) async throws -> CKRecordZone.ID {
+        let zoneIDs = try await sharedCoupleSpaceZoneIDs()
+        for sharedZoneID in zoneIDs {
+            let recordID = CKRecord.ID(recordName: invitationRecordName, zoneID: sharedZoneID)
+            do {
+                _ = try await fetchRecord(with: recordID, database: sharedDatabase)
+                cloudKitSharingInfo("acceptedSharedZoneID matched invitation=\(invitationRecordName) owner=\(sharedZoneID.ownerName)")
+                return sharedZoneID
+            } catch {
+                guard Self.isUnknownItem(error) else { throw error }
+            }
+        }
+
+        cloudKitSharingError("acceptedSharedZoneID failed invitation=\(invitationRecordName) zones=\(zoneIDs.count)")
+        throw NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.unknownItem.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "No accepted CloudKit share contains invitation \(invitationRecordName)."]
         )
     }
 

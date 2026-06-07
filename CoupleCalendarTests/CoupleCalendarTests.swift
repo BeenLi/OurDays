@@ -401,6 +401,44 @@ final class CloudKitRecordMappingTests: XCTestCase {
         XCTAssertEqual(record.parent?.recordID, rootRecordID)
         XCTAssertEqual(record["body"] as? String, "Updated body")
     }
+
+    func testEventInvitationRoundTripsThroughCloudKitRecord() throws {
+        let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
+        let invitation = EventInvitation(
+            id: "invite-1",
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            isAllDay: false,
+            location: "Bistro",
+            notes: "Window seat",
+            statusRawValue: InvitationStatus.pending.rawValue,
+            createdAt: Date(timeIntervalSince1970: 9_000),
+            updatedAt: Date(timeIntervalSince1970: 9_100),
+            createdLocalEventID: nil,
+            cloudKitRecordName: "invite-record"
+        )
+
+        let record = InvitationRecordMapper.record(from: invitation, zoneID: zoneID)
+        let decoded = try InvitationRecordMapper.invitation(from: record)
+
+        XCTAssertEqual(record.recordType, "EventInvitation")
+        XCTAssertEqual(record.recordID.recordName, "invite-record")
+        XCTAssertEqual(decoded.id, "invite-record")
+        XCTAssertEqual(decoded.creatorMemberID, "me")
+        XCTAssertEqual(decoded.inviteeMemberID, "partner")
+        XCTAssertEqual(decoded.title, "Dinner")
+        XCTAssertEqual(decoded.startDate, Date(timeIntervalSince1970: 10_000))
+        XCTAssertEqual(decoded.endDate, Date(timeIntervalSince1970: 12_000))
+        XCTAssertEqual(decoded.location, "Bistro")
+        XCTAssertEqual(decoded.notes, "Window seat")
+        XCTAssertEqual(decoded.status, .pending)
+        XCTAssertEqual(decoded.createdAt, Date(timeIntervalSince1970: 9_000))
+        XCTAssertEqual(decoded.updatedAt, Date(timeIntervalSince1970: 9_100))
+        XCTAssertEqual(decoded.cloudKitRecordName, "invite-record")
+    }
 }
 
 final class CloudKitCommentWritePlanTests: XCTestCase {
@@ -414,6 +452,22 @@ final class CloudKitCommentWritePlanTests: XCTestCase {
     func testWritesPartnerEventCommentsToAcceptedSharedZone() {
         XCTAssertEqual(
             CloudKitCommentWritePlan.destination(eventOwnerMemberID: "partner", currentMemberID: "me"),
+            .acceptedSharedZone
+        )
+    }
+}
+
+final class CloudKitInvitationWritePlanTests: XCTestCase {
+    func testCreatorWritesInvitationToPrivateOwnerZone() {
+        XCTAssertEqual(
+            CloudKitInvitationWritePlan.destination(creatorMemberID: "me", currentMemberID: "me"),
+            .privateOwnerZone
+        )
+    }
+
+    func testInviteeWritesInvitationStatusBackToAcceptedSharedZone() {
+        XCTAssertEqual(
+            CloudKitInvitationWritePlan.destination(creatorMemberID: "partner", currentMemberID: "me"),
             .acceptedSharedZone
         )
     }
@@ -759,6 +813,26 @@ final class InvitationServiceTests: XCTestCase {
         XCTAssertEqual(invitation.status, .accepted)
         XCTAssertEqual(invitation.createdLocalEventID, "local-1")
         XCTAssertThrowsError(try service.accept(invitation, createdLocalEventID: "local-2"))
+    }
+
+    func testOnlyInviteeCanRespondToPendingInvitation() {
+        let invitation = EventInvitation(
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.pending.rawValue
+        )
+
+        XCTAssertTrue(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "partner"))
+        XCTAssertFalse(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "me"))
+
+        invitation.status = .accepted
+
+        XCTAssertFalse(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "partner"))
     }
 }
 

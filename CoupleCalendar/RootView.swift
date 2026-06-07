@@ -832,7 +832,15 @@ struct EventDetailView: View {
         modelContext.insert(invitation)
         do {
             try modelContext.save()
-            services.cloudKitIfAvailable?.queueInvitationsForSync([invitation])
+            if let cloudKit = services.cloudKitIfAvailable {
+                Task {
+                    do {
+                        try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                    } catch {
+                        inviteError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+                    }
+                }
+            }
         } catch {
             inviteError = error.localizedDescription
         }
@@ -887,12 +895,10 @@ struct InvitesTabView: View {
                 if !filtered.isEmpty {
                     Section(strings.invitationStatusTitle(for: status)) {
                         ForEach(filtered) { invitation in
-                            InvitationRow(invitation: invitation) {
+                            InvitationRow(invitation: invitation, currentMemberID: settings.currentMemberID) {
                                 accept(invitation)
                             } decline: {
-                                services.invitationService.decline(invitation)
-                                try? modelContext.save()
-                                services.cloudKitIfAvailable?.queueInvitationsForSync([invitation])
+                                decline(invitation)
                             }
                         }
                     }
@@ -919,9 +925,30 @@ struct InvitesTabView: View {
             let localEventID = try services.calendarAccess.createLocalEvent(from: draft)
             _ = try services.invitationService.accept(invitation, createdLocalEventID: localEventID)
             try modelContext.save()
-            services.cloudKitIfAvailable?.queueInvitationsForSync([invitation])
+            saveInvitationStatusToCloudKit(invitation)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func decline(_ invitation: EventInvitation) {
+        services.invitationService.decline(invitation)
+        do {
+            try modelContext.save()
+            saveInvitationStatusToCloudKit(invitation)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func saveInvitationStatusToCloudKit(_ invitation: EventInvitation) {
+        guard let cloudKit = services.cloudKitIfAvailable else { return }
+        Task {
+            do {
+                try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+            } catch {
+                errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+            }
         }
     }
 }
@@ -929,6 +956,7 @@ struct InvitesTabView: View {
 struct InvitationRow: View {
     @Environment(SettingsStore.self) private var settings
     let invitation: EventInvitation
+    let currentMemberID: String
     let accept: () -> Void
     let decline: () -> Void
 
@@ -947,7 +975,7 @@ struct InvitationRow: View {
                     .foregroundStyle(.secondary)
             }
 
-            if invitation.status == .pending {
+            if InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: currentMemberID) {
                 HStack {
                     Button(strings.acceptButton, action: accept)
                         .buttonStyle(.borderedProminent)

@@ -155,6 +155,8 @@ struct SyncCoordinator {
                 try upsert(mirrors: importableSharedMirrors, modelContext: modelContext)
                 let cloudComments = try await cloudKit.fetchEventComments()
                 try upsert(comments: cloudComments, modelContext: modelContext)
+                let cloudInvitations = try await cloudKit.fetchEventInvitations()
+                try upsert(invitations: cloudInvitations, modelContext: modelContext)
             } else {
                 settings.lastSyncError = settings.strings.cloudKitSyncDisabledLocalBuild
             }
@@ -214,6 +216,33 @@ struct SyncCoordinator {
                 existing.cloudKitRecordName = comment.cloudKitRecordName
             } else {
                 modelContext.insert(comment)
+            }
+        }
+        try modelContext.save()
+    }
+
+    private func upsert(invitations: [EventInvitation], modelContext: ModelContext) throws {
+        for invitation in invitations {
+            let invitationID = invitation.id
+            let descriptor = FetchDescriptor<EventInvitation>(
+                predicate: #Predicate { $0.id == invitationID }
+            )
+            if let existing = try modelContext.fetch(descriptor).first {
+                existing.creatorMemberID = invitation.creatorMemberID
+                existing.inviteeMemberID = invitation.inviteeMemberID
+                existing.title = invitation.title
+                existing.startDate = invitation.startDate
+                existing.endDate = invitation.endDate
+                existing.isAllDay = invitation.isAllDay
+                existing.location = invitation.location
+                existing.notes = invitation.notes
+                existing.statusRawValue = invitation.statusRawValue
+                existing.createdAt = invitation.createdAt
+                existing.updatedAt = invitation.updatedAt
+                existing.createdLocalEventID = invitation.createdLocalEventID
+                existing.cloudKitRecordName = invitation.cloudKitRecordName
+            } else {
+                modelContext.insert(invitation)
             }
         }
         try modelContext.save()

@@ -21,6 +21,17 @@ enum CalendarAuthorizationState: Equatable {
     }
 }
 
+enum CalendarAccessError: LocalizedError {
+    case noWritableCalendarSource
+
+    var errorDescription: String? {
+        switch self {
+        case .noWritableCalendarSource:
+            "ShareCal could not find a writable calendar source."
+        }
+    }
+}
+
 final class CalendarAccessService {
     private let eventStore: EKEventStore
 
@@ -62,14 +73,42 @@ final class CalendarAccessService {
     func calendars() -> [CalendarDescriptor] {
         eventStore.calendars(for: .event)
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-            .map { calendar in
-                CalendarDescriptor(
-                    id: calendar.calendarIdentifier,
-                    title: calendar.title,
-                    colorHex: UIColor(cgColor: calendar.cgColor).hexString,
-                    allowsContentModifications: calendar.allowsContentModifications
-                )
-            }
+            .map(descriptor(from:))
+    }
+
+    @discardableResult
+    func ensureShareCalCalendar() throws -> CalendarDescriptor {
+        try descriptor(from: ensureShareCalEKCalendar())
+    }
+
+    @discardableResult
+    func ensureShareCalSmokeTestEvent(now: Date = .now) throws -> String {
+        let calendar = try ensureShareCalEKCalendar()
+        let draft = ShareCalSmokeTestEventPlan.draft(now: now)
+        let searchStart = draft.startDate.addingTimeInterval(-24 * 60 * 60)
+        let searchEnd = draft.endDate.addingTimeInterval(24 * 60 * 60)
+        let predicate = eventStore.predicateForEvents(
+            withStart: searchStart,
+            end: searchEnd,
+            calendars: [calendar]
+        )
+
+        if let existing = eventStore.events(matching: predicate).first(where: { event in
+            event.title == draft.title
+        }) {
+            return existing.eventIdentifier ?? UUID().uuidString
+        }
+
+        let event = EKEvent(eventStore: eventStore)
+        event.title = draft.title
+        event.startDate = draft.startDate
+        event.endDate = draft.endDate
+        event.isAllDay = draft.isAllDay
+        event.location = draft.location
+        event.notes = draft.notes
+        event.calendar = calendar
+        try eventStore.save(event, span: .thisEvent, commit: true)
+        return event.eventIdentifier ?? UUID().uuidString
     }
 
     func events(from startDate: Date, to endDate: Date, selectedCalendarIDs: Set<String>) -> [CalendarSourceEvent] {
@@ -109,9 +148,60 @@ final class CalendarAccessService {
         event.isAllDay = draft.isAllDay
         event.location = draft.location
         event.notes = draft.notes
-        event.calendar = eventStore.defaultCalendarForNewEvents
+        event.calendar = try writableCalendarForNewEvents()
         try eventStore.save(event, span: .thisEvent, commit: true)
         return event.eventIdentifier ?? UUID().uuidString
+    }
+
+    private func writableCalendarForNewEvents() throws -> EKCalendar {
+        if let defaultCalendar = eventStore.defaultCalendarForNewEvents,
+           defaultCalendar.allowsContentModifications {
+            return defaultCalendar
+        }
+
+        return try ensureShareCalEKCalendar()
+    }
+
+    private func ensureShareCalEKCalendar() throws -> EKCalendar {
+        if let existing = eventStore.calendars(for: .event).first(where: { calendar in
+            calendar.title.compare(ShareCalCalendarBootstrapPlan.calendarTitle, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+                && calendar.allowsContentModifications
+        }) {
+            return existing
+        }
+
+        guard let source = writableCalendarSource() else {
+            throw CalendarAccessError.noWritableCalendarSource
+        }
+
+        let calendar = EKCalendar(for: .event, eventStore: eventStore)
+        calendar.title = ShareCalCalendarBootstrapPlan.calendarTitle
+        calendar.cgColor = UIColor.systemPink.cgColor
+        calendar.source = source
+        try eventStore.saveCalendar(calendar, commit: true)
+        return calendar
+    }
+
+    private func writableCalendarSource() -> EKSource? {
+        if let defaultSource = eventStore.defaultCalendarForNewEvents?.source {
+            return defaultSource
+        }
+
+        return eventStore.sources.first { $0.sourceType == .calDAV }
+            ?? eventStore.sources.first { $0.sourceType == .mobileMe }
+            ?? eventStore.sources.first { $0.sourceType == .local }
+            ?? eventStore.sources.first { source in
+                source.sourceType != .birthdays && source.sourceType != .subscribed
+            }
+    }
+
+    private func descriptor(from calendar: EKCalendar) -> CalendarDescriptor {
+        CalendarDescriptor(
+            id: calendar.calendarIdentifier,
+            title: calendar.title,
+            colorHex: UIColor(cgColor: calendar.cgColor).hexString,
+            allowsContentModifications: calendar.allowsContentModifications
+        )
     }
 
     static func defaultSyncWindow(now: Date = .now) -> DateInterval {

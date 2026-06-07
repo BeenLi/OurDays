@@ -10,6 +10,11 @@ enum CalendarMode: String, CaseIterable, Identifiable {
 }
 
 struct RootView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(SettingsStore.self) private var settings
+    @Environment(AppServices.self) private var services
+    @State private var isSyncingAcceptedShare = false
+
     var body: some View {
         TabView {
             NavigationStack {
@@ -33,6 +38,30 @@ struct RootView: View {
                 Label("Settings", systemImage: "gearshape")
             }
         }
+        .task {
+            await syncAfterAcceptedShareIfNeeded()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ShareCalAcceptedShareSignal.notificationName)) { _ in
+            Task {
+                await syncAfterAcceptedShareIfNeeded()
+            }
+        }
+    }
+
+    @MainActor
+    private func syncAfterAcceptedShareIfNeeded() async {
+        guard !isSyncingAcceptedShare else { return }
+        guard ShareCalAcceptedShareSignal.consumePending() else { return }
+
+        isSyncingAcceptedShare = true
+        defer { isSyncingAcceptedShare = false }
+
+        let coordinator = SyncCoordinator(
+            calendarAccess: services.calendarAccess,
+            eventMirrorService: services.eventMirrorService,
+            cloudKit: services.cloudKitIfAvailable
+        )
+        await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
     }
 }
 
@@ -574,6 +603,8 @@ struct SettingsTabView: View {
     @State private var isRequestingCalendarAccess = false
     @State private var cloudKitDiagnosticMessage: String?
     @State private var isCheckingCloudKitAccount = false
+    @State private var isPreparingShare = false
+    @State private var activeSharePreparationID: UUID?
 
     private var calendarAccessButtonTitle: String {
         switch authorizationState {
@@ -621,6 +652,11 @@ struct SettingsTabView: View {
             }
 
             Section("Calendars to Share") {
+                if ShareCalCalendarBootstrapPlan.shouldOfferCreation(calendars: calendars) {
+                    Button("Create ShareCal Calendar") {
+                        createShareCalCalendar()
+                    }
+                }
                 if calendars.isEmpty {
                     Text("No calendars loaded")
                         .foregroundStyle(.secondary)
@@ -650,15 +686,15 @@ struct SettingsTabView: View {
             }
 
             Section("iCloud Share") {
-                Button("Create or Open Share") {
+                Button(isPreparingShare ? "Preparing Share..." : "Create or Open Share") {
                     Task { await prepareShare() }
                 }
-                .disabled(!services.isCloudKitEnabled)
+                .disabled(!services.isCloudKitEnabled || isPreparingShare)
                 Button(isCheckingCloudKitAccount ? "Checking iCloud Status..." : "Check iCloud Status") {
                     Task { await checkCloudKitStatus() }
                 }
                 .disabled(!services.isCloudKitEnabled || isCheckingCloudKitAccount)
-                Text("Creates a private iCloud share for the invited partner.")
+                Text("Creates an iCloud share for your partner.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if !services.isCloudKitEnabled {
@@ -735,6 +771,13 @@ struct SettingsTabView: View {
     private func refreshCalendars() {
         authorizationState = services.calendarAccess.authorizationState()
         calendars = services.calendarAccess.calendars()
+        if settings.selectedCalendarIDs.isEmpty,
+           let shareCalCalendar = calendars.first(where: ShareCalCalendarBootstrapPlan.isShareCalCalendar) {
+            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
+                afterEnsuring: shareCalCalendar,
+                currentSelection: settings.selectedCalendarIDs
+            )
+        }
     }
 
     private func openAppSettings() {
@@ -742,17 +785,57 @@ struct SettingsTabView: View {
         openURL(url)
     }
 
+    private func createShareCalCalendar() {
+        errorMessage = nil
+        calendarAccessMessage = nil
+
+        do {
+            let calendar = try services.calendarAccess.ensureShareCalCalendar()
+            refreshCalendars()
+            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
+                afterEnsuring: calendar,
+                currentSelection: settings.selectedCalendarIDs
+            )
+            calendarAccessMessage = "ShareCal calendar is ready."
+        } catch {
+            errorMessage = error.localizedDescription
+            calendarAccessMessage = "ShareCal calendar creation failed."
+        }
+    }
+
+    @MainActor
     private func prepareShare() async {
+        guard !isPreparingShare else { return }
+        errorMessage = nil
         guard let cloudKit = services.cloudKitIfAvailable else {
             errorMessage = "iCloud sharing is unavailable in this local build."
             return
         }
 
-        do {
-            preparedShare = try await cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
-        } catch {
-            errorMessage = error.localizedDescription
+        let preparationID = UUID()
+        activeSharePreparationID = preparationID
+        isPreparingShare = true
+        let timeoutTask = Task {
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            await MainActor.run {
+                guard activeSharePreparationID == preparationID else { return }
+                errorMessage = CloudKitSharingError.operationTimedOut("share preparation").localizedDescription
+                isPreparingShare = false
+                activeSharePreparationID = nil
+            }
         }
+        defer { timeoutTask.cancel() }
+
+        do {
+            let share = try await cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
+            guard activeSharePreparationID == preparationID else { return }
+            preparedShare = share
+        } catch {
+            guard activeSharePreparationID == preparationID else { return }
+            errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+        }
+        isPreparingShare = false
+        activeSharePreparationID = nil
     }
 
     private func checkCloudKitStatus() async {

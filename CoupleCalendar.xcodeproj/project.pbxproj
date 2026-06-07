@@ -49,6 +49,7 @@
 		11A000500000000000000001 /* AppServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppServices.swift; sourceTree = "<group>"; };
 		11A000520000000000000001 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		11A000570000000000000001 /* CoupleCalendarLocal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CoupleCalendarLocal.entitlements; sourceTree = "<group>"; };
+		11A000580000000000000001 /* CoupleCalendarProduction.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CoupleCalendarProduction.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +100,7 @@
 				11A000160000000000000001 /* Info.plist */,
 				11A000170000000000000001 /* CoupleCalendar.entitlements */,
 				11A000570000000000000001 /* CoupleCalendarLocal.entitlements */,
+				11A000580000000000000001 /* CoupleCalendarProduction.entitlements */,
 				11A000040000000000000001 /* Assets.xcassets */,
 			);
 			path = CoupleCalendar;
@@ -454,7 +456,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = CoupleCalendar/CoupleCalendar.entitlements;
+				CODE_SIGN_ENTITLEMENTS = CoupleCalendar/CoupleCalendarProduction.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_ASSET_PATHS = "";

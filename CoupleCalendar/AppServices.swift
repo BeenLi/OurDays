@@ -107,16 +107,18 @@ struct SyncCoordinator {
     let cloudKit: CloudKitCoupleSpaceService?
 
     func foregroundSync(modelContext: ModelContext, settings: SettingsStore) async {
-        guard !settings.selectedCalendarIDs.isEmpty else {
-            settings.lastSyncError = "Select at least one calendar before syncing."
-            settings.syncPhase = .failed
-            return
-        }
-
         settings.syncPhase = .syncing
         settings.lastSyncError = nil
 
         do {
+            if settings.selectedCalendarIDs.isEmpty {
+                let calendar = try calendarAccess.ensureShareCalCalendar()
+                settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
+                    afterEnsuring: calendar,
+                    currentSelection: settings.selectedCalendarIDs
+                )
+            }
+
             let window = CalendarAccessService.defaultSyncWindow()
             let sourceEvents = calendarAccess.events(
                 from: window.start,
@@ -132,8 +134,15 @@ struct SyncCoordinator {
 
             try upsert(mirrors: mirrors, modelContext: modelContext)
             if let cloudKit {
-                cloudKit.queueMirrorsForSync(mirrors)
+                try await cloudKit.ensureShareRoot(ownerMemberID: settings.currentMemberID)
+                try await cloudKit.saveMirrorsForSync(mirrors)
                 try await cloudKit.foregroundSync()
+                let sharedMirrors = try await cloudKit.fetchSharedEventMirrors()
+                let importableSharedMirrors = CloudKitSharedDatabaseImportPlan.localizedMirrors(
+                    sharedMirrors,
+                    partnerMemberID: settings.partnerMemberID
+                )
+                try upsert(mirrors: importableSharedMirrors, modelContext: modelContext)
             } else {
                 settings.lastSyncError = "CloudKit sync is disabled in the Personal Team debug build."
             }
@@ -141,7 +150,7 @@ struct SyncCoordinator {
             settings.lastSyncAt = .now
             settings.syncPhase = .idle
         } catch {
-            settings.lastSyncError = error.localizedDescription
+            settings.lastSyncError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
             settings.syncPhase = .failed
         }
     }

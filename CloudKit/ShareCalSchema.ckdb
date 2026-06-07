@@ -1,0 +1,65 @@
+DEFINE SCHEMA
+
+    RECORD TYPE CoupleSpace (
+        "___recordID" REFERENCE QUERYABLE,
+        schemaVersion INT64,
+        createdAt TIMESTAMP,
+        ownerMemberID STRING
+    );
+
+    RECORD TYPE EventMirror (
+        "___recordID" REFERENCE QUERYABLE,
+        ownerMemberID STRING,
+        mirrorKey STRING QUERYABLE,
+        sourceCalendarID STRING,
+        sourceCalendarTitle STRING,
+        occurrenceStartDate TIMESTAMP,
+        startDate TIMESTAMP QUERYABLE SORTABLE,
+        endDate TIMESTAMP,
+        isAllDay INT64,
+        timeZoneIdentifier STRING,
+        title STRING SEARCHABLE,
+        location STRING,
+        notes STRING,
+        urlString STRING,
+        calendarColorHex STRING,
+        visibilityRawValue STRING,
+        deletedAt TIMESTAMP
+    );
+
+    RECORD TYPE EventInvitation (
+        "___recordID" REFERENCE QUERYABLE,
+        creatorMemberID STRING QUERYABLE,
+        inviteeMemberID STRING QUERYABLE,
+        title STRING SEARCHABLE,
+        startDate TIMESTAMP QUERYABLE SORTABLE,
+        endDate TIMESTAMP,
+        isAllDay INT64,
+        location STRING,
+        notes STRING,
+        statusRawValue STRING QUERYABLE,
+        createdAt TIMESTAMP,
+        updatedAt TIMESTAMP,
+        createdLocalEventID STRING
+    );
+
+    RECORD TYPE EventComment (
+        "___recordID" REFERENCE QUERYABLE,
+        eventMirrorID STRING QUERYABLE,
+        authorMemberID STRING,
+        body STRING SEARCHABLE,
+        createdAt TIMESTAMP QUERYABLE SORTABLE,
+        editedAt TIMESTAMP,
+        deletedAt TIMESTAMP,
+        isRead INT64
+    );
+
+    RECORD TYPE "cloudkit.share" (
+        "___recordID" REFERENCE,
+        "cloudkit.thumbnailImageData" BYTES,
+        "cloudkit.title" STRING,
+        "cloudkit.type" STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );

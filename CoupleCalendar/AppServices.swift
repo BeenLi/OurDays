@@ -16,6 +16,9 @@ final class SettingsStore {
     var defaultVisibility: EventVisibility {
         didSet { defaults.set(defaultVisibility.rawValue, forKey: Key.defaultVisibility) }
     }
+    var appLanguage: AppLanguage {
+        didSet { AppLanguagePreference.write(appLanguage, to: defaults) }
+    }
     var lastSyncAt: Date? {
         didSet { defaults.set(lastSyncAt, forKey: Key.lastSyncAt) }
     }
@@ -30,6 +33,7 @@ final class SettingsStore {
         partnerMemberID = defaults.string(forKey: Key.partnerMemberID) ?? "partner"
         selectedCalendarIDs = Set(defaults.stringArray(forKey: Key.selectedCalendarIDs) ?? [])
         defaultVisibility = EventVisibility(rawValue: defaults.string(forKey: Key.defaultVisibility) ?? "") ?? .fullDetails
+        appLanguage = AppLanguagePreference.read(from: defaults)
         lastSyncAt = defaults.object(forKey: Key.lastSyncAt) as? Date
     }
 
@@ -51,6 +55,12 @@ final class SettingsStore {
         static let selectedCalendarIDs = "selectedCalendarIDs"
         static let defaultVisibility = "defaultVisibility"
         static let lastSyncAt = "lastSyncAt"
+    }
+}
+
+extension SettingsStore {
+    var strings: ShareCalStrings {
+        ShareCalStrings(language: appLanguage)
     }
 }
 
@@ -146,7 +156,7 @@ struct SyncCoordinator {
                 let cloudComments = try await cloudKit.fetchEventComments()
                 try upsert(comments: cloudComments, modelContext: modelContext)
             } else {
-                settings.lastSyncError = "CloudKit sync is disabled in the Personal Team debug build."
+                settings.lastSyncError = settings.strings.cloudKitSyncDisabledLocalBuild
             }
 
             settings.lastSyncAt = .now

@@ -128,6 +128,52 @@ final class ShareCalCalendarBootstrapPlanTests: XCTestCase {
     }
 }
 
+final class AppLanguageSettingsTests: XCTestCase {
+    func testDefaultsToEnglishWhenNoPreferenceExists() {
+        let suiteName = "AppLanguageSettingsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let language = AppLanguagePreference.read(from: defaults)
+
+        XCTAssertEqual(language, .english)
+    }
+
+    func testPersistsSelectedChineseLanguage() {
+        let suiteName = "AppLanguageSettingsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        AppLanguagePreference.write(.chinese, to: defaults)
+
+        let language = AppLanguagePreference.read(from: defaults)
+
+        XCTAssertEqual(language, .chinese)
+    }
+}
+
+final class ShareCalStringsTests: XCTestCase {
+    func testEnglishKeepsCurrentPrimaryLabels() {
+        let strings = ShareCalStrings(language: .english)
+
+        XCTAssertEqual(strings.calendarTab, "Calendar")
+        XCTAssertEqual(strings.invitesTab, "Invites")
+        XCTAssertEqual(strings.settingsTitle, "Settings")
+        XCTAssertEqual(strings.createOrOpenShareButton(isPreparing: false), "Create or Open Share")
+        XCTAssertEqual(strings.defaultVisibilityLabel(for: .fullDetails), "Full details")
+    }
+
+    func testChineseProvidesPrimaryLabels() {
+        let strings = ShareCalStrings(language: .chinese)
+
+        XCTAssertEqual(strings.calendarTab, "日历")
+        XCTAssertEqual(strings.invitesTab, "邀请")
+        XCTAssertEqual(strings.settingsTitle, "设置")
+        XCTAssertEqual(strings.createOrOpenShareButton(isPreparing: false), "创建或打开共享")
+        XCTAssertEqual(strings.defaultVisibilityLabel(for: .fullDetails), "完整详情")
+    }
+}
+
 final class ShareCalSmokeTestEventPlanTests: XCTestCase {
     func testBuildsStableShortEventDraftNearNow() {
         let now = Date(timeIntervalSince1970: 2_000)

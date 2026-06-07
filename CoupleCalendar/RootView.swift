@@ -21,21 +21,21 @@ struct RootView: View {
                 CalendarTabView()
             }
             .tabItem {
-                Label("Calendar", systemImage: "calendar")
+                Label(settings.strings.calendarTab, systemImage: "calendar")
             }
 
             NavigationStack {
                 InvitesTabView()
             }
             .tabItem {
-                Label("Invites", systemImage: "envelope")
+                Label(settings.strings.invitesTab, systemImage: "envelope")
             }
 
             NavigationStack {
                 SettingsTabView()
             }
             .tabItem {
-                Label("Settings", systemImage: "gearshape")
+                Label(settings.strings.settingsTab, systemImage: "gearshape")
             }
         }
         .task {
@@ -110,12 +110,14 @@ struct CalendarTabView: View {
     }
 
     var body: some View {
+        let strings = settings.strings
+
         VStack(spacing: 12) {
             DateStrip(selectedDate: $selectedDate)
 
-            Picker("Mode", selection: $mode) {
+            Picker(strings.modePicker, selection: $mode) {
                 ForEach(CalendarMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+                    Text(strings.modeLabel(for: mode.rawValue)).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
@@ -135,10 +137,10 @@ struct CalendarTabView: View {
                     case .day:
                         DayAlignedTimelineView(
                             dayStart: selectedDayStart,
-                            myTitle: "Me",
+                            myTitle: strings.meTitle,
                             mySubtitle: settings.currentMemberID,
                             myEvents: myEvents,
-                            partnerTitle: "Partner",
+                            partnerTitle: strings.partnerTitle,
                             partnerSubtitle: settings.partnerMemberID,
                             partnerEvents: partnerEvents,
                             availableWidth: proxy.size.width,
@@ -147,10 +149,10 @@ struct CalendarTabView: View {
                     case .week:
                         ScrollView {
                             TwoColumnTimelineList(
-                                myTitle: "Me",
+                                myTitle: strings.meTitle,
                                 mySubtitle: settings.currentMemberID,
                                 myEvents: myEvents,
-                                partnerTitle: "Partner",
+                                partnerTitle: strings.partnerTitle,
                                 partnerSubtitle: settings.partnerMemberID,
                                 partnerEvents: partnerEvents,
                                 availableWidth: proxy.size.width,
@@ -178,7 +180,7 @@ struct CalendarTabView: View {
                 } label: {
                     Image(systemName: "arrow.triangle.2.circlepath")
                 }
-                .accessibilityLabel("Sync")
+                .accessibilityLabel(strings.syncAccessibilityLabel)
             }
         }
         .sheet(item: $selectedEvent) { event in
@@ -204,15 +206,16 @@ struct CalendarTabView: View {
 }
 
 struct ShareCalEmptyState: View {
+    @Environment(SettingsStore.self) private var settings
     let onLoadSampleData: () -> Void
 
     var body: some View {
         ContentUnavailableView {
-            Label("No shared schedules", systemImage: "calendar.badge.plus")
+            Label(settings.strings.noSharedSchedulesTitle, systemImage: "calendar.badge.plus")
         } description: {
-            Text("Preview a paired schedule or choose calendars in Settings.")
+            Text(settings.strings.noSharedSchedulesDescription)
         } actions: {
-            Button("Load Sample Schedule", action: onLoadSampleData)
+            Button(settings.strings.loadSampleScheduleButton, action: onLoadSampleData)
                 .buttonStyle(.borderedProminent)
         }
     }
@@ -283,16 +286,17 @@ struct SyncStatusBar: View {
     }
 
     var statusText: String {
+        let strings = settings.strings
         if settings.syncPhase == .syncing {
-            return "Syncing selected calendars..."
+            return strings.syncingSelectedCalendars
         }
         if let error = settings.lastSyncError {
             return error
         }
         if let lastSyncAt = settings.lastSyncAt {
-            return "Last sync \(lastSyncAt.formatted(date: .omitted, time: .shortened))"
+            return strings.lastSyncStatus(lastSyncAt.formatted(date: .omitted, time: .shortened))
         }
-        return "Not synced yet"
+        return strings.notSyncedYet
     }
 }
 
@@ -521,6 +525,7 @@ struct DayTimelineHourGrid: View {
 }
 
 struct DayTimelineLane: View {
+    @Environment(SettingsStore.self) private var settings
     let events: [EventMirror]
     let tint: Color
     let dayStart: Date
@@ -550,7 +555,7 @@ struct DayTimelineLane: View {
                 .buttonStyle(.plain)
                 .frame(width: max(44, width - 8), height: eventHeight, alignment: .top)
                 .offset(x: 4, y: eventY)
-                .accessibilityLabel("\(event.title), \(EventCard(event: event, tint: tint).timeText)")
+                .accessibilityLabel("\(event.title), \(timeText(for: event))")
             }
         }
         .frame(width: width, height: dayHeight, alignment: .topLeading)
@@ -572,9 +577,18 @@ struct DayTimelineLane: View {
             hourHeight: hourHeight
         )
     }
+
+    private func timeText(for event: EventMirror) -> String {
+        if event.isAllDay {
+            return settings.strings.allDay
+        }
+
+        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
+    }
 }
 
 struct DayTimelineEventBlock: View {
+    @Environment(SettingsStore.self) private var settings
     let event: EventMirror
     let tint: Color
 
@@ -609,13 +623,14 @@ struct DayTimelineEventBlock: View {
 
     var timeText: String {
         if event.isAllDay {
-            return "All day"
+            return settings.strings.allDay
         }
         return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
     }
 }
 
 struct TimelineColumn: View {
+    @Environment(SettingsStore.self) private var settings
     let title: String
     let subtitle: String
     let events: [EventMirror]
@@ -640,7 +655,7 @@ struct TimelineColumn: View {
             }
 
             if events.isEmpty {
-                ContentUnavailableView("No events", systemImage: "calendar.badge.clock")
+                ContentUnavailableView(settings.strings.noEvents, systemImage: "calendar.badge.clock")
                     .frame(minHeight: 220)
             } else {
                 LazyVStack(spacing: 8) {
@@ -663,6 +678,7 @@ struct TimelineColumn: View {
 }
 
 struct EventCard: View {
+    @Environment(SettingsStore.self) private var settings
     let event: EventMirror
     let tint: Color
 
@@ -701,7 +717,7 @@ struct EventCard: View {
 
     var timeText: String {
         if event.isAllDay {
-            return "All day"
+            return settings.strings.allDay
         }
         return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
     }
@@ -722,15 +738,17 @@ struct EventDetailView: View {
     }
 
     var body: some View {
+        let strings = settings.strings
+
         NavigationStack {
             List {
                 Section {
-                    LabeledContent("Owner", value: event.ownerMemberID == settings.currentMemberID ? "Me" : "Partner")
-                    LabeledContent("Calendar", value: event.sourceCalendarTitle)
-                    LabeledContent("Starts", value: event.startDate.formatted(date: .abbreviated, time: .shortened))
-                    LabeledContent("Ends", value: event.endDate.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent(strings.ownerLabel, value: event.ownerMemberID == settings.currentMemberID ? strings.meTitle : strings.partnerTitle)
+                    LabeledContent(strings.calendarLabel, value: event.sourceCalendarTitle)
+                    LabeledContent(strings.startsLabel, value: event.startDate.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent(strings.endsLabel, value: event.endDate.formatted(date: .abbreviated, time: .shortened))
                     if let location = event.location {
-                        LabeledContent("Location", value: location)
+                        LabeledContent(strings.locationLabel, value: location)
                     }
                     if let notes = event.notes {
                         Text(notes)
@@ -739,11 +757,11 @@ struct EventDetailView: View {
                     Text(event.title)
                 }
 
-                Section("Invite") {
+                Section(strings.inviteSection) {
                     Button {
                         createInvite()
                     } label: {
-                        Label("Invite partner", systemImage: "person.badge.plus")
+                        Label(strings.invitePartnerButton, systemImage: "person.badge.plus")
                     }
 
                     if let inviteError {
@@ -753,7 +771,7 @@ struct EventDetailView: View {
                     }
                 }
 
-                Section("Comments") {
+                Section(strings.commentsSection) {
                     ForEach(eventComments) { comment in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
@@ -771,13 +789,13 @@ struct EventDetailView: View {
                                 services.commentService.delete(comment)
                                 try? modelContext.save()
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Label(strings.deleteButton, systemImage: "trash")
                             }
                         }
                     }
 
                     HStack {
-                        TextField("Add a comment", text: $commentBody, axis: .vertical)
+                        TextField(strings.addCommentPlaceholder, text: $commentBody, axis: .vertical)
                         Button {
                             addComment()
                         } label: {
@@ -787,11 +805,11 @@ struct EventDetailView: View {
                     }
                 }
             }
-            .navigationTitle("Event")
+            .navigationTitle(strings.eventTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
+                    Button(strings.doneButton) {
                         dismiss()
                     }
                 }
@@ -855,16 +873,19 @@ struct EventDetailView: View {
 
 struct InvitesTabView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(SettingsStore.self) private var settings
     @Environment(AppServices.self) private var services
     @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
     @State private var errorMessage: String?
 
     var body: some View {
+        let strings = settings.strings
+
         List {
             ForEach(InvitationStatus.allCases) { status in
                 let filtered = invitations.filter { $0.status == status }
                 if !filtered.isEmpty {
-                    Section(status.rawValue.capitalized) {
+                    Section(strings.invitationStatusTitle(for: status)) {
                         ForEach(filtered) { invitation in
                             InvitationRow(invitation: invitation) {
                                 accept(invitation)
@@ -879,7 +900,7 @@ struct InvitesTabView: View {
             }
 
             if invitations.isEmpty {
-                ContentUnavailableView("No invitations", systemImage: "envelope.open")
+                ContentUnavailableView(strings.noInvitations, systemImage: "envelope.open")
             }
 
             if let errorMessage {
@@ -889,7 +910,7 @@ struct InvitesTabView: View {
                 }
             }
         }
-        .navigationTitle("Invites")
+        .navigationTitle(strings.invitesTab)
     }
 
     private func accept(_ invitation: EventInvitation) {
@@ -906,11 +927,14 @@ struct InvitesTabView: View {
 }
 
 struct InvitationRow: View {
+    @Environment(SettingsStore.self) private var settings
     let invitation: EventInvitation
     let accept: () -> Void
     let decline: () -> Void
 
     var body: some View {
+        let strings = settings.strings
+
         VStack(alignment: .leading, spacing: 8) {
             Text(invitation.title)
                 .font(.headline)
@@ -925,9 +949,9 @@ struct InvitationRow: View {
 
             if invitation.status == .pending {
                 HStack {
-                    Button("Accept", action: accept)
+                    Button(strings.acceptButton, action: accept)
                         .buttonStyle(.borderedProminent)
-                    Button("Decline", role: .destructive, action: decline)
+                    Button(strings.declineButton, role: .destructive, action: decline)
                         .buttonStyle(.bordered)
                 }
             }
@@ -952,29 +976,39 @@ struct SettingsTabView: View {
     @State private var activeSharePreparationID: UUID?
 
     private var calendarAccessButtonTitle: String {
+        let strings = settings.strings
         switch authorizationState {
         case .denied, .restricted, .writeOnly:
-            "Open Calendar Settings"
+            return strings.openCalendarSettingsButton
         case .fullAccess, .legacyAuthorized:
-            "Calendar Access Granted"
+            return strings.calendarAccessGrantedButton
         default:
-            "Request Full Calendar Access"
+            return strings.requestFullCalendarAccessButton
         }
     }
 
     var body: some View {
         @Bindable var settings = settings
+        let strings = settings.strings
 
         List {
-            Section("Members") {
-                TextField("My display name", text: $settings.currentMemberID)
+            Section(strings.membersSection) {
+                TextField(strings.myDisplayNamePlaceholder, text: $settings.currentMemberID)
                     .textInputAutocapitalization(.never)
-                TextField("Partner display name", text: $settings.partnerMemberID)
+                TextField(strings.partnerDisplayNamePlaceholder, text: $settings.partnerMemberID)
                     .textInputAutocapitalization(.never)
             }
 
-            Section("Calendar Access") {
-                LabeledContent("Status", value: String(describing: authorizationState))
+            Section(strings.languageSection) {
+                Picker(strings.appLanguagePicker, selection: $settings.appLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(strings.languageDisplayName(for: language)).tag(language)
+                    }
+                }
+            }
+
+            Section(strings.calendarAccessSection) {
+                LabeledContent(strings.statusLabel, value: String(describing: authorizationState))
                 Button(calendarAccessButtonTitle) {
                     Task { await requestAccess() }
                 }
@@ -982,7 +1016,7 @@ struct SettingsTabView: View {
                 if isRequestingCalendarAccess {
                     HStack {
                         ProgressView()
-                        Text("Requesting calendar access...")
+                        Text(strings.requestingCalendarAccess)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -991,19 +1025,19 @@ struct SettingsTabView: View {
                         .font(.caption)
                         .foregroundStyle(authorizationState.canReadEvents ? .green : .orange)
                 }
-                Button("Refresh Calendars") {
+                Button(strings.refreshCalendarsButton) {
                     refreshCalendars()
                 }
             }
 
-            Section("Calendars to Share") {
+            Section(strings.calendarsToShareSection) {
                 if ShareCalCalendarBootstrapPlan.shouldOfferCreation(calendars: calendars) {
-                    Button("Create ShareCal Calendar") {
+                    Button(strings.createShareCalCalendarButton) {
                         createShareCalCalendar()
                     }
                 }
                 if calendars.isEmpty {
-                    Text("No calendars loaded")
+                    Text(strings.noCalendarsLoaded)
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(calendars) { calendar in
@@ -1022,28 +1056,28 @@ struct SettingsTabView: View {
                 }
             }
 
-            Section("Privacy") {
-                Picker("Default visibility", selection: $settings.defaultVisibility) {
+            Section(strings.privacySection) {
+                Picker(strings.defaultVisibilityPicker, selection: $settings.defaultVisibility) {
                     ForEach(EventVisibility.allCases) { visibility in
-                        Text(visibility.label).tag(visibility)
+                        Text(strings.defaultVisibilityLabel(for: visibility)).tag(visibility)
                     }
                 }
             }
 
-            Section("iCloud Share") {
-                Button(isPreparingShare ? "Preparing Share..." : "Create or Open Share") {
+            Section(strings.iCloudShareSection) {
+                Button(strings.createOrOpenShareButton(isPreparing: isPreparingShare)) {
                     Task { await prepareShare() }
                 }
                 .disabled(!services.isCloudKitEnabled || isPreparingShare)
-                Button(isCheckingCloudKitAccount ? "Checking iCloud Status..." : "Check iCloud Status") {
+                Button(strings.checkICloudStatusButton(isChecking: isCheckingCloudKitAccount)) {
                     Task { await checkCloudKitStatus() }
                 }
                 .disabled(!services.isCloudKitEnabled || isCheckingCloudKitAccount)
-                Text("Creates an iCloud share for your partner.")
+                Text(strings.createsICloudShareDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if !services.isCloudKitEnabled {
-                    Text("iCloud sharing is unavailable in this local build.")
+                    Text(strings.iCloudSharingUnavailableLocalBuild)
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -1054,22 +1088,22 @@ struct SettingsTabView: View {
                 }
             }
 
-            Section("Sync") {
-                LabeledContent("Last sync", value: settings.lastSyncAt?.formatted(date: .abbreviated, time: .shortened) ?? "Never")
+            Section(strings.syncSection) {
+                LabeledContent(strings.lastSyncLabel, value: settings.lastSyncAt?.formatted(date: .abbreviated, time: .shortened) ?? strings.never)
                 if let errorMessage {
                     Text(errorMessage)
                         .foregroundStyle(.red)
                 }
             }
         }
-        .navigationTitle("Settings")
+        .navigationTitle(strings.settingsTitle)
         .task {
             authorizationState = services.calendarAccess.authorizationState()
             refreshCalendars()
         }
         .sheet(item: $preparedShare) { share in
             CloudSharingController(preparedShare: share) { message in
-                errorMessage = "CloudKit share failed: \(message)"
+                errorMessage = strings.cloudKitShareFailed(message)
             }
         }
     }
@@ -1081,13 +1115,13 @@ struct SettingsTabView: View {
 
         if authorizationState.canReadEvents {
             refreshCalendars()
-            calendarAccessMessage = "Calendar access is already enabled."
+            calendarAccessMessage = settings.strings.calendarAccessAlreadyEnabled
             return
         }
 
         switch authorizationState {
         case .denied, .restricted, .writeOnly:
-            calendarAccessMessage = "Calendar access must be changed in iPhone Settings."
+            calendarAccessMessage = settings.strings.calendarAccessMustBeChanged
             openAppSettings()
             return
         default:
@@ -1102,14 +1136,14 @@ struct SettingsTabView: View {
             authorizationState = services.calendarAccess.authorizationState()
             refreshCalendars()
             calendarAccessMessage = granted
-                ? "Calendar access granted. Select calendars below, then sync."
-                : "Calendar access was not granted. Open Settings to enable it."
+                ? settings.strings.calendarAccessGrantedMessage
+                : settings.strings.calendarAccessDeniedMessage
             if !granted {
                 openAppSettings()
             }
         } catch {
             errorMessage = error.localizedDescription
-            calendarAccessMessage = "Calendar access request failed."
+            calendarAccessMessage = settings.strings.calendarAccessRequestFailed
         }
     }
 
@@ -1141,10 +1175,10 @@ struct SettingsTabView: View {
                 afterEnsuring: calendar,
                 currentSelection: settings.selectedCalendarIDs
             )
-            calendarAccessMessage = "ShareCal calendar is ready."
+            calendarAccessMessage = settings.strings.shareCalCalendarReady
         } catch {
             errorMessage = error.localizedDescription
-            calendarAccessMessage = "ShareCal calendar creation failed."
+            calendarAccessMessage = settings.strings.shareCalCalendarCreationFailed
         }
     }
 
@@ -1153,7 +1187,7 @@ struct SettingsTabView: View {
         guard !isPreparingShare else { return }
         errorMessage = nil
         guard let cloudKit = services.cloudKitIfAvailable else {
-            errorMessage = "iCloud sharing is unavailable in this local build."
+            errorMessage = settings.strings.iCloudSharingUnavailableLocalBuild
             return
         }
 
@@ -1187,7 +1221,7 @@ struct SettingsTabView: View {
         errorMessage = nil
         cloudKitDiagnosticMessage = nil
         guard let cloudKit = services.cloudKitIfAvailable else {
-            cloudKitDiagnosticMessage = "iCloud sharing is unavailable in this local build."
+            cloudKitDiagnosticMessage = settings.strings.iCloudSharingUnavailableLocalBuild
             return
         }
 
@@ -1197,7 +1231,7 @@ struct SettingsTabView: View {
         let diagnostic = await cloudKit.accountDiagnostic()
         cloudKitDiagnosticMessage = diagnostic.displayText
         if !diagnostic.isAccountAvailable {
-            errorMessage = "CloudKit account status is \(diagnostic.accountStatus)."
+            errorMessage = settings.strings.cloudKitAccountStatus(diagnostic.accountStatus)
         }
     }
 }

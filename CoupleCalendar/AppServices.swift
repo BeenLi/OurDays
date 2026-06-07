@@ -143,6 +143,8 @@ struct SyncCoordinator {
                     partnerMemberID: settings.partnerMemberID
                 )
                 try upsert(mirrors: importableSharedMirrors, modelContext: modelContext)
+                let cloudComments = try await cloudKit.fetchEventComments()
+                try upsert(comments: cloudComments, modelContext: modelContext)
             } else {
                 settings.lastSyncError = "CloudKit sync is disabled in the Personal Team debug build."
             }
@@ -180,6 +182,28 @@ struct SyncCoordinator {
                 existing.cloudKitRecordName = mirror.cloudKitRecordName
             } else {
                 modelContext.insert(mirror)
+            }
+        }
+        try modelContext.save()
+    }
+
+    private func upsert(comments: [EventComment], modelContext: ModelContext) throws {
+        for comment in comments {
+            let commentID = comment.id
+            let descriptor = FetchDescriptor<EventComment>(
+                predicate: #Predicate { $0.id == commentID }
+            )
+            if let existing = try modelContext.fetch(descriptor).first {
+                existing.eventMirrorID = comment.eventMirrorID
+                existing.authorMemberID = comment.authorMemberID
+                existing.body = comment.body
+                existing.createdAt = comment.createdAt
+                existing.editedAt = comment.editedAt
+                existing.deletedAt = comment.deletedAt
+                existing.isRead = comment.isRead
+                existing.cloudKitRecordName = comment.cloudKitRecordName
+            } else {
+                modelContext.insert(comment)
             }
         }
         try modelContext.save()

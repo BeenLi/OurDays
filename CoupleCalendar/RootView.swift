@@ -500,7 +500,23 @@ struct EventDetailView: View {
         modelContext.insert(comment)
         do {
             try modelContext.save()
-            services.cloudKitIfAvailable?.queueCommentsForSync([comment])
+            let eventOwnerMemberID = event.ownerMemberID
+            let currentMemberID = settings.currentMemberID
+            let eventRecordName = event.cloudKitRecordName ?? event.mirrorKey
+            if let cloudKit = services.cloudKitIfAvailable {
+                Task {
+                    do {
+                        try await cloudKit.saveCommentForSync(
+                            comment,
+                            eventOwnerMemberID: eventOwnerMemberID,
+                            currentMemberID: currentMemberID,
+                            eventRecordName: eventRecordName
+                        )
+                    } catch {
+                        inviteError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+                    }
+                }
+            }
             commentBody = ""
         } catch {
             inviteError = error.localizedDescription

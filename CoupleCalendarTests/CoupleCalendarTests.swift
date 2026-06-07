@@ -239,6 +239,78 @@ final class CloudKitRecordMappingTests: XCTestCase {
         XCTAssertEqual(record.parent?.recordID, rootRecordID)
         XCTAssertEqual(record[EventMirrorRecordMapper.Key.title] as? String, "Planning")
     }
+
+    func testEventCommentRoundTripsThroughCloudKitRecord() throws {
+        let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
+        let comment = EventComment(
+            id: "comment-1",
+            eventMirrorID: "sharecal:event-1:1800",
+            authorMemberID: "partner",
+            body: "See you there",
+            createdAt: Date(timeIntervalSince1970: 2_000),
+            editedAt: Date(timeIntervalSince1970: 2_100),
+            deletedAt: nil,
+            isRead: true,
+            cloudKitRecordName: "comment-record"
+        )
+
+        let record = CommentRecordMapper.record(from: comment, zoneID: zoneID)
+        let decoded = try CommentRecordMapper.comment(from: record)
+
+        XCTAssertEqual(record.recordType, "EventComment")
+        XCTAssertEqual(record.recordID.recordName, "comment-record")
+        XCTAssertEqual(decoded.id, "comment-record")
+        XCTAssertEqual(decoded.eventMirrorID, "sharecal:event-1:1800")
+        XCTAssertEqual(decoded.authorMemberID, "partner")
+        XCTAssertEqual(decoded.body, "See you there")
+        XCTAssertEqual(decoded.createdAt, Date(timeIntervalSince1970: 2_000))
+        XCTAssertEqual(decoded.editedAt, Date(timeIntervalSince1970: 2_100))
+        XCTAssertTrue(decoded.isRead)
+    }
+
+    func testCommentRecordCanUpdateFetchedServerRecordAndStayParentedToShareRoot() {
+        let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
+        let rootRecordID = CKRecord.ID(recordName: CloudKitCoupleSpaceService.rootRecordName, zoneID: zoneID)
+        let recordID = CKRecord.ID(recordName: "comment-record", zoneID: zoneID)
+        let existing = CKRecord(recordType: "EventComment", recordID: recordID)
+        existing["body"] = "Old body" as CKRecordValue
+        let comment = EventComment(
+            id: "comment-1",
+            eventMirrorID: "sharecal:event-1:1800",
+            authorMemberID: "partner",
+            body: "Updated body",
+            createdAt: Date(timeIntervalSince1970: 2_000),
+            isRead: false,
+            cloudKitRecordName: "comment-record"
+        )
+
+        let record = CommentRecordMapper.record(
+            from: comment,
+            zoneID: zoneID,
+            parentRecordID: rootRecordID,
+            existingRecord: existing
+        )
+
+        XCTAssertTrue(record === existing)
+        XCTAssertEqual(record.parent?.recordID, rootRecordID)
+        XCTAssertEqual(record["body"] as? String, "Updated body")
+    }
+}
+
+final class CloudKitCommentWritePlanTests: XCTestCase {
+    func testWritesOwnEventCommentsToPrivateOwnerZone() {
+        XCTAssertEqual(
+            CloudKitCommentWritePlan.destination(eventOwnerMemberID: "me", currentMemberID: "me"),
+            .privateOwnerZone
+        )
+    }
+
+    func testWritesPartnerEventCommentsToAcceptedSharedZone() {
+        XCTAssertEqual(
+            CloudKitCommentWritePlan.destination(eventOwnerMemberID: "partner", currentMemberID: "me"),
+            .acceptedSharedZone
+        )
+    }
 }
 
 final class CloudKitRootLookupPolicyTests: XCTestCase {

@@ -261,6 +261,20 @@ enum CloudKitSharedDatabaseImportPlan {
     }
 }
 
+enum CloudKitCommentWriteDestination: Equatable {
+    case privateOwnerZone
+    case acceptedSharedZone
+}
+
+enum CloudKitCommentWritePlan {
+    static func destination(
+        eventOwnerMemberID: String,
+        currentMemberID: String
+    ) -> CloudKitCommentWriteDestination {
+        eventOwnerMemberID == currentMemberID ? .privateOwnerZone : .acceptedSharedZone
+    }
+}
+
 enum ShareCalLaunchDiagnosticPlan {
     static let cloudKitWriteProbeArgument = "-ShareCalCloudKitWriteProbe"
     static let seedCalendarEventArgument = "-ShareCalSeedCalendarEvent"
@@ -395,22 +409,52 @@ enum InvitationRecordMapper {
 enum CommentRecordMapper {
     static let recordType = "EventComment"
 
+    enum Key {
+        static let eventMirrorID = "eventMirrorID"
+        static let authorMemberID = "authorMemberID"
+        static let body = "body"
+        static let createdAt = "createdAt"
+        static let editedAt = "editedAt"
+        static let deletedAt = "deletedAt"
+        static let isRead = "isRead"
+    }
+
     static func record(
         from comment: EventComment,
         zoneID: CKRecordZone.ID,
-        parentRecordID: CKRecord.ID? = nil
+        parentRecordID: CKRecord.ID? = nil,
+        existingRecord: CKRecord? = nil
     ) -> CKRecord {
         let recordName = comment.cloudKitRecordName ?? comment.id
-        let record = CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
+        let record = existingRecord ?? CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
         CloudKitShareHierarchyPlan.attach(record, toShareRoot: parentRecordID)
-        record["eventMirrorID"] = comment.eventMirrorID as CKRecordValue
-        record["authorMemberID"] = comment.authorMemberID as CKRecordValue
-        record["body"] = comment.body as CKRecordValue
-        record["createdAt"] = comment.createdAt as CKRecordValue
-        record["editedAt"] = comment.editedAt as CKRecordValue?
-        record["deletedAt"] = comment.deletedAt as CKRecordValue?
-        record["isRead"] = NSNumber(value: comment.isRead)
+        record[Key.eventMirrorID] = comment.eventMirrorID as CKRecordValue
+        record[Key.authorMemberID] = comment.authorMemberID as CKRecordValue
+        record[Key.body] = comment.body as CKRecordValue
+        record[Key.createdAt] = comment.createdAt as CKRecordValue
+        record[Key.editedAt] = comment.editedAt as CKRecordValue?
+        record[Key.deletedAt] = comment.deletedAt as CKRecordValue?
+        record[Key.isRead] = NSNumber(value: comment.isRead)
         return record
+    }
+
+    static func comment(from record: CKRecord) throws -> EventComment {
+        guard let eventMirrorID = record[Key.eventMirrorID] as? String else { throw CloudKitRecordMappingError.missingField(Key.eventMirrorID) }
+        guard let authorMemberID = record[Key.authorMemberID] as? String else { throw CloudKitRecordMappingError.missingField(Key.authorMemberID) }
+        guard let body = record[Key.body] as? String else { throw CloudKitRecordMappingError.missingField(Key.body) }
+        guard let createdAt = record[Key.createdAt] as? Date else { throw CloudKitRecordMappingError.missingField(Key.createdAt) }
+
+        return EventComment(
+            id: record.recordID.recordName,
+            eventMirrorID: eventMirrorID,
+            authorMemberID: authorMemberID,
+            body: body,
+            createdAt: createdAt,
+            editedAt: record[Key.editedAt] as? Date,
+            deletedAt: record[Key.deletedAt] as? Date,
+            isRead: (record[Key.isRead] as? NSNumber)?.boolValue ?? false,
+            cloudKitRecordName: record.recordID.recordName
+        )
     }
 }
 
@@ -896,9 +940,11 @@ final class CloudKitCoupleSpaceService {
         saving recordsToSave: [CKRecord],
         deleting recordIDsToDelete: [CKRecord.ID],
         savePolicy: CKModifyRecordsOperation.RecordSavePolicy,
-        atomically: Bool
+        atomically: Bool,
+        database: CKDatabase? = nil
     ) async throws -> CloudKitModifyRecordResults {
         try await withCheckedThrowingContinuation { continuation in
+            let targetDatabase = database ?? privateDatabase
             let operation = CKModifyRecordsOperation(recordsToSave: recordsToSave, recordIDsToDelete: recordIDsToDelete)
             operation.savePolicy = savePolicy
             operation.isAtomic = atomically
@@ -967,7 +1013,7 @@ final class CloudKitCoupleSpaceService {
                 }
             }
 
-            privateDatabase.add(operation)
+            targetDatabase.add(operation)
         }
     }
 
@@ -1011,9 +1057,12 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
-    private func fetchRecordForUpsertIfPresent(with recordID: CKRecord.ID) async throws -> CKRecord? {
+    private func fetchRecordForUpsertIfPresent(
+        with recordID: CKRecord.ID,
+        database: CKDatabase? = nil
+    ) async throws -> CKRecord? {
         do {
-            return try await fetchRecord(with: recordID)
+            return try await fetchRecord(with: recordID, database: database)
         } catch {
             let nsError = error as NSError
             if nsError.domain == CKError.errorDomain,
@@ -1025,10 +1074,14 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
-    private func fetchRecord(with recordID: CKRecord.ID) async throws -> CKRecord {
+    private func fetchRecord(
+        with recordID: CKRecord.ID,
+        database: CKDatabase? = nil
+    ) async throws -> CKRecord {
         do {
+            let targetDatabase = database ?? privateDatabase
             let results = try await withCheckedThrowingContinuation { continuation in
-                privateDatabase.fetch(withRecordIDs: [recordID]) { result in
+                targetDatabase.fetch(withRecordIDs: [recordID]) { result in
                     continuation.resume(with: result)
                 }
             }
@@ -1098,6 +1151,67 @@ final class CloudKitCoupleSpaceService {
         syncDriver.queue(recordsToSave: records)
     }
 
+    @MainActor
+    func saveCommentForSync(
+        _ comment: EventComment,
+        eventOwnerMemberID: String,
+        currentMemberID: String,
+        eventRecordName: String
+    ) async throws {
+        switch CloudKitCommentWritePlan.destination(
+            eventOwnerMemberID: eventOwnerMemberID,
+            currentMemberID: currentMemberID
+        ) {
+        case .privateOwnerZone:
+            try await ensureZone()
+            try await ensureShareRoot(ownerMemberID: currentMemberID)
+            try await saveCommentsForSync([comment], in: zoneID, database: privateDatabase)
+        case .acceptedSharedZone:
+            let targetZoneID = try await acceptedSharedZoneID(containingEventRecordName: eventRecordName)
+            try await saveCommentsForSync([comment], in: targetZoneID, database: sharedDatabase)
+        }
+    }
+
+    @MainActor
+    private func saveCommentsForSync(
+        _ comments: [EventComment],
+        in targetZoneID: CKRecordZone.ID,
+        database: CKDatabase
+    ) async throws {
+        guard !comments.isEmpty else {
+            cloudKitSharingInfo("saveCommentsForSync skipped; no comments")
+            return
+        }
+
+        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: targetZoneID)
+        var records: [CKRecord] = []
+        for comment in comments {
+            let recordName = comment.cloudKitRecordName ?? comment.id
+            let recordID = CKRecord.ID(recordName: recordName, zoneID: targetZoneID)
+            let existingRecord = try await fetchRecordForUpsertIfPresent(with: recordID, database: database)
+            records.append(
+                CommentRecordMapper.record(
+                    from: comment,
+                    zoneID: targetZoneID,
+                    parentRecordID: parentRecordID,
+                    existingRecord: existingRecord
+                )
+            )
+        }
+
+        cloudKitSharingInfo(
+            "saveCommentsForSync saving records=\(records.map { "\($0.recordType):\($0.recordID.recordName)" }.joined(separator: ",")) zoneOwner=\(targetZoneID.ownerName)"
+        )
+        _ = try await modifyRecords(
+            saving: records,
+            deleting: [],
+            savePolicy: .changedKeys,
+            atomically: false,
+            database: database
+        )
+        cloudKitSharingInfo("saveCommentsForSync succeeded count=\(records.count)")
+    }
+
     func foregroundSync() async throws {
         ensureSyncDriverStarted()
         try await syncDriver.sendChangesNow()
@@ -1141,6 +1255,22 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
+    func fetchEventComments() async throws -> [EventComment] {
+        let query = CKQuery(recordType: CommentRecordMapper.recordType, predicate: NSPredicate(value: true))
+        var records = try await fetchRecords(matching: query, in: zoneID, database: privateDatabase)
+
+        let sharedZoneIDs = try await sharedCoupleSpaceZoneIDs()
+        for sharedZoneID in sharedZoneIDs {
+            cloudKitSharingInfo("fetchEventComments querying shared zone=\(sharedZoneID.zoneName) owner=\(sharedZoneID.ownerName)")
+            records.append(contentsOf: try await fetchRecords(matching: query, in: sharedZoneID, database: sharedDatabase))
+        }
+
+        cloudKitSharingInfo("fetchEventComments fetched records=\(records.count)")
+        return try records.map {
+            try CommentRecordMapper.comment(from: $0)
+        }
+    }
+
     private func sharedCoupleSpaceZoneIDs() async throws -> [CKRecordZone.ID] {
         let zones = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[CKRecordZone], Error>) in
             sharedDatabase.fetchAllRecordZones { zones, error in
@@ -1155,6 +1285,33 @@ final class CloudKitCoupleSpaceService {
             from: zones,
             expectedZoneName: Self.zoneName
         )
+    }
+
+    private func acceptedSharedZoneID(containingEventRecordName eventRecordName: String) async throws -> CKRecordZone.ID {
+        let zoneIDs = try await sharedCoupleSpaceZoneIDs()
+        for sharedZoneID in zoneIDs {
+            let recordID = CKRecord.ID(recordName: eventRecordName, zoneID: sharedZoneID)
+            do {
+                _ = try await fetchRecord(with: recordID, database: sharedDatabase)
+                cloudKitSharingInfo("acceptedSharedZoneID matched event=\(eventRecordName) owner=\(sharedZoneID.ownerName)")
+                return sharedZoneID
+            } catch {
+                guard Self.isUnknownItem(error) else { throw error }
+            }
+        }
+
+        cloudKitSharingError("acceptedSharedZoneID failed event=\(eventRecordName) zones=\(zoneIDs.count)")
+        throw NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.unknownItem.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "No accepted CloudKit share contains event \(eventRecordName)."]
+        )
+    }
+
+    private static func isUnknownItem(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == CKError.errorDomain
+            && CKError.Code(rawValue: nsError.code) == .unknownItem
     }
 
     private func fetchRecords(

@@ -1640,7 +1640,24 @@ final class CloudKitShareAcceptancePlanTests: XCTestCase {
 }
 
 final class CloudKitShareRootICloudEmailPlanTests: XCTestCase {
-    func testAppliesNormalizedOwnerICloudEmailAddressToShareRoot() {
+    func testUsesReadableEmailForShareRootOwnerMemberIDWhenAvailable() {
+        XCTAssertEqual(
+            CloudKitShareRootICloudEmailPlan.ownerMemberIDValue(
+                ownerMemberID: "me",
+                ownerICloudEmailAddress: " owner@icloud.com "
+            ),
+            "owner@icloud.com"
+        )
+        XCTAssertEqual(
+            CloudKitShareRootICloudEmailPlan.ownerMemberIDValue(
+                ownerMemberID: "me",
+                ownerICloudEmailAddress: "_ee39c883ba88010c4ea25fd9a273af8d"
+            ),
+            "me"
+        )
+    }
+
+    func testDoesNotWriteOwnerICloudEmailAddressBeforeProductionSchemaSupportsIt() {
         let record = CKRecord(recordType: "CoupleSpace")
 
         CloudKitShareRootICloudEmailPlan.applyOwnerICloudEmailAddress(
@@ -1648,10 +1665,10 @@ final class CloudKitShareRootICloudEmailPlanTests: XCTestCase {
             to: record
         )
 
-        XCTAssertEqual(record["ownerICloudEmailAddress"] as? String, "owner@icloud.com")
+        XCTAssertNil(record["ownerICloudEmailAddress"] as? String)
     }
 
-    func testDoesNotPersistInvalidOwnerICloudEmailAddressToShareRoot() {
+    func testDoesNotClearExistingOwnerICloudEmailAddressWhenWritesAreDisabled() {
         let record = CKRecord(recordType: "CoupleSpace")
         record["ownerICloudEmailAddress"] = "old@icloud.com" as CKRecordValue
 
@@ -1660,18 +1677,20 @@ final class CloudKitShareRootICloudEmailPlanTests: XCTestCase {
             to: record
         )
 
-        XCTAssertNil(record["ownerICloudEmailAddress"] as? String)
+        XCTAssertEqual(record["ownerICloudEmailAddress"] as? String, "old@icloud.com")
     }
 
     func testReadsOnlyEmailAddressesFromSharedRootRecords() {
         let emailRecord = CKRecord(recordType: "CoupleSpace")
         emailRecord["ownerICloudEmailAddress"] = " partner@icloud.com " as CKRecordValue
+        let ownerMemberEmailRecord = CKRecord(recordType: "CoupleSpace")
+        ownerMemberEmailRecord["ownerMemberID"] = " owner-member@icloud.com " as CKRecordValue
         let internalRecord = CKRecord(recordType: "CoupleSpace")
         internalRecord["ownerICloudEmailAddress"] = "_82828b1d87c3d5e8685ae3b8c5a6c80a" as CKRecordValue
 
         XCTAssertEqual(
-            CloudKitShareRootICloudEmailPlan.emailAddresses(from: [emailRecord, internalRecord]),
-            ["partner@icloud.com"]
+            CloudKitShareRootICloudEmailPlan.emailAddresses(from: [emailRecord, ownerMemberEmailRecord, internalRecord]),
+            ["partner@icloud.com", "owner-member@icloud.com"]
         )
     }
 }

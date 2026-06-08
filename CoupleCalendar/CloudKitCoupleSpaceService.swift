@@ -198,15 +198,27 @@ enum CloudKitShareHierarchyPlan {
 
 enum CloudKitShareRootICloudEmailPlan {
     static let ownerICloudEmailAddressKey = "ownerICloudEmailAddress"
+    static let ownerMemberIDKey = "ownerMemberID"
+    static let writesOwnerICloudEmailAddress = false
+
+    static func ownerMemberIDValue(ownerMemberID: String, ownerICloudEmailAddress: String?) -> String {
+        ICloudSharingIdentityDisplayPlan.normalizedEmailAddress(ownerICloudEmailAddress) ?? ownerMemberID
+    }
 
     static func applyOwnerICloudEmailAddress(_ emailAddress: String?, to record: CKRecord) {
+        guard writesOwnerICloudEmailAddress else { return }
         record[ownerICloudEmailAddressKey] = ICloudSharingIdentityDisplayPlan.normalizedEmailAddress(emailAddress) as CKRecordValue?
     }
 
     static func emailAddresses(from records: [CKRecord]) -> [String] {
         ICloudSharingIdentityDisplayPlan.emailAddresses(
             merging: [],
-            records.compactMap { $0[ownerICloudEmailAddressKey] as? String }
+            records.flatMap {
+                [
+                    $0[ownerICloudEmailAddressKey] as? String,
+                    $0[ownerMemberIDKey] as? String
+                ].compactMap { $0 }
+            }
         )
     }
 }
@@ -1587,10 +1599,14 @@ final class CloudKitCoupleSpaceService {
         ownerICloudEmailAddress: String?
     ) async throws -> ShareRootRecord {
         let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
+        let rootOwnerMemberID = CloudKitShareRootICloudEmailPlan.ownerMemberIDValue(
+            ownerMemberID: ownerMemberID,
+            ownerICloudEmailAddress: ownerICloudEmailAddress
+        )
         if let existingRoot = try await fetchRecordIfPresent(with: rootRecordID) {
             cloudKitSharingInfo("rootRecordForSharing found existing root=\(rootRecordID.recordName) hasShare=\((existingRoot.share != nil).description)")
             existingRoot["schemaVersion"] = 1 as CKRecordValue
-            existingRoot["ownerMemberID"] = ownerMemberID as CKRecordValue
+            existingRoot["ownerMemberID"] = rootOwnerMemberID as CKRecordValue
             CloudKitShareRootICloudEmailPlan.applyOwnerICloudEmailAddress(ownerICloudEmailAddress, to: existingRoot)
             return ShareRootRecord(record: existingRoot, state: .existing)
         }
@@ -1599,7 +1615,7 @@ final class CloudKitCoupleSpaceService {
         let root = CKRecord(recordType: "CoupleSpace", recordID: rootRecordID)
         root["schemaVersion"] = 1 as CKRecordValue
         root["createdAt"] = Date() as CKRecordValue
-        root["ownerMemberID"] = ownerMemberID as CKRecordValue
+        root["ownerMemberID"] = rootOwnerMemberID as CKRecordValue
         CloudKitShareRootICloudEmailPlan.applyOwnerICloudEmailAddress(ownerICloudEmailAddress, to: root)
         return ShareRootRecord(record: root, state: .created)
     }

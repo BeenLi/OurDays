@@ -124,7 +124,9 @@ enum ShareCalCloudKitShareAcceptanceHandler {
         Task {
             do {
                 try await CloudKitCoupleSpaceService().acceptShare(metadata: metadata)
-                ShareCalAcceptedShareSignal.markAccepted()
+                ShareCalAcceptedShareSignal.markAccepted(
+                    partnerICloudEmailAddress: CloudKitShareParticipantIdentityPlan.ownerEmailAddress(from: metadata)
+                )
             } catch {
                 NSLog("ShareCal failed to accept CloudKit share: \(error)")
             }
@@ -191,6 +193,21 @@ enum CloudKitShareHierarchyPlan {
     static func attach(_ record: CKRecord, toShareRoot parentRecordID: CKRecord.ID?) {
         guard let parentRecordID else { return }
         record.parent = CKRecord.Reference(recordID: parentRecordID, action: .none)
+    }
+}
+
+enum CloudKitShareRootICloudEmailPlan {
+    static let ownerICloudEmailAddressKey = "ownerICloudEmailAddress"
+
+    static func applyOwnerICloudEmailAddress(_ emailAddress: String?, to record: CKRecord) {
+        record[ownerICloudEmailAddressKey] = ICloudSharingIdentityDisplayPlan.normalizedEmailAddress(emailAddress) as CKRecordValue?
+    }
+
+    static func emailAddresses(from records: [CKRecord]) -> [String] {
+        ICloudSharingIdentityDisplayPlan.emailAddresses(
+            merging: [],
+            records.compactMap { $0[ownerICloudEmailAddressKey] as? String }
+        )
     }
 }
 
@@ -876,16 +893,35 @@ struct PreparedCloudShare: Identifiable {
     let container: CKContainer
 }
 
+struct CloudKitShareParticipantIdentitySnapshot: Equatable {
+    let identifiers: [String]
+    let emailAddresses: [String]
+}
+
 enum CloudKitShareParticipantIdentityPlan {
     static func sharedParticipantIdentifiers(from share: CKShare) -> [String] {
-        share.participants
-            .filter { $0.role != .owner }
-            .compactMap(identifier)
+        sharedParticipantIdentitySnapshot(from: share).identifiers
+    }
+
+    static func sharedParticipantEmailAddresses(from share: CKShare) -> [String] {
+        sharedParticipantIdentitySnapshot(from: share).emailAddresses
+    }
+
+    static func sharedParticipantIdentitySnapshot(from share: CKShare) -> CloudKitShareParticipantIdentitySnapshot {
+        let participants = share.participants.filter { $0.role != .owner }
+        return CloudKitShareParticipantIdentitySnapshot(
+            identifiers: unique(participants.compactMap(identifier)),
+            emailAddresses: unique(participants.compactMap { emailAddress(for: $0.userIdentity) })
+        )
+    }
+
+    static func ownerEmailAddress(from metadata: CKShare.Metadata) -> String? {
+        emailAddress(for: metadata.ownerIdentity)
     }
 
     private static func identifier(for participant: CKShare.Participant) -> String? {
         let userIdentity = participant.userIdentity
-        if let emailAddress = normalized(userIdentity.lookupInfo?.emailAddress) {
+        if let emailAddress = emailAddress(for: userIdentity) {
             return emailAddress
         }
         if let phoneNumber = normalized(userIdentity.lookupInfo?.phoneNumber) {
@@ -901,10 +937,19 @@ enum CloudKitShareParticipantIdentityPlan {
         return nil
     }
 
+    private static func emailAddress(for userIdentity: CKUserIdentity) -> String? {
+        ICloudSharingIdentityDisplayPlan.normalizedEmailAddress(userIdentity.lookupInfo?.emailAddress)
+    }
+
     private static func normalized(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedValue.isEmpty ? nil : trimmedValue
+    }
+
+    private static func unique(_ values: [String]) -> [String] {
+        var seenValues = Set<String>()
+        return values.filter { seenValues.insert($0).inserted }
     }
 }
 
@@ -1124,11 +1169,14 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
-    func prepareShare(ownerMemberID: String) async throws -> PreparedCloudShare {
+    func prepareShare(ownerMemberID: String, ownerICloudEmailAddress: String? = nil) async throws -> PreparedCloudShare {
         cloudKitSharingInfo("prepareShare begin ownerMemberIDPresent=\((!ownerMemberID.isEmpty).description)")
         try await ensureZone()
 
-        let root = try await rootRecordForSharing(ownerMemberID: ownerMemberID)
+        let root = try await rootRecordForSharing(
+            ownerMemberID: ownerMemberID,
+            ownerICloudEmailAddress: ownerICloudEmailAddress
+        )
         if let shareReference = root.record.share {
             cloudKitSharingInfo("prepareShare found existing share root=\(root.record.recordID.recordName) share=\(shareReference.recordID.recordName)")
             let share = try await fetchShare(with: shareReference.recordID)
@@ -1183,25 +1231,29 @@ final class CloudKitCoupleSpaceService {
     }
 
     func fetchOutgoingShareParticipantIDs(ownerMemberID: String) async throws -> [String] {
+        try await fetchOutgoingShareParticipantIdentitySnapshot(ownerMemberID: ownerMemberID).identifiers
+    }
+
+    func fetchOutgoingShareParticipantIdentitySnapshot(ownerMemberID: String) async throws -> CloudKitShareParticipantIdentitySnapshot {
         cloudKitSharingInfo("fetchOutgoingShareParticipantIDs begin ownerMemberIDPresent=\((!ownerMemberID.isEmpty).description)")
         try await ensureZone()
         let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
         guard let root = try await fetchRecordIfPresent(with: rootRecordID) else {
             cloudKitSharingInfo("fetchOutgoingShareParticipantIDs skipped; root missing")
-            return []
+            return CloudKitShareParticipantIdentitySnapshot(identifiers: [], emailAddresses: [])
         }
         root["schemaVersion"] = 1 as CKRecordValue
         root["ownerMemberID"] = ownerMemberID as CKRecordValue
 
         guard let shareRecordID = CloudKitStopSharingPlan.shareRecordIDToDelete(from: root) else {
             cloudKitSharingInfo("fetchOutgoingShareParticipantIDs skipped; share missing")
-            return []
+            return CloudKitShareParticipantIdentitySnapshot(identifiers: [], emailAddresses: [])
         }
 
         let share = try await fetchShare(with: shareRecordID)
-        let participantIDs = CloudKitShareParticipantIdentityPlan.sharedParticipantIdentifiers(from: share)
-        cloudKitSharingInfo("fetchOutgoingShareParticipantIDs succeeded count=\(participantIDs.count)")
-        return participantIDs
+        let identitySnapshot = CloudKitShareParticipantIdentityPlan.sharedParticipantIdentitySnapshot(from: share)
+        cloudKitSharingInfo("fetchOutgoingShareParticipantIDs succeeded count=\(identitySnapshot.identifiers.count)")
+        return identitySnapshot
     }
 
     func deleteICloudData(ownerMemberID: String) async throws {
@@ -1232,9 +1284,12 @@ final class CloudKitCoupleSpaceService {
     }
 
     @discardableResult
-    func ensureShareRoot(ownerMemberID: String) async throws -> CKRecord {
+    func ensureShareRoot(ownerMemberID: String, ownerICloudEmailAddress: String? = nil) async throws -> CKRecord {
         try await ensureZone()
-        let root = try await rootRecordForSharing(ownerMemberID: ownerMemberID)
+        let root = try await rootRecordForSharing(
+            ownerMemberID: ownerMemberID,
+            ownerICloudEmailAddress: ownerICloudEmailAddress
+        )
         return try await saveRootRecord(root.record)
     }
 
@@ -1527,12 +1582,16 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
-    private func rootRecordForSharing(ownerMemberID: String) async throws -> ShareRootRecord {
+    private func rootRecordForSharing(
+        ownerMemberID: String,
+        ownerICloudEmailAddress: String?
+    ) async throws -> ShareRootRecord {
         let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
         if let existingRoot = try await fetchRecordIfPresent(with: rootRecordID) {
             cloudKitSharingInfo("rootRecordForSharing found existing root=\(rootRecordID.recordName) hasShare=\((existingRoot.share != nil).description)")
             existingRoot["schemaVersion"] = 1 as CKRecordValue
             existingRoot["ownerMemberID"] = ownerMemberID as CKRecordValue
+            CloudKitShareRootICloudEmailPlan.applyOwnerICloudEmailAddress(ownerICloudEmailAddress, to: existingRoot)
             return ShareRootRecord(record: existingRoot, state: .existing)
         }
 
@@ -1541,6 +1600,7 @@ final class CloudKitCoupleSpaceService {
         root["schemaVersion"] = 1 as CKRecordValue
         root["createdAt"] = Date() as CKRecordValue
         root["ownerMemberID"] = ownerMemberID as CKRecordValue
+        CloudKitShareRootICloudEmailPlan.applyOwnerICloudEmailAddress(ownerICloudEmailAddress, to: root)
         return ShareRootRecord(record: root, state: .created)
     }
 
@@ -1963,6 +2023,18 @@ final class CloudKitCoupleSpaceService {
 
     func sharedOwnerIDs(from zoneIDs: [CKRecordZone.ID]) -> [String] {
         zoneIDs.map(\.ownerName).sorted()
+    }
+
+    func fetchSharedOwnerICloudEmailAddresses(sharedZoneIDs: [CKRecordZone.ID]) async throws -> [String] {
+        guard !sharedZoneIDs.isEmpty else { return [] }
+        let rootRecordIDs = sharedZoneIDs.map(CloudKitShareHierarchyPlan.rootRecordID(zoneID:))
+        let recordsByID = try await fetchRecordsForUpsertIfPresent(
+            with: rootRecordIDs,
+            database: sharedDatabase
+        )
+        let emailAddresses = CloudKitShareRootICloudEmailPlan.emailAddresses(from: Array(recordsByID.values))
+        cloudKitSharingInfo("fetchSharedOwnerICloudEmailAddresses fetched count=\(emailAddresses.count)")
+        return emailAddresses
     }
 
     func fetchEventComments() async throws -> [EventComment] {

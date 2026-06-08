@@ -89,6 +89,10 @@ struct RootView: View {
         if consumingAcceptedShareSignal {
             guard ShareCalAcceptedShareSignal.consumePending() else { return }
             settings.iCloudSharingEnabled = true
+            settings.partnerICloudEmailAddresses = ICloudSharingIdentityDisplayPlan.emailAddresses(
+                merging: settings.partnerICloudEmailAddresses,
+                [ShareCalAcceptedShareSignal.consumePendingPartnerICloudEmailAddress()].compactMap { $0 }
+            )
         }
 
         isRunningForegroundSync = true
@@ -1988,7 +1992,10 @@ struct CreateInviteView: View {
 
             Task {
                 do {
-                    try await cloudKit.ensureShareRoot(ownerMemberID: settings.currentMemberID)
+                    try await cloudKit.ensureShareRoot(
+                        ownerMemberID: settings.currentMemberID,
+                        ownerICloudEmailAddress: settings.currentICloudEmailAddress
+                    )
                     try await cloudKit.saveMirrorsForSync([mirror])
                     try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
                     dismiss()
@@ -2503,6 +2510,8 @@ struct PairingStatusCard: View {
                 notPairedContent(strings: strings)
             } else if status == .paired {
                 pairedContent(strings: strings)
+            } else if status == .waitingForYouToShare {
+                waitingForYouToShareContent(strings: strings)
             } else {
                 pairingInProgressContent(strings: strings)
             }
@@ -2672,11 +2681,56 @@ struct PairingStatusCard: View {
         }
     }
 
+    private func waitingForYouToShareContent(strings: ShareCalStrings) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(strings.pairingWaitingForYouToShareDescription)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let pairingDate {
+                Text(strings.pairingDateLine(strings.pairingDateText(for: pairingDate)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    onStartPairing()
+                } label: {
+                    Label(strings.startPairingButton(isPreparing: isPreparingShare), systemImage: "person.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!isCloudKitEnabled || isPreparingShare)
+
+                Button {
+                    onCheckCloudKitStatus()
+                } label: {
+                    Image(systemName: "icloud.and.arrow.up")
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!isCloudKitEnabled || isCheckingCloudKitAccount)
+                .accessibilityLabel(strings.checkICloudStatusButton(isChecking: isCheckingCloudKitAccount))
+            }
+
+            Button(role: .destructive) {
+                onUnpair()
+            } label: {
+                Label(strings.unpairButton, systemImage: "person.2.slash")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!isCloudKitEnabled || isStoppingShare)
+        }
+    }
+
     private var statusTint: Color {
         switch status {
         case .notPaired:
             return .secondary
-        case .waitingForPartner, .waitingForPartnerToShare:
+        case .waitingForPartner, .waitingForPartnerToShare, .waitingForYouToShare:
             return .orange
         case .paired:
             return .pink
@@ -2848,6 +2902,7 @@ struct SettingsTabView: View {
         PairingSettingsPlan.partnerIdentity(
             incomingOwnerID: settings.partnerShareOwnerID,
             outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
+            partnerICloudEmailAddresses: settings.partnerICloudEmailAddresses,
             emptyValue: settings.strings.noICloudSharingIdentity
         )
     }
@@ -2901,6 +2956,18 @@ struct SettingsTabView: View {
                     .accessibilityLabel(strings.myNicknameLabel)
                 } label: {
                     Text(strings.myNicknameLabel)
+                }
+                LabeledContent {
+                    TextField(
+                        strings.myICloudEmailPlaceholder,
+                        text: $settings.currentICloudEmailAddress
+                    )
+                    .multilineTextAlignment(.trailing)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+                    .accessibilityLabel(strings.myICloudEmailLabel)
+                } label: {
+                    Text(strings.myICloudEmailLabel)
                 }
                 LabeledContent {
                     TextField(
@@ -3267,13 +3334,20 @@ struct SettingsTabView: View {
         defer { timeoutTask.cancel() }
 
         do {
-            let share = try await cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
+            let share = try await cloudKit.prepareShare(
+                ownerMemberID: settings.currentMemberID,
+                ownerICloudEmailAddress: settings.currentICloudEmailAddress
+            )
             guard activeSharePreparationID == preparationID else { return }
             settings.iCloudSharingEnabled = true
             settings.hasStartedPairing = true
             settings.markPairingDateIfNeeded()
             settings.outgoingShareParticipantIDs = CloudKitShareParticipantIdentityPlan.sharedParticipantIdentifiers(
                 from: share.share
+            )
+            settings.partnerICloudEmailAddresses = ICloudSharingIdentityDisplayPlan.emailAddresses(
+                merging: settings.partnerICloudEmailAddresses,
+                CloudKitShareParticipantIdentityPlan.sharedParticipantEmailAddresses(from: share.share)
             )
             preparedShare = share
         } catch {
@@ -3309,6 +3383,7 @@ struct SettingsTabView: View {
             settings.iCloudSharingEnabled = false
             settings.hasStartedPairing = false
             settings.partnerShareOwnerID = nil
+            settings.partnerICloudEmailAddresses = []
             settings.outgoingShareParticipantIDs = []
             settings.clearPairingDate()
             errorMessage = settings.strings.unpairSucceeded
@@ -3336,6 +3411,7 @@ struct SettingsTabView: View {
             settings.iCloudSharingEnabled = false
             settings.hasStartedPairing = false
             settings.partnerShareOwnerID = nil
+            settings.partnerICloudEmailAddresses = []
             settings.outgoingShareParticipantIDs = []
             settings.clearPairingDate()
             settings.lastSyncAt = nil

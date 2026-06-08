@@ -40,11 +40,17 @@ final class SettingsStore {
     var currentMemberID: String {
         didSet { defaults.set(currentMemberID, forKey: Key.currentMemberID) }
     }
+    var currentICloudEmailAddress: String {
+        didSet { defaults.set(currentICloudEmailAddress, forKey: Key.currentICloudEmailAddress) }
+    }
     var partnerMemberID: String {
         didSet { defaults.set(partnerMemberID, forKey: Key.partnerMemberID) }
     }
     var partnerShareOwnerID: String? {
         didSet { saveOptionalString(partnerShareOwnerID, forKey: Key.partnerShareOwnerID) }
+    }
+    var partnerICloudEmailAddresses: [String] {
+        didSet { defaults.set(partnerICloudEmailAddresses, forKey: Key.partnerICloudEmailAddresses) }
     }
     var outgoingShareParticipantIDs: [String] {
         didSet { defaults.set(outgoingShareParticipantIDs, forKey: Key.outgoingShareParticipantIDs) }
@@ -78,8 +84,10 @@ final class SettingsStore {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         currentMemberID = defaults.string(forKey: Key.currentMemberID) ?? "me"
+        currentICloudEmailAddress = defaults.string(forKey: Key.currentICloudEmailAddress) ?? ""
         partnerMemberID = defaults.string(forKey: Key.partnerMemberID) ?? "partner"
         partnerShareOwnerID = defaults.string(forKey: Key.partnerShareOwnerID)
+        partnerICloudEmailAddresses = defaults.stringArray(forKey: Key.partnerICloudEmailAddresses) ?? []
         outgoingShareParticipantIDs = defaults.stringArray(forKey: Key.outgoingShareParticipantIDs) ?? []
         iCloudSharingEnabled = defaults.object(forKey: Key.iCloudSharingEnabled) as? Bool ?? true
         hasStartedPairing = defaults.object(forKey: Key.hasStartedPairing) as? Bool ?? false
@@ -129,8 +137,10 @@ final class SettingsStore {
 
     private enum Key {
         static let currentMemberID = "currentMemberID"
+        static let currentICloudEmailAddress = "currentICloudEmailAddress"
         static let partnerMemberID = "partnerMemberID"
         static let partnerShareOwnerID = "partnerShareOwnerID"
+        static let partnerICloudEmailAddresses = "partnerICloudEmailAddresses"
         static let outgoingShareParticipantIDs = "outgoingShareParticipantIDs"
         static let iCloudSharingEnabled = "iCloudSharingEnabled"
         static let hasStartedPairing = "hasStartedPairing"
@@ -335,29 +345,41 @@ struct SyncCoordinator {
                 let hasCloudWrites = !mirrorsNeedingCloudUpload.isEmpty
                     || !hardDeletedMirrors.isEmpty
                     || !canceledInvitations.isEmpty
-                if hasCloudWrites {
-                    try await cloudKit.ensureShareRoot(ownerMemberID: settings.currentMemberID)
+                let shouldUpdateShareRootMetadata = settings.hasStartedPairing
+                    || settings.partnerShareOwnerID != nil
+                    || !settings.outgoingShareParticipantIDs.isEmpty
+                if hasCloudWrites || shouldUpdateShareRootMetadata {
+                    try await cloudKit.ensureShareRoot(
+                        ownerMemberID: settings.currentMemberID,
+                        ownerICloudEmailAddress: settings.currentICloudEmailAddress
+                    )
                     timing.mark("cloudShareRootReady")
-                    try await cloudKit.saveMirrorsForSync(mirrorsNeedingCloudUpload)
-                    timing.mark("cloudMirrorsSaved count=\(mirrorsNeedingCloudUpload.count)")
-                    try await cloudKit.deleteMirrorsForSync(hardDeletedMirrors)
-                    timing.mark("cloudHardDeletesSaved count=\(hardDeletedMirrors.count)")
-                    for invitation in canceledInvitations {
-                        try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                    if hasCloudWrites {
+                        try await cloudKit.saveMirrorsForSync(mirrorsNeedingCloudUpload)
+                        timing.mark("cloudMirrorsSaved count=\(mirrorsNeedingCloudUpload.count)")
+                        try await cloudKit.deleteMirrorsForSync(hardDeletedMirrors)
+                        timing.mark("cloudHardDeletesSaved count=\(hardDeletedMirrors.count)")
+                        for invitation in canceledInvitations {
+                            try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                        }
+                        timing.mark("cloudCanceledInvitationsSaved count=\(canceledInvitations.count)")
                     }
-                    timing.mark("cloudCanceledInvitationsSaved count=\(canceledInvitations.count)")
                 } else {
                     timing.mark("cloudWritesSkipped")
                 }
 
                 try await cloudKit.foregroundSync()
                 timing.mark("cloudSyncEngineFinished")
-                async let outgoingShareParticipantIDs = cloudKit.fetchOutgoingShareParticipantIDs(
+                async let outgoingShareParticipantIdentitySnapshot = cloudKit.fetchOutgoingShareParticipantIdentitySnapshot(
                     ownerMemberID: settings.currentMemberID
                 )
                 async let sharedZoneIDs = cloudKit.fetchSharedCoupleSpaceZoneIDs()
-                let fetchedOutgoingShareParticipantIDs = try await outgoingShareParticipantIDs
-                settings.outgoingShareParticipantIDs = fetchedOutgoingShareParticipantIDs
+                let fetchedOutgoingShareParticipantIdentitySnapshot = try await outgoingShareParticipantIdentitySnapshot
+                settings.outgoingShareParticipantIDs = fetchedOutgoingShareParticipantIdentitySnapshot.identifiers
+                settings.partnerICloudEmailAddresses = ICloudSharingIdentityDisplayPlan.emailAddresses(
+                    merging: settings.partnerICloudEmailAddresses,
+                    fetchedOutgoingShareParticipantIdentitySnapshot.emailAddresses
+                )
                 timing.mark("cloudOutgoingParticipantsFetched count=\(settings.outgoingShareParticipantIDs.count)")
                 let fetchedSharedZoneIDs = try await sharedZoneIDs
                 timing.mark("cloudSharedZonesFetched count=\(fetchedSharedZoneIDs.count)")
@@ -366,6 +388,7 @@ struct SyncCoordinator {
                 async let sharedMirrorsTask = cloudKit.fetchSharedEventMirrors(sharedZoneIDs: fetchedSharedZoneIDs)
                 async let commentsTask = cloudKit.fetchEventComments(sharedZoneIDs: fetchedSharedZoneIDs)
                 async let invitationsTask = cloudKit.fetchEventInvitations(sharedZoneIDs: fetchedSharedZoneIDs)
+                async let sharedOwnerEmailAddressesTask = cloudKit.fetchSharedOwnerICloudEmailAddresses(sharedZoneIDs: fetchedSharedZoneIDs)
 
                 let cloudAccessRequests = try await accessRequestsTask
                 try upsert(accessRequests: cloudAccessRequests, modelContext: modelContext)
@@ -378,6 +401,11 @@ struct SyncCoordinator {
                     settings.hasStartedPairing = true
                     settings.markPairingDateIfNeeded(at: syncedAt)
                 }
+                let sharedOwnerEmailAddresses = try await sharedOwnerEmailAddressesTask
+                settings.partnerICloudEmailAddresses = ICloudSharingIdentityDisplayPlan.emailAddresses(
+                    merging: settings.partnerICloudEmailAddresses,
+                    sharedOwnerEmailAddresses
+                )
                 let sharedMirrors = try await sharedMirrorsTask
                 let importableSharedMirrors = CloudKitSharedDatabaseImportPlan.importableMirrors(
                     sharedMirrors,
@@ -401,6 +429,7 @@ struct SyncCoordinator {
                 timing.mark("cloudInvitationsFetched count=\(cloudInvitations.count)")
             } else if !settings.iCloudSharingEnabled {
                 settings.partnerShareOwnerID = nil
+                settings.partnerICloudEmailAddresses = []
                 settings.outgoingShareParticipantIDs = []
                 settings.hasStartedPairing = false
             } else {

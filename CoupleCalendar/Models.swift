@@ -99,6 +99,8 @@ struct ShareCalStrings {
     var declineButton: String { text("Decline", "拒绝") }
     var profileSection: String { text("Profile", "个人资料") }
     var myNicknameLabel: String { text("My Nickname", "我的昵称") }
+    var myICloudEmailLabel: String { text("My iCloud Email", "我的 iCloud 邮箱") }
+    var myICloudEmailPlaceholder: String { text("name@icloud.com", "name@icloud.com") }
     var partnerNicknameEditLabel: String { text("Partner Note", "对方备注名") }
     var myDisplayNamePlaceholder: String { text("My nickname", "我的昵称") }
     var partnerDisplayNamePlaceholder: String { text("Partner note", "对方备注名") }
@@ -132,6 +134,12 @@ struct ShareCalStrings {
         text(
             "After pairing, you can share calendars with each other from the pairing date. This version supports one pairing partner.",
             "配对后，你们可以从配对日开始互相共享日历。当前版本仅支持一位配对对象。"
+        )
+    }
+    var pairingWaitingForYouToShareDescription: String {
+        text(
+            "You've accepted your partner's share. Share your calendar back to complete pairing.",
+            "你已接收对方共享。请把你的日历共享给对方以完成配对。"
         )
     }
     var accessRequestSection: String { text("History Requests", "历史日程申请") }
@@ -262,6 +270,7 @@ struct ShareCalStrings {
         case .notPaired: text("Not Paired", "未配对")
         case .waitingForPartner: text("Waiting for Partner", "等待对方接受")
         case .waitingForPartnerToShare: text("Waiting for Partner to Share", "等待对方共享")
+        case .waitingForYouToShare: text("Waiting for You to Share", "等待你共享")
         case .paired: text("Paired", "已配对")
         }
     }
@@ -354,12 +363,17 @@ struct ShareCalStrings {
 enum ShareCalAcceptedShareSignal {
     static let notificationName = Notification.Name("ShareCalAcceptedCloudKitShare")
     private static let pendingSyncKey = "ShareCalPendingAcceptedCloudKitShareSync"
+    private static let pendingPartnerICloudEmailAddressKey = "ShareCalPendingAcceptedPartnerICloudEmailAddress"
 
     static func markAccepted(
+        partnerICloudEmailAddress: String? = nil,
         defaults: UserDefaults = .standard,
         notificationCenter: NotificationCenter = .default
     ) {
         defaults.set(true, forKey: pendingSyncKey)
+        if let partnerICloudEmailAddress = ICloudSharingIdentityDisplayPlan.normalizedEmailAddress(partnerICloudEmailAddress) {
+            defaults.set(partnerICloudEmailAddress, forKey: pendingPartnerICloudEmailAddressKey)
+        }
         notificationCenter.post(name: notificationName, object: nil)
     }
 
@@ -371,6 +385,14 @@ enum ShareCalAcceptedShareSignal {
         guard defaults.bool(forKey: pendingSyncKey) else { return false }
         defaults.set(false, forKey: pendingSyncKey)
         return true
+    }
+
+    static func consumePendingPartnerICloudEmailAddress(defaults: UserDefaults = .standard) -> String? {
+        let emailAddress = ICloudSharingIdentityDisplayPlan.normalizedEmailAddress(
+            defaults.string(forKey: pendingPartnerICloudEmailAddressKey)
+        )
+        defaults.removeObject(forKey: pendingPartnerICloudEmailAddressKey)
+        return emailAddress
     }
 }
 
@@ -790,8 +812,7 @@ enum CalendarMirrorVisibilityPlan {
 enum ICloudSharingIdentityDisplayPlan {
     static func displayValue(for identifiers: [String], emptyValue: String) -> String {
         let normalizedIdentifiers = identifiers
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .compactMap(normalizedEmailAddress)
         var seenIdentifiers = Set<String>()
         let uniqueIdentifiers = normalizedIdentifiers.filter { seenIdentifiers.insert($0).inserted }
         guard !uniqueIdentifiers.isEmpty else { return emptyValue }
@@ -800,6 +821,24 @@ enum ICloudSharingIdentityDisplayPlan {
 
     static func displayValue(for identifier: String?, emptyValue: String) -> String {
         displayValue(for: [identifier].compactMap { $0 }, emptyValue: emptyValue)
+    }
+
+    static func emailAddresses(merging existingValues: [String], _ newValues: [String]) -> [String] {
+        var seenEmailAddresses = Set<String>()
+        return (existingValues + newValues)
+            .compactMap(normalizedEmailAddress)
+            .filter { seenEmailAddresses.insert($0).inserted }
+    }
+
+    static func normalizedEmailAddress(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else { return nil }
+        let parts = trimmedValue.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty, parts[1].contains("."), !parts[1].hasSuffix(".") else {
+            return nil
+        }
+        return trimmedValue
     }
 }
 
@@ -827,6 +866,7 @@ enum PairingStatus: Equatable {
     case notPaired
     case waitingForPartner
     case waitingForPartnerToShare
+    case waitingForYouToShare
     case paired
 }
 
@@ -844,10 +884,15 @@ enum PairingSettingsPlan {
         outgoingParticipantIDs: [String],
         incomingOwnerID: String?
     ) -> PairingStatus {
-        if normalizedID(incomingOwnerID) != nil {
+        let hasAcceptedOutgoingShare = !normalizedIDs(outgoingParticipantIDs).isEmpty
+        let hasIncomingShare = normalizedID(incomingOwnerID) != nil
+        if hasAcceptedOutgoingShare && hasIncomingShare {
             return .paired
         }
-        if !normalizedIDs(outgoingParticipantIDs).isEmpty {
+        if hasIncomingShare {
+            return .waitingForYouToShare
+        }
+        if hasAcceptedOutgoingShare {
             return .waitingForPartnerToShare
         }
         if hasStartedPairing {
@@ -873,10 +918,15 @@ enum PairingSettingsPlan {
     static func partnerIdentity(
         incomingOwnerID: String?,
         outgoingParticipantIDs: [String],
+        partnerICloudEmailAddresses: [String] = [],
         emptyValue: String
     ) -> String {
-        if let incomingOwnerID = normalizedID(incomingOwnerID) {
-            return incomingOwnerID
+        let storedEmailDisplayValue = ICloudSharingIdentityDisplayPlan.displayValue(
+            for: partnerICloudEmailAddresses,
+            emptyValue: ""
+        )
+        if !storedEmailDisplayValue.isEmpty {
+            return storedEmailDisplayValue
         }
         return ICloudSharingIdentityDisplayPlan.displayValue(
             for: outgoingParticipantIDs,

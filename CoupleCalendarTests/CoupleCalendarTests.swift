@@ -458,13 +458,22 @@ final class CalendarMirrorVisibilityPlanTests: XCTestCase {
 }
 
 final class ICloudSharingIdentityDisplayPlanTests: XCTestCase {
-    func testDisplaysStableSharingIdentifiersInsteadOfPartnerNickname() {
+    func testDisplaysUniqueEmailAddressesForReadableICloudIdentity() {
         let value = ICloudSharingIdentityDisplayPlan.displayValue(
-            for: [" partner@example.com ", "partner@example.com", "icloud-owner"],
+            for: [" partner@example.com ", "partner@example.com", "other@icloud.com"],
             emptyValue: "Not connected"
         )
 
-        XCTAssertEqual(value, "partner@example.com, icloud-owner")
+        XCTAssertEqual(value, "partner@example.com, other@icloud.com")
+    }
+
+    func testHidesInternalOwnerNamesFromReadableICloudIdentity() {
+        let value = ICloudSharingIdentityDisplayPlan.displayValue(
+            for: [" _ee39c883ba88010c4ea25fd9a273af8d ", "+8613069043940", "not-an-email"],
+            emptyValue: "Not connected"
+        )
+
+        XCTAssertEqual(value, "Not connected")
     }
 
     func testDisplaysEmptyValueWhenStableSharingIdentifierIsMissing() {
@@ -531,11 +540,22 @@ final class PairingSettingsPlanTests: XCTestCase {
         )
     }
 
-    func testReportsPairedWhenIncomingShareIsAvailable() {
+    func testReportsWaitingForYouToShareWhenOnlyIncomingShareIsAvailable() {
         XCTAssertEqual(
             PairingSettingsPlan.status(
                 hasStartedPairing: true,
                 outgoingParticipantIDs: [],
+                incomingOwnerID: "icloud-owner"
+            ),
+            .waitingForYouToShare
+        )
+    }
+
+    func testReportsPairedOnlyWhenIncomingAndOutgoingSharesAreAvailable() {
+        XCTAssertEqual(
+            PairingSettingsPlan.status(
+                hasStartedPairing: true,
+                outgoingParticipantIDs: ["partner@example.com"],
                 incomingOwnerID: "icloud-owner"
             ),
             .paired
@@ -559,22 +579,24 @@ final class PairingSettingsPlanTests: XCTestCase {
         XCTAssertEqual(PairingSettingsPlan.incomingStatus(incomingOwnerID: "icloud-owner"), .on)
     }
 
-    func testPartnerIdentityPrefersIncomingOwnerThenOutgoingParticipant() {
+    func testPartnerIdentityShowsReadableEmailAndHidesInternalOwnerName() {
         XCTAssertEqual(
             PairingSettingsPlan.partnerIdentity(
                 incomingOwnerID: " icloud-owner ",
                 outgoingParticipantIDs: ["partner@example.com"],
+                partnerICloudEmailAddresses: [" partner@icloud.com "],
                 emptyValue: "Not connected"
             ),
-            "icloud-owner"
+            "partner@icloud.com"
         )
         XCTAssertEqual(
             PairingSettingsPlan.partnerIdentity(
-                incomingOwnerID: nil,
-                outgoingParticipantIDs: [" partner@example.com "],
+                incomingOwnerID: " _ee39c883ba88010c4ea25fd9a273af8d ",
+                outgoingParticipantIDs: [" _participantRecordName "],
+                partnerICloudEmailAddresses: [],
                 emptyValue: "Not connected"
             ),
-            "partner@example.com"
+            "Not connected"
         )
     }
 }
@@ -651,7 +673,12 @@ final class ShareCalStringsTests: XCTestCase {
         XCTAssertEqual(strings.pairingStatusTitle(for: .notPaired), "Not Paired")
         XCTAssertEqual(strings.pairingStatusTitle(for: .waitingForPartner), "Waiting for Partner")
         XCTAssertEqual(strings.pairingStatusTitle(for: .waitingForPartnerToShare), "Waiting for Partner to Share")
+        XCTAssertEqual(strings.pairingStatusTitle(for: .waitingForYouToShare), "Waiting for You to Share")
         XCTAssertEqual(strings.pairingStatusTitle(for: .paired), "Paired")
+        XCTAssertEqual(
+            strings.pairingWaitingForYouToShareDescription,
+            "You've accepted your partner's share. Share your calendar back to complete pairing."
+        )
         XCTAssertEqual(strings.pairingPartnerLabel, "Pairing Partner")
         XCTAssertEqual(strings.partnerNicknameLabel, "Nickname")
         XCTAssertEqual(strings.partnerICloudIdentityLabel, "iCloud Identity")
@@ -681,7 +708,12 @@ final class ShareCalStringsTests: XCTestCase {
         XCTAssertEqual(strings.pairingStatusTitle(for: .notPaired), "未配对")
         XCTAssertEqual(strings.pairingStatusTitle(for: .waitingForPartner), "等待对方接受")
         XCTAssertEqual(strings.pairingStatusTitle(for: .waitingForPartnerToShare), "等待对方共享")
+        XCTAssertEqual(strings.pairingStatusTitle(for: .waitingForYouToShare), "等待你共享")
         XCTAssertEqual(strings.pairingStatusTitle(for: .paired), "已配对")
+        XCTAssertEqual(
+            strings.pairingWaitingForYouToShareDescription,
+            "你已接收对方共享。请把你的日历共享给对方以完成配对。"
+        )
         XCTAssertEqual(strings.pairingPartnerLabel, "配对对象")
         XCTAssertEqual(strings.partnerNicknameLabel, "昵称")
         XCTAssertEqual(strings.partnerICloudIdentityLabel, "iCloud 身份")
@@ -1607,6 +1639,43 @@ final class CloudKitShareAcceptancePlanTests: XCTestCase {
     }
 }
 
+final class CloudKitShareRootICloudEmailPlanTests: XCTestCase {
+    func testAppliesNormalizedOwnerICloudEmailAddressToShareRoot() {
+        let record = CKRecord(recordType: "CoupleSpace")
+
+        CloudKitShareRootICloudEmailPlan.applyOwnerICloudEmailAddress(
+            " owner@icloud.com ",
+            to: record
+        )
+
+        XCTAssertEqual(record["ownerICloudEmailAddress"] as? String, "owner@icloud.com")
+    }
+
+    func testDoesNotPersistInvalidOwnerICloudEmailAddressToShareRoot() {
+        let record = CKRecord(recordType: "CoupleSpace")
+        record["ownerICloudEmailAddress"] = "old@icloud.com" as CKRecordValue
+
+        CloudKitShareRootICloudEmailPlan.applyOwnerICloudEmailAddress(
+            "_ee39c883ba88010c4ea25fd9a273af8d",
+            to: record
+        )
+
+        XCTAssertNil(record["ownerICloudEmailAddress"] as? String)
+    }
+
+    func testReadsOnlyEmailAddressesFromSharedRootRecords() {
+        let emailRecord = CKRecord(recordType: "CoupleSpace")
+        emailRecord["ownerICloudEmailAddress"] = " partner@icloud.com " as CKRecordValue
+        let internalRecord = CKRecord(recordType: "CoupleSpace")
+        internalRecord["ownerICloudEmailAddress"] = "_82828b1d87c3d5e8685ae3b8c5a6c80a" as CKRecordValue
+
+        XCTAssertEqual(
+            CloudKitShareRootICloudEmailPlan.emailAddresses(from: [emailRecord, internalRecord]),
+            ["partner@icloud.com"]
+        )
+    }
+}
+
 final class ShareCalAcceptedShareSignalTests: XCTestCase {
     func testMarkAcceptedCreatesPendingSyncSignalAndConsumeClearsIt() throws {
         let suiteName = "ShareCalAcceptedShareSignalTests-\(UUID().uuidString)"
@@ -1633,6 +1702,24 @@ final class ShareCalAcceptedShareSignalTests: XCTestCase {
         XCTAssertTrue(ShareCalAcceptedShareSignal.hasPending(defaults: defaults))
         XCTAssertTrue(ShareCalAcceptedShareSignal.consumePending(defaults: defaults))
         XCTAssertFalse(ShareCalAcceptedShareSignal.hasPending(defaults: defaults))
+    }
+
+    func testStoresPendingPartnerICloudEmailForAcceptedShare() throws {
+        let suiteName = "ShareCalAcceptedShareSignalTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        ShareCalAcceptedShareSignal.markAccepted(
+            partnerICloudEmailAddress: " partner@icloud.com ",
+            defaults: defaults,
+            notificationCenter: NotificationCenter()
+        )
+
+        XCTAssertEqual(
+            ShareCalAcceptedShareSignal.consumePendingPartnerICloudEmailAddress(defaults: defaults),
+            "partner@icloud.com"
+        )
+        XCTAssertNil(ShareCalAcceptedShareSignal.consumePendingPartnerICloudEmailAddress(defaults: defaults))
     }
 }
 

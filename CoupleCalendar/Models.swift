@@ -718,6 +718,14 @@ enum CalendarAccessRequestStatus: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum CalendarAccessRequestSource: String, Codable, CaseIterable, Identifiable {
+    case localOutgoing
+    case privateOwnerZone
+    case acceptedSharedZone
+
+    var id: String { rawValue }
+}
+
 struct PairingHistoryRequestRange: Equatable {
     let start: Date
     let end: Date
@@ -769,11 +777,10 @@ enum CalendarSharingWindowPlan {
 
     static func effectiveWindows(
         now: Date = .now,
-        accessRequests: [CalendarAccessRequest],
-        ownerMemberID: String
+        accessRequests: [CalendarAccessRequest]
     ) -> [DateInterval] {
         let approvedRequestWindows = accessRequests.compactMap { request -> DateInterval? in
-            guard request.ownerMemberID == ownerMemberID,
+            guard request.source == .privateOwnerZone,
                   request.status == .approved,
                   request.requestedEndDate > request.requestedStartDate else {
                 return nil
@@ -806,6 +813,94 @@ enum CalendarMirrorVisibilityPlan {
         mirrors.filter { mirror in
             mirror.ownerMemberID == currentMemberID || mirror.ownerMemberID == partnerShareOwnerID
         }
+    }
+}
+
+enum CalendarDisplayMirrorPlan {
+    static let transientIDPrefix = "display:"
+
+    static func displayMirrors(
+        from events: [CalendarSourceEvent],
+        ownerMemberID: String
+    ) -> [EventMirror] {
+        events.map { event in
+            let fingerprint = EventMirrorService.fingerprint(for: event)
+            let mirrorKey = EventMirrorService.makeMirrorKey(
+                calendarIdentifier: event.calendarIdentifier,
+                eventIdentifier: event.eventIdentifier,
+                occurrenceStartDate: event.occurrenceStartDate,
+                fingerprint: fingerprint
+            )
+            return EventMirror(
+                id: "\(transientIDPrefix)\(mirrorKey)",
+                ownerMemberID: ownerMemberID,
+                mirrorKey: mirrorKey,
+                sourceCalendarID: event.calendarIdentifier,
+                sourceCalendarTitle: event.calendarTitle,
+                occurrenceStartDate: event.occurrenceStartDate,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                isAllDay: event.isAllDay,
+                timeZoneIdentifier: event.timeZoneIdentifier,
+                title: event.title,
+                location: event.location,
+                notes: event.notes,
+                urlString: event.url?.absoluteString,
+                calendarColorHex: event.calendarColorHex,
+                visibilityRawValue: EventVisibility.fullDetails.rawValue,
+                deletedAt: nil,
+                cloudKitRecordName: nil
+            )
+        }
+    }
+}
+
+enum EventDetailInteractionPlan {
+    static func canComment(on event: EventMirror) -> Bool {
+        !event.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix)
+    }
+}
+
+enum CalendarAccessRequestListPlan {
+    static func pendingIncoming(_ requests: [CalendarAccessRequest]) -> [CalendarAccessRequest] {
+        requests
+            .filter { $0.source == .privateOwnerZone && $0.status == .pending }
+            .sorted { lhs, rhs in
+                if lhs.createdAt == rhs.createdAt {
+                    return lhs.id < rhs.id
+                }
+                return lhs.createdAt < rhs.createdAt
+            }
+    }
+
+    static func outgoing(
+        _ requests: [CalendarAccessRequest],
+        currentMemberID: String
+    ) -> [CalendarAccessRequest] {
+        requests
+            .filter { request in
+                request.requesterMemberID == currentMemberID && request.source != .privateOwnerZone
+            }
+            .sorted { lhs, rhs in
+                if lhs.createdAt == rhs.createdAt {
+                    return lhs.id < rhs.id
+                }
+                return lhs.createdAt < rhs.createdAt
+            }
+    }
+}
+
+enum PendingActionBadgePlan {
+    static func count(
+        invitations: [EventInvitation],
+        accessRequests: [CalendarAccessRequest],
+        currentMemberID: String
+    ) -> Int {
+        let invitationCount = invitations.filter {
+            InvitationInteractionPlan.canRespond(to: $0, currentMemberID: currentMemberID)
+                && $0.archivedAt == nil
+        }.count
+        return invitationCount + CalendarAccessRequestListPlan.pendingIncoming(accessRequests).count
     }
 }
 
@@ -1343,6 +1438,7 @@ final class CalendarAccessRequest: Identifiable {
     var createdAt: Date
     var updatedAt: Date
     var cloudKitRecordName: String?
+    var sourceRawValue: String?
 
     var status: CalendarAccessRequestStatus {
         get { CalendarAccessRequestStatus(rawValue: statusRawValue) ?? .pending }
@@ -1350,6 +1446,11 @@ final class CalendarAccessRequest: Identifiable {
             statusRawValue = newValue.rawValue
             updatedAt = .now
         }
+    }
+
+    var source: CalendarAccessRequestSource {
+        get { CalendarAccessRequestSource(rawValue: sourceRawValue ?? "") ?? .privateOwnerZone }
+        set { sourceRawValue = newValue.rawValue }
     }
 
     init(
@@ -1361,7 +1462,8 @@ final class CalendarAccessRequest: Identifiable {
         statusRawValue: String = CalendarAccessRequestStatus.pending.rawValue,
         createdAt: Date = .now,
         updatedAt: Date = .now,
-        cloudKitRecordName: String? = nil
+        cloudKitRecordName: String? = nil,
+        sourceRawValue: String? = nil
     ) {
         self.id = id
         self.requesterMemberID = requesterMemberID
@@ -1372,6 +1474,7 @@ final class CalendarAccessRequest: Identifiable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.cloudKitRecordName = cloudKitRecordName
+        self.sourceRawValue = sourceRawValue
     }
 }
 
@@ -1470,6 +1573,30 @@ enum ShareCalLocalDataCleanupService {
             for comment in existingComments where deletedMirrorIDs.contains(comment.eventMirrorID) {
                 modelContext.delete(comment)
             }
+        }
+
+        try modelContext.save()
+    }
+
+    static func purgeReviewSampleData(modelContext: ModelContext) throws {
+        let existingMirrors = try modelContext.fetch(FetchDescriptor<EventMirror>())
+        let sampleMirrorIDs = Set(
+            existingMirrors
+                .filter { $0.sourceCalendarID == ShareCalReviewSampleData.sourceCalendarID }
+                .map(\.id)
+        )
+        for mirror in existingMirrors where sampleMirrorIDs.contains(mirror.id) {
+            modelContext.delete(mirror)
+        }
+
+        let existingInvitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
+        for invitation in existingInvitations where invitation.id.hasPrefix("\(ShareCalReviewSampleData.sourceCalendarID):") {
+            modelContext.delete(invitation)
+        }
+
+        let existingComments = try modelContext.fetch(FetchDescriptor<EventComment>())
+        for comment in existingComments where comment.id.hasPrefix("\(ShareCalReviewSampleData.sourceCalendarID):") || sampleMirrorIDs.contains(comment.eventMirrorID) {
+            modelContext.delete(comment)
         }
 
         try modelContext.save()

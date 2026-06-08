@@ -16,6 +16,24 @@ struct RootView: View {
     @State private var isRunningForegroundSync = false
     @State private var selectedTab: ShareCalTab = .calendar
     @State private var calendarFocusRequest: CalendarFocusRequest?
+    @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
+    @Query(sort: \CalendarAccessRequest.createdAt) private var accessRequests: [CalendarAccessRequest]
+
+    private var pairingStatus: PairingStatus {
+        PairingSettingsPlan.status(
+            hasStartedPairing: settings.hasStartedPairing,
+            outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
+            incomingOwnerID: settings.partnerShareOwnerID
+        )
+    }
+
+    private var pendingInviteBadgeCount: Int {
+        PendingActionBadgePlan.count(
+            invitations: invitations,
+            accessRequests: accessRequests,
+            currentMemberID: settings.currentMemberID
+        )
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -37,6 +55,7 @@ struct RootView: View {
             .tabItem {
                 Label(settings.strings.invitesTab, systemImage: "envelope")
             }
+            .badge(pendingInviteBadgeCount)
             .tag(ShareCalTab.invites)
 
             NavigationStack {
@@ -49,6 +68,7 @@ struct RootView: View {
         }
         .task {
             await syncAfterAcceptedShareIfNeeded()
+            purgeReviewSampleDataIfPaired()
         }
         .onReceive(NotificationCenter.default.publisher(for: ShareCalAcceptedShareSignal.notificationName)) { _ in
             Task {
@@ -60,6 +80,10 @@ struct RootView: View {
             Task {
                 await syncAfterSceneBecameActiveIfNeeded()
             }
+        }
+        .onChange(of: pairingStatus) { _, newStatus in
+            guard newStatus == .paired else { return }
+            purgeReviewSampleDataIfPaired()
         }
     }
 
@@ -108,6 +132,17 @@ struct RootView: View {
             settings: settings,
             forceCloudKit: consumingAcceptedShareSignal
         )
+        purgeReviewSampleDataIfPaired()
+    }
+
+    @MainActor
+    private func purgeReviewSampleDataIfPaired() {
+        guard pairingStatus == .paired else { return }
+        do {
+            try ShareCalLocalDataCleanupService.purgeReviewSampleData(modelContext: modelContext)
+        } catch {
+            settings.lastSyncError = error.localizedDescription
+        }
     }
 }
 
@@ -135,6 +170,7 @@ struct CalendarTabView: View {
     @State private var selectedEvent: EventMirror?
     @State private var focusedJointEventID: String?
     @State private var activeCalendarSheet: CalendarSheet?
+    @State private var localDisplayMirrors: [EventMirror] = []
 
     var activeMirrors: [EventMirror] {
         mirrors.filter { $0.deletedAt == nil }
@@ -173,11 +209,18 @@ struct CalendarTabView: View {
     }
 
     var visibleOrdinaryMirrors: [EventMirror] {
-        JointSchedulePlan.ordinaryMirrors(visibleMirrors, excluding: visibleJointEvents)
+        JointSchedulePlan.ordinaryMirrors(
+            localDisplayMirrors + visiblePartnerMirrors,
+            excluding: visibleJointEvents
+        )
     }
 
     var myEvents: [EventMirror] {
         visibleOrdinaryMirrors.filter { $0.ownerMemberID == settings.currentMemberID }
+    }
+
+    var visiblePartnerMirrors: [EventMirror] {
+        visibleMirrors.filter { $0.ownerMemberID == settings.partnerShareOwnerID }
     }
 
     var partnerEvents: [EventMirror] {
@@ -214,6 +257,10 @@ struct CalendarTabView: View {
         }
     }
 
+    var localDisplayRefreshKey: String {
+        "\(mode.rawValue):\(Int(visibleInterval.start.timeIntervalSince1970)):\(Int(visibleInterval.end.timeIntervalSince1970)):\(settings.currentMemberID)"
+    }
+
     var body: some View {
         let strings = settings.strings
 
@@ -247,8 +294,8 @@ struct CalendarTabView: View {
                     .padding(.horizontal)
             }
 
-            if activeMirrors.isEmpty && acceptedJointEvents.isEmpty {
-                ShareCalEmptyState {
+            if localDisplayMirrors.isEmpty && visiblePartnerMirrors.isEmpty && acceptedJointEvents.isEmpty {
+                ShareCalEmptyState(allowsSampleData: !isPaired) {
                     loadReviewSampleData()
                 }
                 .padding(.horizontal)
@@ -298,9 +345,13 @@ struct CalendarTabView: View {
         }
         .onAppear {
             consumeFocusRequestIfNeeded()
+            refreshLocalDisplayMirrors()
         }
         .onChange(of: focusRequest) { _, _ in
             consumeFocusRequestIfNeeded()
+        }
+        .task(id: localDisplayRefreshKey) {
+            refreshLocalDisplayMirrors()
         }
     }
 
@@ -338,6 +389,17 @@ struct CalendarTabView: View {
             )
             await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
         }
+    }
+
+    private func refreshLocalDisplayMirrors() {
+        let sourceEvents = services.calendarAccess.authorizedEvents(
+            from: visibleInterval.start,
+            to: visibleInterval.end
+        )
+        localDisplayMirrors = CalendarDisplayMirrorPlan.displayMirrors(
+            from: sourceEvents,
+            ownerMemberID: settings.currentMemberID
+        )
     }
 }
 
@@ -568,6 +630,7 @@ struct CalendarPairingStatusLine: View {
 
 struct ShareCalEmptyState: View {
     @Environment(SettingsStore.self) private var settings
+    let allowsSampleData: Bool
     let onLoadSampleData: () -> Void
 
     var body: some View {
@@ -576,8 +639,10 @@ struct ShareCalEmptyState: View {
         } description: {
             Text(settings.strings.noSharedSchedulesDescription)
         } actions: {
-            Button(settings.strings.loadSampleScheduleButton, action: onLoadSampleData)
-                .buttonStyle(.borderedProminent)
+            if allowsSampleData {
+                Button(settings.strings.loadSampleScheduleButton, action: onLoadSampleData)
+                    .buttonStyle(.borderedProminent)
+            }
         }
     }
 }
@@ -2073,7 +2138,8 @@ struct EventDetailView: View {
     let event: EventMirror
 
     var eventComments: [EventComment] {
-        comments.filter { $0.eventMirrorID == event.id && $0.deletedAt == nil }
+        guard EventDetailInteractionPlan.canComment(on: event) else { return [] }
+        return comments.filter { $0.eventMirrorID == event.id && $0.deletedAt == nil }
     }
 
     var body: some View {
@@ -2124,37 +2190,39 @@ struct EventDetailView: View {
                     }
                 }
 
-                Section(strings.commentsSection) {
-                    ForEach(eventComments) { comment in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(comment.authorMemberID)
-                                    .font(.caption.weight(.semibold))
-                                Spacer()
-                                Text(comment.createdAt, format: .dateTime.hour().minute())
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                if EventDetailInteractionPlan.canComment(on: event) {
+                    Section(strings.commentsSection) {
+                        ForEach(eventComments) { comment in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(comment.authorMemberID)
+                                        .font(.caption.weight(.semibold))
+                                    Spacer()
+                                    Text(comment.createdAt, format: .dateTime.hour().minute())
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text(comment.body)
                             }
-                            Text(comment.body)
-                        }
-                        .swipeActions {
-                            Button(role: .destructive) {
-                                services.commentService.delete(comment)
-                                try? modelContext.save()
-                            } label: {
-                                Label(strings.deleteButton, systemImage: "trash")
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    services.commentService.delete(comment)
+                                    try? modelContext.save()
+                                } label: {
+                                    Label(strings.deleteButton, systemImage: "trash")
+                                }
                             }
                         }
-                    }
 
-                    HStack {
-                        TextField(strings.addCommentPlaceholder, text: $commentBody, axis: .vertical)
-                        Button {
-                            addComment()
-                        } label: {
-                            Image(systemName: "paperplane.fill")
+                        HStack {
+                            TextField(strings.addCommentPlaceholder, text: $commentBody, axis: .vertical)
+                            Button {
+                                addComment()
+                            } label: {
+                                Image(systemName: "paperplane.fill")
+                            }
+                            .disabled(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
-                        .disabled(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }
@@ -2286,14 +2354,34 @@ struct InvitesTabView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AppServices.self) private var services
     @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
+    @Query(sort: \CalendarAccessRequest.createdAt) private var accessRequests: [CalendarAccessRequest]
     @State private var errorMessage: String?
     let openInCalendar: (EventInvitation) -> Void
+
+    private var pendingIncomingAccessRequests: [CalendarAccessRequest] {
+        CalendarAccessRequestListPlan.pendingIncoming(accessRequests)
+    }
 
     var body: some View {
         let strings = settings.strings
         let visibleInvitations = InvitationListPlan.visibleInvitations(invitations)
 
         List {
+            if !pendingIncomingAccessRequests.isEmpty {
+                Section(strings.pendingAccessRequestsLabel) {
+                    ForEach(pendingIncomingAccessRequests) { request in
+                        HistoryRequestRow(
+                            request: request,
+                            rangeText: accessRequestRangeText(for: request)
+                        ) {
+                            update(request, status: .approved)
+                        } decline: {
+                            update(request, status: .declined)
+                        }
+                    }
+                }
+            }
+
             ForEach(InvitationStatus.allCases) { status in
                 let filtered = visibleInvitations.filter { $0.status == status }
                 if !filtered.isEmpty {
@@ -2320,7 +2408,7 @@ struct InvitesTabView: View {
                 }
             }
 
-            if visibleInvitations.isEmpty {
+            if visibleInvitations.isEmpty && pendingIncomingAccessRequests.isEmpty {
                 ContentUnavailableView(strings.noInvitations, systemImage: "envelope.open")
             }
 
@@ -2416,6 +2504,67 @@ struct InvitesTabView: View {
                 errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
             }
         }
+    }
+
+    private func update(_ request: CalendarAccessRequest, status: CalendarAccessRequestStatus) {
+        request.status = status
+        do {
+            try modelContext.save()
+            saveAccessRequestToCloudKit(request)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func saveAccessRequestToCloudKit(_ request: CalendarAccessRequest) {
+        guard let cloudKit = services.cloudKitIfAvailable else { return }
+        Task {
+            do {
+                try await cloudKit.saveCalendarAccessRequestForSync(
+                    request,
+                    currentMemberID: settings.currentMemberID
+                )
+            } catch {
+                errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+            }
+        }
+    }
+
+    private func accessRequestRangeText(for request: CalendarAccessRequest) -> String {
+        let start = request.requestedStartDate.formatted(date: .abbreviated, time: .omitted)
+        let displayedEndDate = PairingDatePlan.displayedEndDate(forExclusiveEndDate: request.requestedEndDate)
+        let end = displayedEndDate.formatted(date: .abbreviated, time: .omitted)
+        return "\(start) - \(end)"
+    }
+}
+
+struct HistoryRequestRow: View {
+    @Environment(SettingsStore.self) private var settings
+    let request: CalendarAccessRequest
+    let rangeText: String
+    let approve: () -> Void
+    let decline: () -> Void
+
+    var body: some View {
+        let strings = settings.strings
+
+        VStack(alignment: .leading, spacing: 8) {
+            Text(strings.incomingHistoryRequestText(
+                requester: request.requesterMemberID,
+                rangeText: rangeText
+            ))
+            .font(.subheadline.weight(.semibold))
+            Text(strings.prePairingHistoryLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Button(strings.approveButton, action: approve)
+                    .buttonStyle(.borderedProminent)
+                Button(strings.declineButton, role: .destructive, action: decline)
+                    .buttonStyle(.bordered)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -2878,16 +3027,11 @@ struct SettingsTabView: View {
     }
 
     private var pendingIncomingAccessRequests: [CalendarAccessRequest] {
-        accessRequests.filter { request in
-            request.ownerMemberID == settings.currentMemberID && request.status == .pending
-        }
+        CalendarAccessRequestListPlan.pendingIncoming(accessRequests)
     }
 
     private var outgoingAccessRequests: [CalendarAccessRequest] {
-        accessRequests.filter { request in
-            request.requesterMemberID == settings.currentMemberID
-                && request.ownerMemberID == settings.partnerMemberID
-        }
+        CalendarAccessRequestListPlan.outgoing(accessRequests, currentMemberID: settings.currentMemberID)
     }
 
     private var pairingStatus: PairingStatus {
@@ -3259,9 +3403,10 @@ struct SettingsTabView: View {
 
         let request = CalendarAccessRequest(
             requesterMemberID: settings.currentMemberID,
-            ownerMemberID: settings.partnerMemberID,
+            ownerMemberID: settings.partnerShareOwnerID ?? settings.partnerMemberID,
             requestedStartDate: normalizedStartDate,
-            requestedEndDate: exclusiveEndDate
+            requestedEndDate: exclusiveEndDate,
+            sourceRawValue: CalendarAccessRequestSource.localOutgoing.rawValue
         )
         modelContext.insert(request)
         do {

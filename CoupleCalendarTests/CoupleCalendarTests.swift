@@ -312,6 +312,38 @@ final class EventMirrorServiceTests: XCTestCase {
     }
 }
 
+final class CalendarDisplayMirrorPlanTests: XCTestCase {
+    func testTransientDisplayMirrorsDoNotCarryCloudKitRecordNames() {
+        let event = CalendarSourceEvent(
+            eventIdentifier: "local-event",
+            calendarIdentifier: "personal-calendar",
+            calendarTitle: "Personal",
+            calendarColorHex: "#3A86FF",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 11_000),
+            occurrenceStartDate: Date(timeIntervalSince1970: 10_000),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: "Older local event",
+            location: "Home",
+            notes: "Visible only to me",
+            url: nil
+        )
+
+        let mirrors = CalendarDisplayMirrorPlan.displayMirrors(
+            from: [event],
+            ownerMemberID: "me"
+        )
+
+        XCTAssertEqual(mirrors.count, 1)
+        XCTAssertEqual(mirrors[0].ownerMemberID, "me")
+        XCTAssertEqual(mirrors[0].sourceCalendarID, "personal-calendar")
+        XCTAssertEqual(mirrors[0].title, "Older local event")
+        XCTAssertNil(mirrors[0].cloudKitRecordName)
+        XCTAssertFalse(EventDetailInteractionPlan.canComment(on: mirrors[0]))
+    }
+}
+
 final class CalendarSharingWindowPlanTests: XCTestCase {
     func testDefaultWindowSharesFromPairingDateToDistantFuture() {
         let pairingDate = Date(timeIntervalSince1970: 1_000_000)
@@ -325,37 +357,39 @@ final class CalendarSharingWindowPlanTests: XCTestCase {
         XCTAssertTrue(CalendarSharingWindowPlan.contains(pairingDate.addingTimeInterval(60), in: windows))
     }
 
-    func testApprovedRequestsExpandEffectiveWindowsForRequestedOwnerOnly() {
+    func testApprovedPrivateOwnerRequestsExpandEffectiveWindows() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let pairingDate = now.addingTimeInterval(-10 * 24 * 60 * 60)
         let approvedStart = now.addingTimeInterval(-30 * 24 * 60 * 60)
         let approvedEnd = now.addingTimeInterval(-20 * 24 * 60 * 60)
         let approved = CalendarAccessRequest(
             requesterMemberID: "partner",
-            ownerMemberID: "me",
+            ownerMemberID: "_stableSelfOwner",
             requestedStartDate: approvedStart,
             requestedEndDate: approvedEnd,
-            statusRawValue: CalendarAccessRequestStatus.approved.rawValue
+            statusRawValue: CalendarAccessRequestStatus.approved.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
         )
         let pending = CalendarAccessRequest(
             requesterMemberID: "partner",
-            ownerMemberID: "me",
+            ownerMemberID: "_stableSelfOwner",
             requestedStartDate: now.addingTimeInterval(-60 * 24 * 60 * 60),
             requestedEndDate: now.addingTimeInterval(-50 * 24 * 60 * 60),
-            statusRawValue: CalendarAccessRequestStatus.pending.rawValue
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
         )
-        let otherOwner = CalendarAccessRequest(
+        let sharedCopy = CalendarAccessRequest(
             requesterMemberID: "partner",
-            ownerMemberID: "someone-else",
+            ownerMemberID: "_stableSelfOwner",
             requestedStartDate: now.addingTimeInterval(-90 * 24 * 60 * 60),
             requestedEndDate: now.addingTimeInterval(-80 * 24 * 60 * 60),
-            statusRawValue: CalendarAccessRequestStatus.approved.rawValue
+            statusRawValue: CalendarAccessRequestStatus.approved.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
         )
 
         let windows = CalendarSharingWindowPlan.effectiveWindows(
             now: pairingDate,
-            accessRequests: [approved, pending, otherOwner],
-            ownerMemberID: "me"
+            accessRequests: [approved, pending, sharedCopy]
         )
 
         XCTAssertTrue(CalendarSharingWindowPlan.contains(approvedStart.addingTimeInterval(60), in: windows))
@@ -363,6 +397,38 @@ final class CalendarSharingWindowPlanTests: XCTestCase {
         XCTAssertFalse(CalendarSharingWindowPlan.contains(now.addingTimeInterval(-85 * 24 * 60 * 60), in: windows))
         XCTAssertTrue(CalendarSharingWindowPlan.contains(now.addingTimeInterval(30 * 24 * 60 * 60), in: windows))
         XCTAssertFalse(CalendarSharingWindowPlan.contains(pairingDate.addingTimeInterval(-60), in: windows))
+    }
+
+    func testOnlyApprovedPrivateOwnerHistoryRequestsExpandOwnerUploadWindow() {
+        let pairingDate = Date(timeIntervalSince1970: 1_000_000)
+        let approvedStart = pairingDate.addingTimeInterval(-30 * 24 * 60 * 60)
+        let approvedEnd = pairingDate.addingTimeInterval(-20 * 24 * 60 * 60)
+        let privateOwnerRequest = CalendarAccessRequest(
+            id: "private-owner",
+            requesterMemberID: "me",
+            ownerMemberID: "_stableSelfOwner",
+            requestedStartDate: approvedStart,
+            requestedEndDate: approvedEnd,
+            statusRawValue: CalendarAccessRequestStatus.approved.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
+        )
+        let sharedOutgoingCopy = CalendarAccessRequest(
+            id: "shared-copy",
+            requesterMemberID: "me",
+            ownerMemberID: "me",
+            requestedStartDate: pairingDate.addingTimeInterval(-60 * 24 * 60 * 60),
+            requestedEndDate: pairingDate.addingTimeInterval(-50 * 24 * 60 * 60),
+            statusRawValue: CalendarAccessRequestStatus.approved.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
+        )
+
+        let windows = CalendarSharingWindowPlan.effectiveWindows(
+            now: pairingDate,
+            accessRequests: [privateOwnerRequest, sharedOutgoingCopy]
+        )
+
+        XCTAssertTrue(CalendarSharingWindowPlan.contains(approvedStart.addingTimeInterval(60), in: windows))
+        XCTAssertFalse(CalendarSharingWindowPlan.contains(pairingDate.addingTimeInterval(-55 * 24 * 60 * 60), in: windows))
     }
 
     func testEnclosingIntervalUsesEarliestStartAndLatestEnd() {
@@ -373,6 +439,48 @@ final class CalendarSharingWindowPlanTests: XCTestCase {
 
         XCTAssertEqual(enclosing.start, Date(timeIntervalSince1970: -10))
         XCTAssertEqual(enclosing.end, Date(timeIntervalSince1970: 30))
+    }
+}
+
+final class CalendarAccessRequestListPlanTests: XCTestCase {
+    func testSourceMappingDrivesIncomingAndOutgoingListsWhenMemberIDsMatch() {
+        let rangeStart = Date(timeIntervalSince1970: 10_000)
+        let incoming = CalendarAccessRequest(
+            id: "incoming",
+            requesterMemberID: "me",
+            ownerMemberID: "me",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeStart.addingTimeInterval(24 * 60 * 60),
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
+        )
+        let acceptedSharedCopy = CalendarAccessRequest(
+            id: "shared-copy",
+            requesterMemberID: "me",
+            ownerMemberID: "me",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeStart.addingTimeInterval(24 * 60 * 60),
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
+        )
+        let localOutgoing = CalendarAccessRequest(
+            id: "local-outgoing",
+            requesterMemberID: "me",
+            ownerMemberID: "_partnerOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeStart.addingTimeInterval(24 * 60 * 60),
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.localOutgoing.rawValue
+        )
+
+        XCTAssertEqual(
+            CalendarAccessRequestListPlan.pendingIncoming([incoming, acceptedSharedCopy, localOutgoing]).map(\.id),
+            ["incoming"]
+        )
+        XCTAssertEqual(
+            CalendarAccessRequestListPlan.outgoing([incoming, acceptedSharedCopy, localOutgoing], currentMemberID: "me").map(\.id),
+            ["shared-copy", "local-outgoing"]
+        )
     }
 }
 
@@ -1252,8 +1360,20 @@ final class CloudKitRecordMappingTests: XCTestCase {
         let record = CalendarAccessRequestRecordMapper.record(from: request, zoneID: zoneID)
         let decoded = try CalendarAccessRequestRecordMapper.request(from: record)
 
-        XCTAssertEqual(record.recordType, "CalendarAccessRequest")
-        XCTAssertEqual(record.recordID.recordName, "request-record")
+        XCTAssertEqual(record.recordType, "EventInvitation")
+        XCTAssertEqual(record.recordID.recordName, "history-access-request:request-record")
+        XCTAssertTrue(CalendarAccessRequestRecordMapper.isTransportRecord(record))
+        XCTAssertEqual(Set(record.allKeys()), [
+            "creatorMemberID",
+            "inviteeMemberID",
+            "title",
+            "startDate",
+            "endDate",
+            "isAllDay",
+            "statusRawValue",
+            "createdAt",
+            "updatedAt"
+        ])
         XCTAssertEqual(decoded.id, "request-record")
         XCTAssertEqual(decoded.requesterMemberID, "partner")
         XCTAssertEqual(decoded.ownerMemberID, "me")
@@ -1262,7 +1382,7 @@ final class CloudKitRecordMappingTests: XCTestCase {
         XCTAssertEqual(decoded.status, .pending)
         XCTAssertEqual(decoded.createdAt, Date(timeIntervalSince1970: 900))
         XCTAssertEqual(decoded.updatedAt, Date(timeIntervalSince1970: 950))
-        XCTAssertEqual(decoded.cloudKitRecordName, "request-record")
+        XCTAssertEqual(decoded.cloudKitRecordName, "history-access-request:request-record")
     }
 }
 
@@ -1398,6 +1518,45 @@ final class CloudKitStopSharingPlanTests: XCTestCase {
         XCTAssertEqual(remainingComments, ["keep"])
     }
 
+    @MainActor
+    func testReviewSampleCleanupPurgesOnlyPreviewData() throws {
+        let container = try ShareCalModelContainer.make(isStoredInMemoryOnly: true)
+        let context = ModelContext(container)
+        let sample = ShareCalReviewSampleData.build(
+            now: Date(timeIntervalSince1970: 10_000),
+            currentMemberID: "me",
+            partnerMemberID: "partner"
+        )
+        sample.mirrors.forEach(context.insert)
+        sample.invitations.forEach(context.insert)
+        sample.comments.forEach(context.insert)
+        context.insert(cleanupMirror(owner: "me", key: "real-event"))
+        context.insert(EventInvitation(
+            id: "real-invite",
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Real invite",
+            startDate: Date(timeIntervalSince1970: 20_000),
+            endDate: Date(timeIntervalSince1970: 21_000),
+            location: nil,
+            notes: nil
+        ))
+        context.insert(EventComment(
+            id: "real-comment",
+            eventMirrorID: "real-event",
+            authorMemberID: "partner",
+            body: "keep",
+            createdAt: Date(timeIntervalSince1970: 22_000)
+        ))
+        try context.save()
+
+        try ShareCalLocalDataCleanupService.purgeReviewSampleData(modelContext: context)
+
+        XCTAssertEqual(try context.fetch(FetchDescriptor<EventMirror>()).map(\.mirrorKey), ["real-event"])
+        XCTAssertEqual(try context.fetch(FetchDescriptor<EventInvitation>()).map(\.id), ["real-invite"])
+        XCTAssertEqual(try context.fetch(FetchDescriptor<EventComment>()).map(\.id), ["real-comment"])
+    }
+
     private func cleanupMirror(owner: String, key: String) -> EventMirror {
         EventMirror(
             id: key,
@@ -1450,6 +1609,39 @@ final class CloudKitInvitationWritePlanTests: XCTestCase {
         XCTAssertEqual(
             CloudKitInvitationWritePlan.destination(creatorMemberID: "partner", currentMemberID: "me"),
             .acceptedSharedZone
+        )
+    }
+}
+
+final class CloudKitAccessRequestWritePlanTests: XCTestCase {
+    func testRequesterWritesNewHistoryRequestToAcceptedSharedZone() {
+        let request = CalendarAccessRequest(
+            requesterMemberID: "me",
+            ownerMemberID: "_partnerOwner",
+            requestedStartDate: Date(timeIntervalSince1970: 10_000),
+            requestedEndDate: Date(timeIntervalSince1970: 20_000),
+            sourceRawValue: CalendarAccessRequestSource.localOutgoing.rawValue
+        )
+
+        XCTAssertEqual(
+            CloudKitAccessRequestWritePlan.destination(for: request, currentMemberID: "me"),
+            .acceptedSharedZone
+        )
+    }
+
+    func testApproverWritesHistoryRequestStatusToPrivateOwnerZone() {
+        let request = CalendarAccessRequest(
+            requesterMemberID: "me",
+            ownerMemberID: "me",
+            requestedStartDate: Date(timeIntervalSince1970: 10_000),
+            requestedEndDate: Date(timeIntervalSince1970: 20_000),
+            statusRawValue: CalendarAccessRequestStatus.approved.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
+        )
+
+        XCTAssertEqual(
+            CloudKitAccessRequestWritePlan.destination(for: request, currentMemberID: "me"),
+            .privateOwnerZone
         )
     }
 }
@@ -2073,6 +2265,46 @@ final class ShareCalLaunchDiagnosticPlanTests: XCTestCase {
         )
     }
 
+    func testBuildsSeedCalendarDraftFromISODateArguments() throws {
+        let draft = ShareCalLaunchDiagnosticPlan.seedCalendarEventDraft(
+            arguments: [
+                "ShareCal",
+                "-ShareCalSeedCalendarEvent",
+                "-ShareCalSeedCalendarEventTitle",
+                "Pre pairing in range",
+                "-ShareCalSeedCalendarEventStart",
+                "2026-06-01T09:00:00Z",
+                "-ShareCalSeedCalendarEventEnd",
+                "2026-06-01T10:00:00Z"
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        XCTAssertEqual(draft.title, "Pre pairing in range")
+        XCTAssertEqual(draft.startDate, try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-06-01T09:00:00Z")))
+        XCTAssertEqual(draft.endDate, try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-06-01T10:00:00Z")))
+        XCTAssertEqual(draft.notes, ShareCalSmokeTestEventPlan.notes)
+    }
+
+    func testFallsBackToDefaultSeedDraftWhenISODateRangeIsInvalid() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let draft = ShareCalLaunchDiagnosticPlan.seedCalendarEventDraft(
+            arguments: [
+                "ShareCal",
+                "-ShareCalSeedCalendarEvent",
+                "-ShareCalSeedCalendarEventTitle",
+                "Fallback",
+                "-ShareCalSeedCalendarEventStart",
+                "2026-06-01T10:00:00Z",
+                "-ShareCalSeedCalendarEventEnd",
+                "2026-06-01T09:00:00Z"
+            ],
+            now: now
+        )
+
+        XCTAssertEqual(draft, ShareCalSmokeTestEventPlan.draft(now: now, title: "Fallback"))
+    }
+
     func testCloudKitWriteProbeUsesRealShareRootRecordType() {
         XCTAssertEqual(ShareCalLaunchDiagnosticPlan.cloudKitWriteProbeRecordType, "CoupleSpace")
     }
@@ -2267,15 +2499,59 @@ final class InvitationListPlanTests: XCTestCase {
         XCTAssertEqual(request.startDate, Date(timeIntervalSince1970: 10_000))
     }
 
+    func testPendingActionBadgeCountsRespondableInvitationsAndIncomingHistoryRequests() {
+        let pendingInvite = invitation(
+            id: "pending-invite",
+            status: .pending,
+            creatorMemberID: "partner",
+            inviteeMemberID: "me"
+        )
+        let ownPendingInvite = invitation(
+            id: "own-pending-invite",
+            status: .pending,
+            creatorMemberID: "me",
+            inviteeMemberID: "partner"
+        )
+        let rangeStart = Date(timeIntervalSince1970: 10_000)
+        let incomingHistory = CalendarAccessRequest(
+            id: "history",
+            requesterMemberID: "partner",
+            ownerMemberID: "me",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeStart.addingTimeInterval(24 * 60 * 60),
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
+        )
+        let outgoingHistory = CalendarAccessRequest(
+            id: "outgoing-history",
+            requesterMemberID: "me",
+            ownerMemberID: "_partnerOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeStart.addingTimeInterval(24 * 60 * 60),
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.localOutgoing.rawValue
+        )
+
+        let count = PendingActionBadgePlan.count(
+            invitations: [pendingInvite, ownPendingInvite],
+            accessRequests: [incomingHistory, outgoingHistory],
+            currentMemberID: "me"
+        )
+
+        XCTAssertEqual(count, 2)
+    }
+
     private func invitation(
         id: String,
         status: InvitationStatus,
+        creatorMemberID: String = "me",
+        inviteeMemberID: String = "partner",
         archivedAt: Date? = nil
     ) -> EventInvitation {
         EventInvitation(
             id: id,
-            creatorMemberID: "me",
-            inviteeMemberID: "partner",
+            creatorMemberID: creatorMemberID,
+            inviteeMemberID: inviteeMemberID,
             title: "Dinner",
             startDate: Date(timeIntervalSince1970: 10_000),
             endDate: Date(timeIntervalSince1970: 12_000),
@@ -2527,7 +2803,7 @@ final class CloudKitRecordQueryFailurePlanTests: XCTestCase {
 
         XCTAssertTrue(
             CloudKitRecordQueryFailurePlan.canTreatMissingRecordTypeAsEmpty(
-                recordType: CalendarAccessRequestRecordMapper.recordType,
+                recordType: CalendarAccessRequestRecordMapper.legacyRecordType,
                 error: error
             )
         )

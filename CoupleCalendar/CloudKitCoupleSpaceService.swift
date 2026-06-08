@@ -295,6 +295,18 @@ enum CloudKitAccessRequestWriteDestination: Equatable {
 
 enum CloudKitAccessRequestWritePlan {
     static func destination(
+        for request: CalendarAccessRequest,
+        currentMemberID: String
+    ) -> CloudKitAccessRequestWriteDestination {
+        switch request.source {
+        case .privateOwnerZone:
+            return .privateOwnerZone
+        case .localOutgoing, .acceptedSharedZone:
+            return .acceptedSharedZone
+        }
+    }
+
+    static func destination(
         ownerMemberID: String,
         currentMemberID: String
     ) -> CloudKitAccessRequestWriteDestination {
@@ -331,6 +343,8 @@ enum ShareCalLaunchDiagnosticPlan {
     static let cloudKitWriteProbeArgument = "-ShareCalCloudKitWriteProbe"
     static let seedCalendarEventArgument = "-ShareCalSeedCalendarEvent"
     static let seedCalendarEventTitleArgument = "-ShareCalSeedCalendarEventTitle"
+    static let seedCalendarEventStartDateArgument = "-ShareCalSeedCalendarEventStart"
+    static let seedCalendarEventEndDateArgument = "-ShareCalSeedCalendarEventEnd"
     static let stopSharingProbeArgument = "-ShareCalStopICloudSharing"
     static let sharedReadProbeArgument = "-ShareCalSharedReadProbe"
     static let cloudKitWriteProbeRecordType = "CoupleSpace"
@@ -363,6 +377,37 @@ enum ShareCalLaunchDiagnosticPlan {
 
         let title = arguments[valueIndex].trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? nil : title
+    }
+
+    static func seedCalendarEventDraft(arguments: [String], now: Date = .now) -> LocalCalendarEventDraft {
+        let title = seedCalendarEventTitle(arguments: arguments) ?? ShareCalSmokeTestEventPlan.title
+        guard let startDate = dateValue(after: seedCalendarEventStartDateArgument, arguments: arguments),
+              let endDate = dateValue(after: seedCalendarEventEndDateArgument, arguments: arguments),
+              endDate > startDate else {
+            return ShareCalSmokeTestEventPlan.draft(now: now, title: title)
+        }
+
+        return LocalCalendarEventDraft(
+            title: title,
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            location: nil,
+            notes: ShareCalSmokeTestEventPlan.notes
+        )
+    }
+
+    private static func dateValue(after argument: String, arguments: [String]) -> Date? {
+        guard let argumentIndex = arguments.firstIndex(of: argument) else {
+            return nil
+        }
+
+        let valueIndex = arguments.index(after: argumentIndex)
+        guard arguments.indices.contains(valueIndex) else {
+            return nil
+        }
+
+        return ISO8601DateFormatter().date(from: arguments[valueIndex])
     }
 }
 
@@ -422,7 +467,7 @@ enum CloudKitBatchUpsertPlan {
     static func recordIDs(forAccessRequests requests: [CalendarAccessRequest], zoneID: CKRecordZone.ID) -> [CKRecord.ID] {
         uniqued(
             requests.map { request in
-                CKRecord.ID(recordName: request.cloudKitRecordName ?? request.id, zoneID: zoneID)
+                CKRecord.ID(recordName: CalendarAccessRequestRecordMapper.recordName(for: request), zoneID: zoneID)
             }
         )
     }
@@ -482,7 +527,7 @@ enum CloudKitForegroundQueryPlan {
                 InvitationRecordMapper.Key.updatedAt,
                 InvitationRecordMapper.Key.createdLocalEventID
             ]
-        case CalendarAccessRequestRecordMapper.recordType:
+        case CalendarAccessRequestRecordMapper.legacyRecordType:
             [
                 CalendarAccessRequestRecordMapper.Key.requesterMemberID,
                 CalendarAccessRequestRecordMapper.Key.ownerMemberID,
@@ -510,7 +555,7 @@ enum CloudKitForegroundQueryPlan {
 
 enum CloudKitRecordQueryFailurePlan {
     static func canTreatMissingRecordTypeAsEmpty(recordType: String, error: Error) -> Bool {
-        recordType == CalendarAccessRequestRecordMapper.recordType && isMissingRecordType(error)
+        recordType == CalendarAccessRequestRecordMapper.legacyRecordType && isMissingRecordType(error)
     }
 
     static func isMissingRecordType(_ error: Error) -> Bool {
@@ -690,7 +735,9 @@ enum InvitationRecordMapper {
 }
 
 enum CalendarAccessRequestRecordMapper {
-    static let recordType = "CalendarAccessRequest"
+    static let legacyRecordType = "CalendarAccessRequest"
+    static let transportRecordType = InvitationRecordMapper.recordType
+    static let transportRecordNamePrefix = "history-access-request:"
 
     enum Key {
         static let requesterMemberID = "requesterMemberID"
@@ -702,26 +749,82 @@ enum CalendarAccessRequestRecordMapper {
         static let updatedAt = "updatedAt"
     }
 
+    static func recordName(for request: CalendarAccessRequest) -> String {
+        transportRecordName(from: request.cloudKitRecordName ?? request.id)
+    }
+
+    static func isTransportRecord(_ record: CKRecord) -> Bool {
+        record.recordType == transportRecordType
+            && record.recordID.recordName.hasPrefix(transportRecordNamePrefix)
+    }
+
+    private static func transportRecordName(from value: String) -> String {
+        value.hasPrefix(transportRecordNamePrefix) ? value : "\(transportRecordNamePrefix)\(value)"
+    }
+
+    private static func requestID(fromTransportRecordName recordName: String) -> String {
+        guard recordName.hasPrefix(transportRecordNamePrefix) else { return recordName }
+        return String(recordName.dropFirst(transportRecordNamePrefix.count))
+    }
+
     static func record(
         from request: CalendarAccessRequest,
         zoneID: CKRecordZone.ID,
         parentRecordID: CKRecord.ID? = nil,
         existingRecord: CKRecord? = nil
     ) -> CKRecord {
-        let recordName = request.cloudKitRecordName ?? request.id
-        let record = existingRecord ?? CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
+        let recordName = recordName(for: request)
+        let record = existingRecord ?? CKRecord(recordType: transportRecordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
         CloudKitShareHierarchyPlan.attach(record, toShareRoot: parentRecordID)
-        record[Key.requesterMemberID] = request.requesterMemberID as CKRecordValue
-        record[Key.ownerMemberID] = request.ownerMemberID as CKRecordValue
-        record[Key.requestedStartDate] = request.requestedStartDate as CKRecordValue
-        record[Key.requestedEndDate] = request.requestedEndDate as CKRecordValue
-        record[Key.statusRawValue] = request.statusRawValue as CKRecordValue
-        record[Key.createdAt] = request.createdAt as CKRecordValue
-        record[Key.updatedAt] = request.updatedAt as CKRecordValue
+        record[InvitationRecordMapper.Key.creatorMemberID] = request.requesterMemberID as CKRecordValue
+        record[InvitationRecordMapper.Key.inviteeMemberID] = request.ownerMemberID as CKRecordValue
+        record[InvitationRecordMapper.Key.title] = "ShareCal History Access Request" as CKRecordValue
+        record[InvitationRecordMapper.Key.startDate] = request.requestedStartDate as CKRecordValue
+        record[InvitationRecordMapper.Key.endDate] = request.requestedEndDate as CKRecordValue
+        record[InvitationRecordMapper.Key.isAllDay] = NSNumber(value: true)
+        record[InvitationRecordMapper.Key.statusRawValue] = request.statusRawValue as CKRecordValue
+        record[InvitationRecordMapper.Key.createdAt] = request.createdAt as CKRecordValue
+        record[InvitationRecordMapper.Key.updatedAt] = request.updatedAt as CKRecordValue
         return record
     }
 
     static func request(from record: CKRecord) throws -> CalendarAccessRequest {
+        if isTransportRecord(record) {
+            guard let requesterMemberID = record[InvitationRecordMapper.Key.creatorMemberID] as? String else {
+                throw CloudKitRecordMappingError.missingField(InvitationRecordMapper.Key.creatorMemberID)
+            }
+            guard let ownerMemberID = record[InvitationRecordMapper.Key.inviteeMemberID] as? String else {
+                throw CloudKitRecordMappingError.missingField(InvitationRecordMapper.Key.inviteeMemberID)
+            }
+            guard let requestedStartDate = record[InvitationRecordMapper.Key.startDate] as? Date else {
+                throw CloudKitRecordMappingError.missingField(InvitationRecordMapper.Key.startDate)
+            }
+            guard let requestedEndDate = record[InvitationRecordMapper.Key.endDate] as? Date else {
+                throw CloudKitRecordMappingError.missingField(InvitationRecordMapper.Key.endDate)
+            }
+            guard let statusRawValue = record[InvitationRecordMapper.Key.statusRawValue] as? String else {
+                throw CloudKitRecordMappingError.missingField(InvitationRecordMapper.Key.statusRawValue)
+            }
+            guard let createdAt = record[InvitationRecordMapper.Key.createdAt] as? Date else {
+                throw CloudKitRecordMappingError.missingField(InvitationRecordMapper.Key.createdAt)
+            }
+            guard let updatedAt = record[InvitationRecordMapper.Key.updatedAt] as? Date else {
+                throw CloudKitRecordMappingError.missingField(InvitationRecordMapper.Key.updatedAt)
+            }
+
+            return CalendarAccessRequest(
+                id: requestID(fromTransportRecordName: record.recordID.recordName),
+                requesterMemberID: requesterMemberID,
+                ownerMemberID: ownerMemberID,
+                requestedStartDate: requestedStartDate,
+                requestedEndDate: requestedEndDate,
+                statusRawValue: statusRawValue,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                cloudKitRecordName: record.recordID.recordName
+            )
+        }
+
         guard let requesterMemberID = record[Key.requesterMemberID] as? String else { throw CloudKitRecordMappingError.missingField(Key.requesterMemberID) }
         guard let ownerMemberID = record[Key.ownerMemberID] as? String else { throw CloudKitRecordMappingError.missingField(Key.ownerMemberID) }
         guard let requestedStartDate = record[Key.requestedStartDate] as? Date else { throw CloudKitRecordMappingError.missingField(Key.requestedStartDate) }
@@ -1392,16 +1495,13 @@ final class CloudKitCoupleSpaceService {
                     in: sharedZoneID,
                     database: sharedDatabase
                 ).count
-                invitationCount += try await fetchRecords(
+                let invitationRecords = try await fetchRecords(
                     matching: CKQuery(recordType: InvitationRecordMapper.recordType, predicate: NSPredicate(value: true)),
                     in: sharedZoneID,
                     database: sharedDatabase
-                ).count
-                accessRequestCount += try await fetchRecords(
-                    matching: CKQuery(recordType: CalendarAccessRequestRecordMapper.recordType, predicate: NSPredicate(value: true)),
-                    in: sharedZoneID,
-                    database: sharedDatabase
-                ).count
+                )
+                invitationCount += invitationRecords.filter { !CalendarAccessRequestRecordMapper.isTransportRecord($0) }.count
+                accessRequestCount += invitationRecords.filter(CalendarAccessRequestRecordMapper.isTransportRecord).count
             }
 
             let diagnostic = CloudKitSharedReadDiagnostic(
@@ -1807,7 +1907,7 @@ final class CloudKitCoupleSpaceService {
         currentMemberID: String
     ) async throws {
         switch CloudKitAccessRequestWritePlan.destination(
-            ownerMemberID: request.ownerMemberID,
+            for: request,
             currentMemberID: currentMemberID
         ) {
         case .privateOwnerZone:
@@ -2094,9 +2194,10 @@ final class CloudKitCoupleSpaceService {
             database: sharedDatabase
         )
         let records = try await privateRecords + sharedRecords
+        let invitationRecords = records.filter { !CalendarAccessRequestRecordMapper.isTransportRecord($0) }
 
-        cloudKitSharingInfo("fetchEventInvitations fetched records=\(records.count)")
-        return try records.map {
+        cloudKitSharingInfo("fetchEventInvitations fetched records=\(invitationRecords.count)")
+        return try invitationRecords.map {
             try InvitationRecordMapper.invitation(from: $0)
         }
     }
@@ -2108,21 +2209,30 @@ final class CloudKitCoupleSpaceService {
 
     func fetchCalendarAccessRequests(sharedZoneIDs: [CKRecordZone.ID]) async throws -> [CalendarAccessRequest] {
         async let privateRecords = fetchRecords(
-            recordType: CalendarAccessRequestRecordMapper.recordType,
+            recordType: CalendarAccessRequestRecordMapper.transportRecordType,
             in: zoneID,
             database: privateDatabase
         )
         async let sharedRecords = fetchRecords(
-            recordType: CalendarAccessRequestRecordMapper.recordType,
+            recordType: CalendarAccessRequestRecordMapper.transportRecordType,
             in: sharedZoneIDs,
             database: sharedDatabase
         )
-        let records = try await privateRecords + sharedRecords
+        let fetchedPrivateRecords = try await privateRecords.filter(CalendarAccessRequestRecordMapper.isTransportRecord)
+        let fetchedSharedRecords = try await sharedRecords.filter(CalendarAccessRequestRecordMapper.isTransportRecord)
 
-        cloudKitSharingInfo("fetchCalendarAccessRequests fetched records=\(records.count)")
-        return try records.map {
-            try CalendarAccessRequestRecordMapper.request(from: $0)
+        cloudKitSharingInfo("fetchCalendarAccessRequests fetched records=\(fetchedPrivateRecords.count + fetchedSharedRecords.count)")
+        let privateRequests = try fetchedPrivateRecords.map { record in
+            let request = try CalendarAccessRequestRecordMapper.request(from: record)
+            request.source = .privateOwnerZone
+            return request
         }
+        let sharedRequests = try fetchedSharedRecords.map { record in
+            let request = try CalendarAccessRequestRecordMapper.request(from: record)
+            request.source = .acceptedSharedZone
+            return request
+        }
+        return privateRequests + sharedRequests
     }
 
     func fetchSharedCoupleSpaceZoneIDs() async throws -> [CKRecordZone.ID] {

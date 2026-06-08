@@ -237,8 +237,7 @@ struct SyncCoordinator {
             let pairingDate = settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(syncedAt)
             let sharingWindows = CalendarSharingWindowPlan.effectiveWindows(
                 now: pairingDate,
-                accessRequests: localAccessRequests,
-                ownerMemberID: settings.currentMemberID
+                accessRequests: localAccessRequests
             )
             let window = CalendarSharingWindowPlan.enclosingInterval(for: sharingWindows)
             let sourceEvents = calendarAccess.events(
@@ -570,6 +569,7 @@ struct SyncCoordinator {
                 existing.createdAt = request.createdAt
                 existing.updatedAt = request.updatedAt
                 existing.cloudKitRecordName = request.cloudKitRecordName
+                existing.sourceRawValue = request.sourceRawValue
             } else {
                 modelContext.insert(request)
             }

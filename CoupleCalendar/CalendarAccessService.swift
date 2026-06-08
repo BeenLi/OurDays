@@ -83,8 +83,14 @@ final class CalendarAccessService {
 
     @discardableResult
     func ensureShareCalSmokeTestEvent(now: Date = .now, title: String = ShareCalSmokeTestEventPlan.title) throws -> String {
+        try ensureShareCalSmokeTestEvent(
+            draft: ShareCalSmokeTestEventPlan.draft(now: now, title: title)
+        )
+    }
+
+    @discardableResult
+    func ensureShareCalSmokeTestEvent(draft: LocalCalendarEventDraft) throws -> String {
         let calendar = try ensureShareCalEKCalendar()
-        let draft = ShareCalSmokeTestEventPlan.draft(now: now, title: title)
         let searchStart = draft.startDate.addingTimeInterval(-24 * 60 * 60)
         let searchEnd = draft.endDate.addingTimeInterval(24 * 60 * 60)
         let predicate = eventStore.predicateForEvents(
@@ -115,6 +121,18 @@ final class CalendarAccessService {
         let calendars = eventStore.calendars(for: .event)
             .filter { selectedCalendarIDs.contains($0.calendarIdentifier) }
 
+        return events(from: startDate, to: endDate, calendars: calendars)
+    }
+
+    func authorizedEvents(from startDate: Date, to endDate: Date) -> [CalendarSourceEvent] {
+        events(
+            from: startDate,
+            to: endDate,
+            calendars: eventStore.calendars(for: .event)
+        )
+    }
+
+    private func events(from startDate: Date, to endDate: Date, calendars: [EKCalendar]) -> [CalendarSourceEvent] {
         let predicate = eventStore.predicateForEvents(
             withStart: startDate,
             end: endDate,

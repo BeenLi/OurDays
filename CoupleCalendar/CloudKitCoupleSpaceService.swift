@@ -1,9 +1,6 @@
 @preconcurrency import CloudKit
 import Foundation
 import OSLog
-#if os(macOS)
-import Security
-#endif
 import SwiftUI
 import UIKit
 
@@ -106,59 +103,14 @@ enum CloudKitContainerDiagnosticPlan {
     }
 }
 
-struct CloudKitRuntimeEntitlementDiagnostic {
-    let iCloudServices: [String]
-    let containerIdentifiers: [String]
-    let containerEnvironment: String?
-    let apsEnvironment: String?
-
-    var summary: String {
-        [
-            "services=\(iCloudServices.isEmpty ? "missing" : iCloudServices.joined(separator: ","))",
-            "containers=\(containerIdentifiers.isEmpty ? "missing" : containerIdentifiers.joined(separator: ","))",
-            "environment=\(containerEnvironment ?? "missing")",
-            "aps=\(apsEnvironment ?? "missing")"
-        ].joined(separator: " ")
-    }
-}
-
-enum CloudKitRuntimeEntitlementReader {
-    static func current() -> CloudKitRuntimeEntitlementDiagnostic {
-        #if os(macOS)
-        guard let task = SecTaskCreateFromSelf(kCFAllocatorDefault) else {
-            return CloudKitRuntimeEntitlementDiagnostic(
-                iCloudServices: [],
-                containerIdentifiers: [],
-                containerEnvironment: nil,
-                apsEnvironment: nil
-            )
-        }
-
-        return CloudKitRuntimeEntitlementDiagnostic(
-            iCloudServices: arrayValue("com.apple.developer.icloud-services", task: task),
-            containerIdentifiers: arrayValue("com.apple.developer.icloud-container-identifiers", task: task),
-            containerEnvironment: stringValue("com.apple.developer.icloud-container-environment", task: task),
-            apsEnvironment: stringValue("aps-environment", task: task)
-        )
+enum CloudKitExpectedConfigurationPlan {
+    static var containerEnvironment: String {
+        #if DEBUG
+        "Development"
         #else
-        return CloudKitRuntimeEntitlementDiagnostic(
-            iCloudServices: ["unreadable"],
-            containerIdentifiers: ["unreadable"],
-            containerEnvironment: "unreadable",
-            apsEnvironment: "unreadable"
-        )
+        "Production"
         #endif
     }
-
-    #if os(macOS)
-    private static func arrayValue(_ key: String, task: SecTask) -> [String] {
-        SecTaskCopyValueForEntitlement(task, key as CFString, nil) as? [String] ?? []
-    }
-
-    private static func stringValue(_ key: String, task: SecTask) -> String? {
-        SecTaskCopyValueForEntitlement(task, key as CFString, nil) as? String
-    }
-    #endif
 }
 
 enum CloudKitShareAcceptancePlan {
@@ -726,11 +678,14 @@ enum CloudKitSharingFailureMessage {
 }
 
 struct CloudKitAccountDiagnostic {
-    let containerIdentifier: String
+    let expectedContainerIdentifier: String
+    let expectedEnvironment: String
+    let expectedZoneName: String
+    let runtimeContainerIdentifier: String
     let accountStatus: String
     let userRecordName: String?
+    let privateDatabaseStatus: String
     let errorDescription: String?
-    let entitlementSummary: String
 
     var isAccountAvailable: Bool {
         accountStatus == "available"
@@ -738,16 +693,22 @@ struct CloudKitAccountDiagnostic {
 
     var displayText: String {
         var lines = [
-            "Container: \(containerIdentifier)",
+            "Expected:",
+            "Container: \(expectedContainerIdentifier)",
+            "Environment: \(expectedEnvironment)",
+            "Zone: \(expectedZoneName)",
+            "",
+            "Runtime:",
+            "Container: \(runtimeContainerIdentifier)",
             "Account: \(accountStatus)"
         ]
         if let userRecordName {
             lines.append("User Record: \(userRecordName)")
         }
+        lines.append("Private Database: \(privateDatabaseStatus)")
         if let errorDescription {
             lines.append("Error: \(errorDescription)")
         }
-        lines.append("Entitlements: \(entitlementSummary)")
         return lines.joined(separator: "\n")
     }
 }
@@ -755,7 +716,7 @@ struct CloudKitAccountDiagnostic {
 private extension CloudKitAccountDiagnostic {
     func alsoLog() -> Self {
         cloudKitSharingInfo(
-            "accountDiagnostic container=\(containerIdentifier) status=\(accountStatus) userRecordPresent=\((userRecordName != nil).description) entitlements=\(entitlementSummary) error=\(errorDescription ?? "none")"
+            "accountDiagnostic expectedContainer=\(expectedContainerIdentifier) runtimeContainer=\(runtimeContainerIdentifier) status=\(accountStatus) userRecordPresent=\((userRecordName != nil).description) privateDatabase=\(privateDatabaseStatus) error=\(errorDescription ?? "none")"
         )
         return self
     }
@@ -795,17 +756,40 @@ final class CloudKitCoupleSpaceService {
                 }
             }
         }
+        let privateDatabaseStatus = status == .available
+            ? await privateDatabaseDiagnosticStatus()
+            : "not checked"
 
         return CloudKitAccountDiagnostic(
-            containerIdentifier: CloudKitContainerDiagnosticPlan.displayIdentifier(
+            expectedContainerIdentifier: Self.containerIdentifier,
+            expectedEnvironment: CloudKitExpectedConfigurationPlan.containerEnvironment,
+            expectedZoneName: Self.zoneName,
+            runtimeContainerIdentifier: CloudKitContainerDiagnosticPlan.displayIdentifier(
                 runtimeIdentifier: container.containerIdentifier,
                 fallbackIdentifier: Self.containerIdentifier
             ),
             accountStatus: Self.describe(status),
             userRecordName: userRecordName,
-            errorDescription: accountError ?? userRecordError,
-            entitlementSummary: CloudKitRuntimeEntitlementReader.current().summary
+            privateDatabaseStatus: privateDatabaseStatus,
+            errorDescription: accountError ?? userRecordError
         ).alsoLog()
+    }
+
+    private func privateDatabaseDiagnosticStatus() async -> String {
+        await withCheckedContinuation { continuation in
+            privateDatabase.fetchAllRecordZones { zones, error in
+                if let error {
+                    continuation.resume(returning: "error; \(describeCloudKitFailure(error))")
+                    return
+                }
+
+                let hasCoupleSpaceZone = zones?.contains { $0.zoneID.zoneName == Self.zoneName } ?? false
+                let zoneStatus = hasCoupleSpaceZone
+                    ? "\(Self.zoneName) zone exists"
+                    : "\(Self.zoneName) zone missing"
+                continuation.resume(returning: "readable; \(zoneStatus)")
+            }
+        }
     }
 
     private func ensureSyncDriverStarted() {

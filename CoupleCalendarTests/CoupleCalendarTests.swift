@@ -886,6 +886,36 @@ final class CloudKitSharePermissionPlanTests: XCTestCase {
 }
 
 final class CloudKitContainerDiagnosticPlanTests: XCTestCase {
+    func testAccountDiagnosticDisplaySeparatesExpectedAndRuntimeChecks() {
+        let diagnostic = CloudKitAccountDiagnostic(
+            expectedContainerIdentifier: "iCloud.com.leeberty.CoupleCalendar",
+            expectedEnvironment: "Production",
+            expectedZoneName: "CoupleSpace",
+            runtimeContainerIdentifier: "iCloud.com.leeberty.CoupleCalendar",
+            accountStatus: "available",
+            userRecordName: "_user",
+            privateDatabaseStatus: "readable; CoupleSpace zone exists",
+            errorDescription: nil
+        )
+
+        XCTAssertEqual(
+            diagnostic.displayText,
+            """
+            Expected:
+            Container: iCloud.com.leeberty.CoupleCalendar
+            Environment: Production
+            Zone: CoupleSpace
+
+            Runtime:
+            Container: iCloud.com.leeberty.CoupleCalendar
+            Account: available
+            User Record: _user
+            Private Database: readable; CoupleSpace zone exists
+            """
+        )
+        XCTAssertFalse(diagnostic.displayText.contains("Entitlements"))
+    }
+
     func testDisplaysRuntimeContainerIdentifierWhenCloudKitProvidesOne() {
         XCTAssertEqual(
             CloudKitContainerDiagnosticPlan.displayIdentifier(
@@ -906,19 +936,6 @@ final class CloudKitContainerDiagnosticPlanTests: XCTestCase {
         )
     }
 
-    func testSummarizesRuntimeEntitlements() {
-        let diagnostic = CloudKitRuntimeEntitlementDiagnostic(
-            iCloudServices: ["CloudKit"],
-            containerIdentifiers: ["iCloud.com.leeberty.CoupleCalendar"],
-            containerEnvironment: "Development",
-            apsEnvironment: "development"
-        )
-
-        XCTAssertEqual(
-            diagnostic.summary,
-            "services=CloudKit containers=iCloud.com.leeberty.CoupleCalendar environment=Development aps=development"
-        )
-    }
 }
 
 final class CloudKitShareAcceptancePlanTests: XCTestCase {

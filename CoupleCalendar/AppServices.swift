@@ -485,6 +485,7 @@ struct SyncCoordinator {
                     }
                     if hasCloudWrites {
                         try await cloudKit.saveMirrorsForSync(mirrorsNeedingCloudUpload)
+                        try upsert(mirrors: mirrorsNeedingCloudUpload, modelContext: modelContext)
                         timing.mark("cloudMirrorsSaved count=\(mirrorsNeedingCloudUpload.count)")
                         try await cloudKit.deleteMirrorsForSync(hardDeletedMirrors)
                         timing.mark("cloudHardDeletesSaved count=\(hardDeletedMirrors.count)")

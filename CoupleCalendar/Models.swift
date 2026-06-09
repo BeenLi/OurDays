@@ -14,6 +14,13 @@ enum AppLanguage: String, Codable, CaseIterable, Identifiable {
         case .chinese: "中文"
         }
     }
+
+    var locale: Locale {
+        switch self {
+        case .english: Locale(identifier: "en_US")
+        case .chinese: Locale(identifier: "zh_Hans")
+        }
+    }
 }
 
 enum CalendarMode: String, CaseIterable, Identifiable {
@@ -24,7 +31,7 @@ enum CalendarMode: String, CaseIterable, Identifiable {
 }
 
 enum AppLanguagePreference {
-    static let defaultLanguage: AppLanguage = .english
+    static let defaultLanguage: AppLanguage = .chinese
     static let key = "appLanguage"
 
     static func read(from defaults: UserDefaults) -> AppLanguage {
@@ -434,6 +441,21 @@ struct ShareCalStrings {
             formatter.dateFormat = "yyyy年M月d日"
         }
         return formatter.string(from: date)
+    }
+
+    /// Abbreviated date (e.g. "6月9日" / "Jun 9, 2026") in the app's language.
+    func abbreviatedDateText(_ date: Date) -> String {
+        date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(language.locale))
+    }
+
+    /// Short time (e.g. "19:00") in the app's language.
+    func shortTimeText(_ date: Date) -> String {
+        date.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(language.locale))
+    }
+
+    /// Abbreviated date with short time in the app's language.
+    func abbreviatedDateTimeText(_ date: Date) -> String {
+        date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(language.locale))
     }
 
     func invitationStatusTitle(for status: InvitationStatus) -> String {
@@ -1260,7 +1282,6 @@ enum CalendarAccessRequestListPlan {
         collapsedRequests(
             requests.filter { request in
                 request.source == .privateOwnerZone
-                    && request.ownerMemberID == currentMemberID
             }
         )
             .filter { $0.status == .pending }
@@ -1300,6 +1321,11 @@ enum CalendarAccessRequestListPlan {
         return outgoingRequests
             .filter { request in
                 guard request.status == .pending else { return false }
+                // Only requests not yet confirmed on the server need (re)uploading.
+                // Once a request round-trips back from the shared zone it is
+                // `.acceptedSharedZone`; re-uploading it would clobber the owner's
+                // status update (e.g. an approval) with our stale `pending` copy.
+                guard request.source == .localOutgoing else { return false }
                 let matchingRequests = requestsByKey[logicalKey(for: request)] ?? []
                 return !matchingRequests.contains { matchingRequest in
                     matchingRequest.status != .pending
@@ -2023,6 +2049,7 @@ enum CloudKitMirrorSyncPlan {
             if mirror.deletedAt != nil { return true }
             guard let existingMirror = existingMirrorByKey[mirror.mirrorKey] else { return true }
             guard hasSameCloudKitPayload(mirror, as: existingMirror) else { return true }
+            guard existingMirror.cloudKitRecordName != nil else { return true }
             guard let activeShadow = activeShadowByID[mirror.mirrorKey],
                   let existingShadow = existingShadowByID[mirror.mirrorKey] else {
                 return true

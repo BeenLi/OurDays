@@ -2224,6 +2224,9 @@ final class CloudKitCoupleSpaceService {
                     existingRecord: existingRecordsByID[recordID]
                 )
             )
+            if mirror.cloudKitRecordName == nil {
+                mirror.cloudKitRecordName = recordName
+            }
         }
 
         cloudKitSharingInfo(
@@ -2865,63 +2868,69 @@ final class CloudKitCoupleSpaceService {
         desiredKeys: [String]? = nil
     ) async throws -> [CKRecord] {
         try await withCheckedThrowingContinuation { continuation in
-            let recordsLock = NSLock()
             var fetchedRecords: [CKRecord] = []
-            var pageCount = 0
             let startedAt = Date()
+            let targetRecordType = query.recordType
 
-            func add(_ operation: CKQueryOperation) {
-                operation.zoneID = zoneID
-                operation.desiredKeys = desiredKeys
-                operation.recordMatchedBlock = { _, recordResult in
-                    guard case .success(let record) = recordResult else { return }
-                    recordsLock.withLock {
-                        fetchedRecords.append(record)
-                    }
-                }
-                operation.queryResultBlock = { result in
-                    pageCount += 1
-                    switch result {
-                    case .success(let cursor):
-                        if let cursor {
-                            add(CKQueryOperation(cursor: cursor))
-                        } else {
-                            let records = recordsLock.withLock { fetchedRecords }
-                            cloudKitSharingInfo(
-                                String(
-                                    format: "fetchRecords recordType=%@ zone=%@ owner=%@ records=%d pages=%d elapsed=%.3fs desiredKeys=%d",
-                                    query.recordType,
-                                    zoneID.zoneName,
-                                    zoneID.ownerName,
-                                    records.count,
-                                    pageCount,
-                                    Date().timeIntervalSince(startedAt),
-                                    desiredKeys?.count ?? 0
-                                )
-                            )
-                            continuation.resume(returning: records)
-                        }
-                    case .failure(let error):
-                        if CloudKitRecordQueryFailurePlan.canTreatMissingRecordTypeAsEmpty(
-                            recordType: query.recordType,
-                            error: error
-                        ) {
-                            cloudKitSharingError(
-                                "fetchRecords missing optional recordType=\(query.recordType) zone=\(zoneID.zoneName) owner=\(zoneID.ownerName); treating as empty"
-                            )
-                            continuation.resume(returning: [])
-                            return
-                        }
-                        cloudKitSharingError(
-                            "fetchRecords failed recordType=\(query.recordType) zone=\(zoneID.zoneName) owner=\(zoneID.ownerName) error=\(describeCloudKitFailure(error))"
-                        )
-                        continuation.resume(throwing: error)
-                    }
-                }
-                database.add(operation)
+            let config = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
+            config.previousServerChangeToken = nil
+            config.desiredKeys = desiredKeys
+
+            let operation = CKFetchRecordZoneChangesOperation(
+                recordZoneIDs: [zoneID],
+                configurationsByRecordZoneID: [zoneID: config]
+            )
+
+            operation.recordWasChangedBlock = { _, result in
+                guard case .success(let record) = result,
+                      record.recordType == targetRecordType else { return }
+                fetchedRecords.append(record)
             }
 
-            add(CKQueryOperation(query: query))
+            operation.recordZoneChangeTokensUpdatedBlock = { _, _, _ in }
+
+            operation.recordZoneFetchResultBlock = { _, result in
+                if case .failure(let error) = result {
+                    cloudKitSharingError(
+                        "fetchRecords zone error recordType=\(targetRecordType) zone=\(zoneID.zoneName) owner=\(zoneID.ownerName) error=\(describeCloudKitFailure(error))"
+                    )
+                }
+            }
+
+            operation.fetchRecordZoneChangesResultBlock = { result in
+                switch result {
+                case .success:
+                    cloudKitSharingInfo(
+                        String(
+                            format: "fetchRecords recordType=%@ zone=%@ owner=%@ records=%d elapsed=%.3fs desiredKeys=%d",
+                            targetRecordType,
+                            zoneID.zoneName,
+                            zoneID.ownerName,
+                            fetchedRecords.count,
+                            Date().timeIntervalSince(startedAt),
+                            desiredKeys?.count ?? 0
+                        )
+                    )
+                    continuation.resume(returning: fetchedRecords)
+                case .failure(let error):
+                    if CloudKitRecordQueryFailurePlan.canTreatMissingRecordTypeAsEmpty(
+                        recordType: targetRecordType,
+                        error: error
+                    ) {
+                        cloudKitSharingError(
+                            "fetchRecords missing optional recordType=\(targetRecordType) zone=\(zoneID.zoneName) owner=\(zoneID.ownerName); treating as empty"
+                        )
+                        continuation.resume(returning: [])
+                        return
+                    }
+                    cloudKitSharingError(
+                        "fetchRecords failed recordType=\(targetRecordType) zone=\(zoneID.zoneName) owner=\(zoneID.ownerName) error=\(describeCloudKitFailure(error))"
+                    )
+                    continuation.resume(throwing: error)
+                }
+            }
+
+            database.add(operation)
         }
     }
 

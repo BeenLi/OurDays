@@ -658,12 +658,15 @@ final class CalendarAccessRequestListPlanTests: XCTestCase {
             sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
         )
 
+        // Only the locally-created copy that has not yet been confirmed on the
+        // server needs uploading. The `.acceptedSharedZone` copy round-tripped back
+        // from CloudKit, so re-uploading it would overwrite the owner's response.
         XCTAssertEqual(
             CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
                 [pendingLocalOutgoing, pendingSharedOutgoing, incoming],
                 currentMemberID: "me"
             ).map(\.id),
-            ["local-outgoing", "shared-outgoing"]
+            ["local-outgoing"]
         )
     }
 
@@ -775,7 +778,7 @@ final class CalendarAccessRequestListPlanTests: XCTestCase {
             requestedEndDate: rangeEnd,
             statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
             updatedAt: rangeStart.addingTimeInterval(60),
-            sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
+            sourceRawValue: CalendarAccessRequestSource.localOutgoing.rawValue
         )
 
         XCTAssertEqual(
@@ -801,39 +804,43 @@ final class CalendarAccessRequestListPlanTests: XCTestCase {
         )
     }
 
-    func testIgnoresIncomingRequestsForOldLocalOwnerID() {
+    func testIncomingRequestsAreIdentifiedByPrivateOwnerZoneSource() {
         let rangeStart = Date(timeIntervalSince1970: 10_000)
-        let currentIncoming = CalendarAccessRequest(
-            id: "current-incoming",
+        // The request lives in the recipient's own private zone, so it is incoming
+        // regardless of the owner identifier the creator stamped (a hashed CloudKit ID
+        // the recipient cannot express as its own local owner ID).
+        let incoming = CalendarAccessRequest(
+            id: "incoming",
             requesterMemberID: "partner",
-            ownerMemberID: "_currentOwner",
+            ownerMemberID: "_recipientHashedID",
             requestedStartDate: rangeStart,
             requestedEndDate: rangeStart.addingTimeInterval(24 * 60 * 60),
             statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
             sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
         )
-        let staleIncoming = CalendarAccessRequest(
-            id: "stale-incoming",
-            requesterMemberID: "partner",
-            ownerMemberID: "_oldOwner",
+        // A request mirrored from the partner's shared zone is outgoing, not incoming.
+        let outgoing = CalendarAccessRequest(
+            id: "outgoing",
+            requesterMemberID: "_recipientLocalID",
+            ownerMemberID: "_partnerHashedID",
             requestedStartDate: rangeStart.addingTimeInterval(24 * 60 * 60),
             requestedEndDate: rangeStart.addingTimeInterval(2 * 24 * 60 * 60),
             statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
-            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
+            sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
         )
 
         XCTAssertEqual(
             CalendarAccessRequestListPlan.pendingIncoming(
-                [currentIncoming, staleIncoming],
-                currentMemberID: "_currentOwner"
+                [incoming, outgoing],
+                currentMemberID: "_recipientLocalID"
             ).map(\.id),
-            ["current-incoming"]
+            ["incoming"]
         )
         XCTAssertEqual(
             PendingActionBadgePlan.count(
                 invitations: [],
-                accessRequests: [currentIncoming, staleIncoming],
-                currentMemberID: "_currentOwner"
+                accessRequests: [incoming, outgoing],
+                currentMemberID: "_recipientLocalID"
             ),
             1
         )
@@ -1653,26 +1660,26 @@ final class PairingDatePlanTests: XCTestCase {
 }
 
 final class AppLanguageSettingsTests: XCTestCase {
-    func testDefaultsToEnglishWhenNoPreferenceExists() {
+    func testDefaultsToChineseWhenNoPreferenceExists() {
         let suiteName = "AppLanguageSettingsTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let language = AppLanguagePreference.read(from: defaults)
-
-        XCTAssertEqual(language, .english)
-    }
-
-    func testPersistsSelectedChineseLanguage() {
-        let suiteName = "AppLanguageSettingsTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        AppLanguagePreference.write(.chinese, to: defaults)
 
         let language = AppLanguagePreference.read(from: defaults)
 
         XCTAssertEqual(language, .chinese)
+    }
+
+    func testPersistsSelectedEnglishLanguage() {
+        let suiteName = "AppLanguageSettingsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        AppLanguagePreference.write(.english, to: defaults)
+
+        let language = AppLanguagePreference.read(from: defaults)
+
+        XCTAssertEqual(language, .english)
     }
 
 }

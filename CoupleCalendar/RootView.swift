@@ -614,7 +614,13 @@ struct CalendarTabView: View {
     @State private var authorizationState: CalendarAuthorizationState = .unknown
 
     var activeMirrors: [EventMirror] {
-        mirrors.filter { $0.deletedAt == nil }
+        mirrors.filter { mirror in
+            guard mirror.deletedAt == nil else { return false }
+            if mirror.ownerMemberID == settings.currentLocalOwnerID {
+                return settings.selectedCalendarIDs.contains(mirror.sourceCalendarID)
+            }
+            return true
+        }
     }
 
     var isPaired: Bool {
@@ -724,7 +730,7 @@ struct CalendarTabView: View {
             CompactCalendarTopBar(
                 selectedDate: $selectedDate,
                 mode: $mode,
-                title: CalendarDateNavigationPlan.compactTitle(for: selectedDate, mode: mode),
+                title: CalendarDateNavigationPlan.compactTitle(for: selectedDate, mode: mode, locale: settings.appLanguage.locale),
                 syncPhase: settings.syncPhase,
                 hasSyncError: settings.lastSyncError != nil,
                 onOpenPicker: {
@@ -858,8 +864,9 @@ struct CalendarTabView: View {
             from: visibleInterval.start,
             to: visibleInterval.end
         )
+        let selectedCalendarIDs = settings.selectedCalendarIDs
         localDisplayMirrors = CalendarDisplayMirrorPlan.displayMirrors(
-            from: sourceEvents,
+            from: sourceEvents.filter { selectedCalendarIDs.contains($0.calendarIdentifier) },
             ownerMemberID: settings.currentLocalOwnerID
         )
     }
@@ -879,7 +886,7 @@ struct CompactCalendarTopBar: View {
     var body: some View {
         HStack(spacing: 6) {
             CompactModeToggle(mode: $mode)
-                .frame(width: 92)
+                .frame(width: 72)
 
             HStack(spacing: 4) {
                 CompactIconButton(
@@ -898,7 +905,7 @@ struct CompactCalendarTopBar: View {
                         Text(title)
                             .font(.caption.weight(.semibold))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.76)
+                            .minimumScaleFactor(0.7)
                     }
                     .frame(maxWidth: .infinity, minHeight: 34)
                     .padding(.horizontal, 8)
@@ -914,7 +921,7 @@ struct CompactCalendarTopBar: View {
                     selectedDate = Calendar.current.startOfDay(for: Date())
                 }
                 .font(.caption2.weight(.semibold))
-                .frame(width: 54, height: 34)
+                .frame(width: 46, height: 34)
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .disabled(Calendar.current.isDateInToday(selectedDate))
@@ -2694,8 +2701,8 @@ struct EventDetailView: View {
                 Section {
                     LabeledContent(strings.ownerLabel, value: event.ownerMemberID == settings.currentLocalOwnerID ? strings.meTitle : strings.partnerTitle)
                     LabeledContent(strings.calendarLabel, value: event.sourceCalendarTitle)
-                    LabeledContent(strings.startsLabel, value: event.startDate.formatted(date: .abbreviated, time: .shortened))
-                    LabeledContent(strings.endsLabel, value: event.endDate.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent(strings.startsLabel, value: strings.abbreviatedDateTimeText(event.startDate))
+                    LabeledContent(strings.endsLabel, value: strings.abbreviatedDateTimeText(event.endDate))
                     if let location = event.location {
                         LabeledContent(strings.locationLabel, value: location)
                     }
@@ -3079,9 +3086,9 @@ struct InvitesTabView: View {
     }
 
     private func accessRequestRangeText(for request: CalendarAccessRequest) -> String {
-        let start = request.requestedStartDate.formatted(date: .abbreviated, time: .omitted)
+        let start = settings.strings.abbreviatedDateText(request.requestedStartDate)
         let displayedEndDate = PairingDatePlan.displayedEndDate(forExclusiveEndDate: request.requestedEndDate)
-        let end = displayedEndDate.formatted(date: .abbreviated, time: .omitted)
+        let end = settings.strings.abbreviatedDateText(displayedEndDate)
         return "\(start) - \(end)"
     }
 
@@ -3139,7 +3146,7 @@ struct InvitationRow: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(invitation.title)
                 .font(.headline)
-            Text("\(invitation.startDate.formatted(date: .abbreviated, time: .shortened)) - \(invitation.endDate.formatted(date: .omitted, time: .shortened))")
+            Text("\(settings.strings.abbreviatedDateTimeText(invitation.startDate)) - \(settings.strings.shortTimeText(invitation.endDate))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if let location = invitation.location {
@@ -3963,7 +3970,7 @@ struct SettingsTabView: View {
             }
 
             Section(strings.syncSection) {
-                LabeledContent(strings.lastSyncLabel, value: settings.lastSyncAt?.formatted(date: .abbreviated, time: .shortened) ?? strings.never)
+                LabeledContent(strings.lastSyncLabel, value: settings.lastSyncAt.map(strings.abbreviatedDateTimeText) ?? strings.never)
                 Button(
                     isDeletingICloudData ? strings.deletingICloudDataButton : strings.deleteICloudDataButton,
                     role: .destructive
@@ -4261,9 +4268,9 @@ struct SettingsTabView: View {
     }
 
     private func accessRequestRangeText(for request: CalendarAccessRequest) -> String {
-        let start = request.requestedStartDate.formatted(date: .abbreviated, time: .omitted)
+        let start = settings.strings.abbreviatedDateText(request.requestedStartDate)
         let displayedEndDate = PairingDatePlan.displayedEndDate(forExclusiveEndDate: request.requestedEndDate)
-        let end = displayedEndDate.formatted(date: .abbreviated, time: .omitted)
+        let end = settings.strings.abbreviatedDateText(displayedEndDate)
         return "\(start) - \(end)"
     }
 

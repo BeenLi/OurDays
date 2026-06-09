@@ -234,7 +234,11 @@ enum InvitationError: LocalizedError {
 
 enum InvitationInteractionPlan {
     static func canRespond(to invitation: EventInvitation, currentMemberID: String) -> Bool {
-        invitation.status == .pending && invitation.inviteeMemberID == currentMemberID
+        // In a two-person space, anyone who is not the creator is the invitee.
+        // The stored `inviteeMemberID` is the partner's hashed CloudKit ID (stamped
+        // by the creator), which never equals the recipient's local owner ID, so we
+        // identify the invitee by "not the creator" instead.
+        invitation.status == .pending && invitation.creatorMemberID != currentMemberID
     }
 }
 
@@ -460,10 +464,14 @@ enum JointSchedulePlan {
         currentMemberID: String,
         partnerMemberID: String
     ) -> [JointScheduleEvent] {
+        // Every invitation in a two-person space is between the current user and
+        // their partner, so any accepted one is a joint event. We cannot verify the
+        // member pair by ID: the creator/invitee are stored in the creator's
+        // vocabulary (its local owner ID + the partner's hashed CloudKit ID), which
+        // the recipient cannot match against its own local owner ID.
         invitations
             .filter { invitation in
                 invitation.status == .accepted
-                    && involvesPair(invitation, currentMemberID: currentMemberID, partnerMemberID: partnerMemberID)
             }
             .map { invitation in
                 JointScheduleEvent(
@@ -487,15 +495,6 @@ enum JointSchedulePlan {
                 representsSameSchedule(mirror, jointEvent)
             }
         }
-    }
-
-    private static func involvesPair(
-        _ invitation: EventInvitation,
-        currentMemberID: String,
-        partnerMemberID: String
-    ) -> Bool {
-        let members = Set([invitation.creatorMemberID, invitation.inviteeMemberID])
-        return members == Set([currentMemberID, partnerMemberID])
     }
 
     private static func representsSameSchedule(

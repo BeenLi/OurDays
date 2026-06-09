@@ -442,6 +442,148 @@ final class CalendarSharingWindowPlanTests: XCTestCase {
     }
 }
 
+final class PrePairingHistoryAccessPlanTests: XCTestCase {
+    func testApprovedOutgoingHistoryExpandsVisiblePartnerRange() {
+        let calendar = gregorianUTC()
+        let pairingDate = date(2026, 6, 9, calendar: calendar)
+        let approved = historyRequest(
+            id: "approved",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            start: date(2026, 6, 8, calendar: calendar),
+            end: date(2026, 6, 9, calendar: calendar),
+            status: .approved,
+            source: .acceptedSharedZone
+        )
+        let pendingOlder = historyRequest(
+            id: "pending-older",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            start: date(2026, 6, 7, calendar: calendar),
+            end: date(2026, 6, 8, calendar: calendar),
+            status: .pending,
+            source: .acceptedSharedZone
+        )
+
+        XCTAssertEqual(
+            PrePairingHistoryAccessPlan.contiguousAuthorizedStartDate(
+                pairingDate: pairingDate,
+                accessRequests: [approved, pendingOlder],
+                currentMemberID: "xiaoyugan",
+                ownerMemberID: "_manuOwner",
+                direction: .partnerSharedToMe,
+                calendar: calendar
+            ),
+            date(2026, 6, 8, calendar: calendar)
+        )
+    }
+
+    func testNextRequestRangeStartsBeforeCurrentAuthorizedRange() {
+        let calendar = gregorianUTC()
+        let pairingDate = date(2026, 6, 9, calendar: calendar)
+        let approved = historyRequest(
+            id: "approved",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            start: date(2026, 6, 8, calendar: calendar),
+            end: date(2026, 6, 9, calendar: calendar),
+            status: .approved,
+            source: .acceptedSharedZone
+        )
+
+        let range = PrePairingHistoryAccessPlan.defaultNextRequestRange(
+            pairingDate: pairingDate,
+            accessRequests: [approved],
+            currentMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            calendar: calendar
+        )
+
+        XCTAssertEqual(range.start, date(2026, 5, 9, calendar: calendar))
+        XCTAssertEqual(range.end, date(2026, 6, 7, calendar: calendar))
+    }
+
+    func testRequestValidationRejectsAuthorizedOrOverlappingRanges() {
+        let calendar = gregorianUTC()
+        let pairingDate = date(2026, 6, 9, calendar: calendar)
+        let approved = historyRequest(
+            id: "approved",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            start: date(2026, 6, 8, calendar: calendar),
+            end: date(2026, 6, 9, calendar: calendar),
+            status: .approved,
+            source: .acceptedSharedZone
+        )
+
+        XCTAssertEqual(
+            PrePairingHistoryAccessPlan.validation(
+                requestedStartDate: date(2026, 6, 8, calendar: calendar),
+                requestedEndDate: date(2026, 6, 9, calendar: calendar),
+                pairingDate: pairingDate,
+                accessRequests: [approved],
+                currentMemberID: "xiaoyugan",
+                ownerMemberID: "_manuOwner"
+            ),
+            .alreadyAuthorized
+        )
+        XCTAssertEqual(
+            PrePairingHistoryAccessPlan.validation(
+                requestedStartDate: date(2026, 6, 7, calendar: calendar),
+                requestedEndDate: date(2026, 6, 9, calendar: calendar),
+                pairingDate: pairingDate,
+                accessRequests: [approved],
+                currentMemberID: "xiaoyugan",
+                ownerMemberID: "_manuOwner"
+            ),
+            .overlapsAuthorized
+        )
+        XCTAssertEqual(
+            PrePairingHistoryAccessPlan.validation(
+                requestedStartDate: date(2026, 6, 7, calendar: calendar),
+                requestedEndDate: date(2026, 6, 8, calendar: calendar),
+                pairingDate: pairingDate,
+                accessRequests: [approved],
+                currentMemberID: "xiaoyugan",
+                ownerMemberID: "_manuOwner"
+            ),
+            .valid
+        )
+    }
+
+    private func historyRequest(
+        id: String,
+        requesterMemberID: String,
+        ownerMemberID: String,
+        start: Date,
+        end: Date,
+        status: CalendarAccessRequestStatus,
+        source: CalendarAccessRequestSource
+    ) -> CalendarAccessRequest {
+        CalendarAccessRequest(
+            id: id,
+            requesterMemberID: requesterMemberID,
+            ownerMemberID: ownerMemberID,
+            requestedStartDate: start,
+            requestedEndDate: end,
+            statusRawValue: status.rawValue,
+            createdAt: start,
+            updatedAt: start,
+            sourceRawValue: source.rawValue
+        )
+    }
+
+    private func gregorianUTC() -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    private func date(_ year: Int, _ month: Int, _ day: Int, calendar: Calendar) -> Date {
+        calendar.date(from: DateComponents(year: year, month: month, day: day))!
+    }
+}
+
 final class CalendarAccessRequestListPlanTests: XCTestCase {
     func testSourceMappingDrivesIncomingAndOutgoingListsWhenMemberIDsMatch() {
         let rangeStart = Date(timeIntervalSince1970: 10_000)
@@ -480,6 +622,173 @@ final class CalendarAccessRequestListPlanTests: XCTestCase {
         XCTAssertEqual(
             CalendarAccessRequestListPlan.outgoing([incoming, acceptedSharedCopy, localOutgoing], currentMemberID: "me").map(\.id),
             ["shared-copy", "local-outgoing"]
+        )
+    }
+
+    func testPendingOutgoingRequestsNeedCloudUploadRetry() {
+        let rangeStart = Date(timeIntervalSince1970: 10_000)
+        let pendingLocalOutgoing = CalendarAccessRequest(
+            id: "local-outgoing",
+            requesterMemberID: "me",
+            ownerMemberID: "_manuOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeStart.addingTimeInterval(24 * 60 * 60),
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.localOutgoing.rawValue
+        )
+        let pendingSharedOutgoing = CalendarAccessRequest(
+            id: "shared-outgoing",
+            requesterMemberID: "me",
+            ownerMemberID: "_manuOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeStart.addingTimeInterval(24 * 60 * 60),
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
+        )
+        let incoming = CalendarAccessRequest(
+            id: "incoming",
+            requesterMemberID: "partner",
+            ownerMemberID: "me",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeStart.addingTimeInterval(24 * 60 * 60),
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
+        )
+
+        XCTAssertEqual(
+            CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
+                [pendingLocalOutgoing, pendingSharedOutgoing, incoming],
+                currentMemberID: "me"
+            ).map(\.id),
+            ["local-outgoing", "shared-outgoing"]
+        )
+    }
+
+    func testApprovedDuplicateSuppressesPendingHistoryRequestCopies() {
+        let rangeStart = Date(timeIntervalSince1970: 10_000)
+        let rangeEnd = rangeStart.addingTimeInterval(24 * 60 * 60)
+        let stalePendingIncoming = CalendarAccessRequest(
+            id: "stale-pending-incoming",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeEnd,
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            updatedAt: rangeStart,
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
+        )
+        let approvedIncoming = CalendarAccessRequest(
+            id: "approved-incoming",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeEnd,
+            statusRawValue: CalendarAccessRequestStatus.approved.rawValue,
+            updatedAt: rangeStart.addingTimeInterval(60),
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
+        )
+        let stalePendingOutgoing = CalendarAccessRequest(
+            id: "stale-pending-outgoing",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeEnd,
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            updatedAt: rangeStart,
+            sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
+        )
+        let approvedOutgoing = CalendarAccessRequest(
+            id: "approved-outgoing",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeEnd,
+            statusRawValue: CalendarAccessRequestStatus.approved.rawValue,
+            updatedAt: rangeStart.addingTimeInterval(60),
+            sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
+        )
+
+        XCTAssertEqual(
+            CalendarAccessRequestListPlan.pendingIncoming([stalePendingIncoming, approvedIncoming]).map(\.id),
+            []
+        )
+        XCTAssertEqual(
+            CalendarAccessRequestListPlan.outgoing(
+                [stalePendingOutgoing, approvedOutgoing],
+                currentMemberID: "xiaoyugan"
+            ).map(\.id),
+            ["approved-outgoing"]
+        )
+        XCTAssertEqual(
+            CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
+                [stalePendingOutgoing, approvedOutgoing],
+                currentMemberID: "xiaoyugan"
+            ).map(\.id),
+            []
+        )
+    }
+
+    func testNewerPendingDuplicateIsNotSuppressedByOlderTerminalCopy() {
+        let rangeStart = Date(timeIntervalSince1970: 10_000)
+        let rangeEnd = rangeStart.addingTimeInterval(24 * 60 * 60)
+        let olderDeclinedIncoming = CalendarAccessRequest(
+            id: "older-declined-incoming",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeEnd,
+            statusRawValue: CalendarAccessRequestStatus.declined.rawValue,
+            updatedAt: rangeStart,
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
+        )
+        let newerPendingIncoming = CalendarAccessRequest(
+            id: "newer-pending-incoming",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeEnd,
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            updatedAt: rangeStart.addingTimeInterval(60),
+            sourceRawValue: CalendarAccessRequestSource.privateOwnerZone.rawValue
+        )
+        let olderApprovedOutgoing = CalendarAccessRequest(
+            id: "older-approved-outgoing",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeEnd,
+            statusRawValue: CalendarAccessRequestStatus.approved.rawValue,
+            updatedAt: rangeStart,
+            sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
+        )
+        let newerPendingOutgoing = CalendarAccessRequest(
+            id: "newer-pending-outgoing",
+            requesterMemberID: "xiaoyugan",
+            ownerMemberID: "_manuOwner",
+            requestedStartDate: rangeStart,
+            requestedEndDate: rangeEnd,
+            statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+            updatedAt: rangeStart.addingTimeInterval(60),
+            sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
+        )
+
+        XCTAssertEqual(
+            CalendarAccessRequestListPlan.pendingIncoming([olderDeclinedIncoming, newerPendingIncoming]).map(\.id),
+            ["newer-pending-incoming"]
+        )
+        XCTAssertEqual(
+            CalendarAccessRequestListPlan.outgoing(
+                [olderApprovedOutgoing, newerPendingOutgoing],
+                currentMemberID: "xiaoyugan"
+            ).map(\.id),
+            ["newer-pending-outgoing"]
+        )
+        XCTAssertEqual(
+            CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
+                [olderApprovedOutgoing, newerPendingOutgoing],
+                currentMemberID: "xiaoyugan"
+            ).map(\.id),
+            ["newer-pending-outgoing"]
         )
     }
 }
@@ -709,6 +1018,239 @@ final class PairingSettingsPlanTests: XCTestCase {
     }
 }
 
+final class PairingSharedZoneSelectionPlanTests: XCTestCase {
+    func testSelectsOnlyZonesMatchingCurrentPairingID() {
+        let active = sharedZone(ownerName: "_manuOwner", pairingID: "pair-current")
+        let stale = sharedZone(ownerName: "_oldOwner", pairingID: "pair-old")
+        let legacy = sharedZone(ownerName: "_legacyOwner", pairingID: nil)
+
+        let selection = PairingSharedZoneSelectionPlan.selection(
+            currentPairingID: "pair-current",
+            sharedZones: [stale, active, legacy]
+        )
+
+        XCTAssertEqual(selection.pairingID, "pair-current")
+        XCTAssertEqual(selection.activePartnerOwnerID, "_manuOwner")
+        XCTAssertEqual(selection.activeSharedZoneIDs, [active.zoneID])
+        XCTAssertEqual(selection.inactiveSharedOwnerIDs, ["_legacyOwner", "_oldOwner"])
+    }
+
+    func testResolvesUniqueRemotePairingIDConflictToCanonicalPairingID() {
+        let remote = sharedZone(ownerName: "_manuOwner", pairingID: "pair-a")
+
+        let selection = PairingSharedZoneSelectionPlan.selection(
+            currentPairingID: "pair-b",
+            sharedZones: [remote],
+            allowsPairingIDConflictResolution: true
+        )
+
+        XCTAssertEqual(selection.pairingID, "pair-a")
+        XCTAssertEqual(selection.activePartnerOwnerID, "_manuOwner")
+        XCTAssertEqual(selection.activeSharedZoneIDs, [remote.zoneID])
+        XCTAssertEqual(selection.inactiveSharedOwnerIDs, [])
+    }
+
+    func testKeepsLocalPairingIDWhenConflictResolutionIsDisabled() {
+        let remote = sharedZone(ownerName: "_oldOwner", pairingID: "pair-a")
+
+        let selection = PairingSharedZoneSelectionPlan.selection(
+            currentPairingID: "pair-b",
+            sharedZones: [remote],
+            allowsPairingIDConflictResolution: false
+        )
+
+        XCTAssertEqual(selection.pairingID, "pair-b")
+        XCTAssertNil(selection.activePartnerOwnerID)
+        XCTAssertEqual(selection.activeSharedZoneIDs, [])
+        XCTAssertEqual(selection.inactiveSharedOwnerIDs, ["_oldOwner"])
+    }
+
+    func testAdoptsOnlyUnambiguousPairingIDWhenLocalPairingIDIsMissing() {
+        let active = sharedZone(ownerName: "_manuOwner", pairingID: "pair-current")
+        let legacy = sharedZone(ownerName: "_legacyOwner", pairingID: nil)
+
+        let selection = PairingSharedZoneSelectionPlan.selection(
+            currentPairingID: nil,
+            sharedZones: [legacy, active]
+        )
+
+        XCTAssertEqual(selection.pairingID, "pair-current")
+        XCTAssertEqual(selection.activePartnerOwnerID, "_manuOwner")
+        XCTAssertEqual(selection.activeSharedZoneIDs, [active.zoneID])
+        XCTAssertEqual(selection.inactiveSharedOwnerIDs, ["_legacyOwner"])
+    }
+
+    func testDoesNotAutoSelectWhenMultiplePairingIDsExistAndLocalPairingIDIsMissing() {
+        let first = sharedZone(ownerName: "_firstOwner", pairingID: "pair-1")
+        let second = sharedZone(ownerName: "_secondOwner", pairingID: "pair-2")
+
+        let selection = PairingSharedZoneSelectionPlan.selection(
+            currentPairingID: nil,
+            sharedZones: [first, second]
+        )
+
+        XCTAssertNil(selection.pairingID)
+        XCTAssertNil(selection.activePartnerOwnerID)
+        XCTAssertEqual(selection.activeSharedZoneIDs, [])
+        XCTAssertEqual(selection.inactiveSharedOwnerIDs, ["_firstOwner", "_secondOwner"])
+    }
+
+    func testIgnoresLegacySharedZonesWithoutPairingID() {
+        let legacy = sharedZone(ownerName: "_legacyOwner", pairingID: nil)
+
+        let selection = PairingSharedZoneSelectionPlan.selection(
+            currentPairingID: nil,
+            sharedZones: [legacy]
+        )
+
+        XCTAssertNil(selection.pairingID)
+        XCTAssertNil(selection.activePartnerOwnerID)
+        XCTAssertEqual(selection.activeSharedZoneIDs, [])
+        XCTAssertEqual(selection.inactiveSharedOwnerIDs, ["_legacyOwner"])
+    }
+
+    func testSelectsExplicitLegacyPartnerZoneDuringPairingIDMigration() {
+        let activeLegacyPartner = sharedZone(ownerName: "_manuOwner", pairingID: nil)
+        let staleLegacy = sharedZone(ownerName: "_oldOwner", pairingID: nil)
+
+        let selection = PairingSharedZoneSelectionPlan.selection(
+            currentPairingID: "pair-current",
+            sharedZones: [staleLegacy, activeLegacyPartner],
+            allowsPairingIDConflictResolution: false,
+            legacyPartnerOwnerIDs: ["_manuOwner"]
+        )
+
+        XCTAssertEqual(selection.pairingID, "pair-current")
+        XCTAssertEqual(selection.activePartnerOwnerID, "_manuOwner")
+        XCTAssertEqual(selection.activeSharedZoneIDs, [activeLegacyPartner.zoneID])
+        XCTAssertEqual(selection.inactiveSharedOwnerIDs, ["_oldOwner"])
+    }
+
+    func testDoesNotSelectUnlistedLegacyZoneDuringPairingIDMigration() {
+        let staleLegacy = sharedZone(ownerName: "_oldOwner", pairingID: nil)
+
+        let selection = PairingSharedZoneSelectionPlan.selection(
+            currentPairingID: "pair-current",
+            sharedZones: [staleLegacy],
+            allowsPairingIDConflictResolution: false,
+            legacyPartnerOwnerIDs: ["_manuOwner"]
+        )
+
+        XCTAssertEqual(selection.pairingID, "pair-current")
+        XCTAssertNil(selection.activePartnerOwnerID)
+        XCTAssertEqual(selection.activeSharedZoneIDs, [])
+        XCTAssertEqual(selection.inactiveSharedOwnerIDs, ["_oldOwner"])
+    }
+
+    func testResolvesTrustedPartnerPairingIDConflictWhenGlobalResolutionIsDisabled() {
+        let trustedPartner = sharedZone(ownerName: "_manuOwner", pairingID: "pair-a")
+        let stale = sharedZone(ownerName: "_oldOwner", pairingID: "pair-old")
+
+        let selection = PairingSharedZoneSelectionPlan.selection(
+            currentPairingID: "pair-b",
+            sharedZones: [stale, trustedPartner],
+            allowsPairingIDConflictResolution: false,
+            legacyPartnerOwnerIDs: ["_manuOwner"]
+        )
+
+        XCTAssertEqual(selection.pairingID, "pair-a")
+        XCTAssertEqual(selection.activePartnerOwnerID, "_manuOwner")
+        XCTAssertEqual(selection.activeSharedZoneIDs, [trustedPartner.zoneID])
+        XCTAssertEqual(selection.inactiveSharedOwnerIDs, ["_oldOwner"])
+    }
+
+    private func sharedZone(ownerName: String, pairingID: String?) -> CloudKitSharedZonePairingInfo {
+        CloudKitSharedZonePairingInfo(
+            zoneID: CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: ownerName),
+            pairingID: pairingID
+        )
+    }
+}
+
+final class LegacyPairingIDMigrationPlanTests: XCTestCase {
+    func testGeneratesPairingIDForLegacyBidirectionalPairing() {
+        XCTAssertTrue(
+            LegacyPairingIDMigrationPlan.shouldGeneratePairingID(
+                currentPairingID: nil,
+                hasStartedPairing: true,
+                partnerShareOwnerID: nil,
+                outgoingParticipantIDs: [" _partnerOwner "],
+                sharedZoneOwnerIDs: ["_partnerOwner"]
+            )
+        )
+    }
+
+    func testDoesNotGeneratePairingIDForUnrelatedOldAcceptedShare() {
+        XCTAssertFalse(
+            LegacyPairingIDMigrationPlan.shouldGeneratePairingID(
+                currentPairingID: nil,
+                hasStartedPairing: true,
+                partnerShareOwnerID: nil,
+                outgoingParticipantIDs: ["_activeOwner"],
+                sharedZoneOwnerIDs: ["_oldOwner"]
+            )
+        )
+    }
+
+    func testUsesExistingPartnerShareOwnerForLegacySelection() {
+        XCTAssertEqual(
+            LegacyPairingIDMigrationPlan.partnerOwnerIDsForSelection(
+                partnerShareOwnerID: " _partnerOwner ",
+                outgoingParticipantIDs: ["_oldOwner"],
+                hasStartedPairing: true
+            ),
+            ["_partnerOwner"]
+        )
+    }
+
+    func testRequiresSingleOutgoingParticipantWhenNoIncomingOwnerIsKnown() {
+        XCTAssertEqual(
+            LegacyPairingIDMigrationPlan.partnerOwnerIDsForSelection(
+                partnerShareOwnerID: nil,
+                outgoingParticipantIDs: ["_firstOwner", "_secondOwner"],
+                hasStartedPairing: true
+            ),
+            []
+        )
+    }
+}
+
+final class OldSharedCalendarsCleanupPromptPlanTests: XCTestCase {
+    func testPromptsAfterPairingWhenInactiveSharedZonesExist() {
+        XCTAssertTrue(
+            OldSharedCalendarsCleanupPromptPlan.shouldPresent(
+                pairingStatus: .paired,
+                inactiveSharedOwnerIDs: ["_oldOwner"],
+                hasPresentedPrompt: false
+            )
+        )
+    }
+
+    func testDoesNotPromptWhenNotPairedOrAlreadyPresentedOrNoInactiveSharedZones() {
+        XCTAssertFalse(
+            OldSharedCalendarsCleanupPromptPlan.shouldPresent(
+                pairingStatus: .waitingForPartner,
+                inactiveSharedOwnerIDs: ["_oldOwner"],
+                hasPresentedPrompt: false
+            )
+        )
+        XCTAssertFalse(
+            OldSharedCalendarsCleanupPromptPlan.shouldPresent(
+                pairingStatus: .paired,
+                inactiveSharedOwnerIDs: [],
+                hasPresentedPrompt: false
+            )
+        )
+        XCTAssertFalse(
+            OldSharedCalendarsCleanupPromptPlan.shouldPresent(
+                pairingStatus: .paired,
+                inactiveSharedOwnerIDs: ["_oldOwner"],
+                hasPresentedPrompt: true
+            )
+        )
+    }
+}
+
 final class PairingDatePlanTests: XCTestCase {
     func testNormalizesPairingDateToStartOfDay() throws {
         let calendar = Calendar(identifier: .gregorian)
@@ -796,6 +1338,11 @@ final class ShareCalStringsTests: XCTestCase {
         XCTAssertEqual(strings.defaultVisibilityLabel(for: .fullDetails), "Full details")
         XCTAssertEqual(strings.noICloudSharingIdentity, "Not connected")
         XCTAssertEqual(strings.unpairButton, "Unpair")
+        XCTAssertEqual(strings.oldSharedCalendarsCleanupPromptTitle, "Old Shared Calendars Found")
+        XCTAssertEqual(
+            strings.oldSharedCalendarsCleanupPromptMessage,
+            "Your current pairing is active, but this device still has old accepted ShareCal shares. You can remove them now or later from Settings."
+        )
         XCTAssertEqual(strings.deleteICloudDataButton, "Delete My iCloud Data")
         XCTAssertEqual(strings.deleteICloudDataSucceeded, "iCloud data deleted.")
     }
@@ -831,6 +1378,11 @@ final class ShareCalStringsTests: XCTestCase {
         XCTAssertEqual(strings.defaultVisibilityLabel(for: .fullDetails), "完整详情")
         XCTAssertEqual(strings.noICloudSharingIdentity, "未连接")
         XCTAssertEqual(strings.unpairButton, "解除配对")
+        XCTAssertEqual(strings.oldSharedCalendarsCleanupPromptTitle, "发现旧共享")
+        XCTAssertEqual(
+            strings.oldSharedCalendarsCleanupPromptMessage,
+            "当前配对已生效，但本设备仍有旧的 ShareCal accepted share。你可以现在移除，也可以稍后在设置中处理。"
+        )
         XCTAssertEqual(strings.deleteICloudDataButton, "删除我的 iCloud 数据")
         XCTAssertEqual(strings.deleteICloudDataSucceeded, "iCloud 数据已删除。")
     }
@@ -1644,6 +2196,43 @@ final class CloudKitAccessRequestWritePlanTests: XCTestCase {
             .privateOwnerZone
         )
     }
+
+    func testRequesterTargetsSharedZoneOwnedByHistoryOwner() {
+        let staleZone = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: "_staleOwner")
+        let targetZone = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: "_manuOwner")
+
+        XCTAssertEqual(
+            CloudKitAccessRequestSharedZonePlan.targetZoneID(
+                ownerMemberID: "_manuOwner",
+                acceptedSharedZoneIDs: [staleZone, targetZone]
+            ),
+            targetZone
+        )
+    }
+
+    func testRequesterDoesNotTargetFirstSharedZoneWhenOwnerDoesNotMatchAnyZone() {
+        let staleZone = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: "_staleOwner")
+        let otherZone = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: "_otherOwner")
+
+        XCTAssertNil(
+            CloudKitAccessRequestSharedZonePlan.targetZoneID(
+                ownerMemberID: "_manuOwner",
+                acceptedSharedZoneIDs: [staleZone, otherZone]
+            )
+        )
+    }
+
+    func testRequesterFallsBackToOnlyAcceptedSharedZoneForLegacyOwnerID() {
+        let onlyZone = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: "_manuOwner")
+
+        XCTAssertEqual(
+            CloudKitAccessRequestSharedZonePlan.targetZoneID(
+                ownerMemberID: "马努",
+                acceptedSharedZoneIDs: [onlyZone]
+            ),
+            onlyZone
+        )
+    }
 }
 
 final class CloudKitRootLookupPolicyTests: XCTestCase {
@@ -1832,13 +2421,28 @@ final class CloudKitShareAcceptancePlanTests: XCTestCase {
 }
 
 final class CloudKitShareRootICloudEmailPlanTests: XCTestCase {
-    func testUsesReadableEmailForShareRootOwnerMemberIDWhenAvailable() {
+    func testShareRootPairingMetadataKeepsStableOwnerIDAndWritesPairingID() {
+        let record = CKRecord(recordType: "CoupleSpace")
+
+        CloudKitShareRootPairingPlan.applyMetadata(
+            ownerMemberID: "me",
+            ownerICloudEmailAddress: " owner@icloud.com ",
+            pairingID: "pair-current",
+            to: record
+        )
+
+        XCTAssertEqual(record["ownerMemberID"] as? String, "me")
+        XCTAssertEqual(record["pairingID"] as? String, "pair-current")
+        XCTAssertNil(record["ownerICloudEmailAddress"] as? String)
+    }
+
+    func testUsesStableShareRootOwnerMemberIDEvenWhenReadableEmailIsAvailable() {
         XCTAssertEqual(
             CloudKitShareRootICloudEmailPlan.ownerMemberIDValue(
                 ownerMemberID: "me",
                 ownerICloudEmailAddress: " owner@icloud.com "
             ),
-            "owner@icloud.com"
+            "me"
         )
         XCTAssertEqual(
             CloudKitShareRootICloudEmailPlan.ownerMemberIDValue(

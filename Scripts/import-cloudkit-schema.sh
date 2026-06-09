@@ -60,7 +60,7 @@ require_schema_field() {
   fi
 }
 
-for field in ___recordID schemaVersion createdAt ownerMemberID; do
+for field in ___recordID schemaVersion createdAt ownerMemberID pairingID; do
   require_schema_field "CoupleSpace" "$field"
 done
 

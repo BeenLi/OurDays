@@ -4,7 +4,8 @@ DEFINE SCHEMA
         "___recordID" REFERENCE QUERYABLE,
         schemaVersion INT64,
         createdAt TIMESTAMP,
-        ownerMemberID STRING
+        ownerMemberID STRING,
+        pairingID STRING
     );
 
     RECORD TYPE EventMirror (

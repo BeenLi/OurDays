@@ -2059,7 +2059,8 @@ struct CreateInviteView: View {
                 do {
                     try await cloudKit.ensureShareRoot(
                         ownerMemberID: settings.currentMemberID,
-                        ownerICloudEmailAddress: settings.currentICloudEmailAddress
+                        ownerICloudEmailAddress: settings.currentICloudEmailAddress,
+                        pairingID: settings.pairingID
                     )
                     try await cloudKit.saveMirrorsForSync([mirror])
                     try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
@@ -2626,6 +2627,9 @@ struct PairingStatusCard: View {
     let pairingDate: Date?
     let partnerNickname: String
     let partnerICloudIdentity: String
+    let myCalendarScopeValue: String
+    let partnerCalendarScopeValue: String
+    let prePairingHistoryScopeValue: String
     let isCloudKitEnabled: Bool
     let isPreparingShare: Bool
     let isCheckingCloudKitAccount: Bool
@@ -2749,9 +2753,9 @@ struct PairingStatusCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(strings.sharingScopeTitle)
                     .font(.subheadline.weight(.semibold))
-                SharingScopeRow(label: strings.sharingMyCalendarLabel, value: strings.sharedAfterPairingDateValue)
-                SharingScopeRow(label: strings.partnersCalendarLabel, value: strings.sharedAfterPairingDateValue)
-                SharingScopeRow(label: strings.prePairingHistoryLabel, value: strings.requestRequiredValue)
+                SharingScopeRow(label: strings.sharingMyCalendarLabel, value: myCalendarScopeValue)
+                SharingScopeRow(label: strings.partnersCalendarLabel, value: partnerCalendarScopeValue)
+                SharingScopeRow(label: strings.prePairingHistoryLabel, value: prePairingHistoryScopeValue)
             }
 
             HStack(spacing: 10) {
@@ -2913,10 +2917,14 @@ struct HistoryRequestSheet: View {
     @State private var endDate: Date
     @State private var validationMessage: String?
 
-    init(pairingDate: Date, onSend: @escaping (Date, Date) -> Bool) {
+    init(
+        pairingDate: Date,
+        initialRange: PairingHistoryRequestRange? = nil,
+        onSend: @escaping (Date, Date) -> Bool
+    ) {
         self.pairingDate = pairingDate
         self.onSend = onSend
-        let range = PairingDatePlan.defaultHistoryRequestRange(pairingDate: pairingDate)
+        let range = initialRange ?? PairingDatePlan.defaultHistoryRequestRange(pairingDate: pairingDate)
         _startDate = State(initialValue: range.start)
         _endDate = State(initialValue: range.end)
     }
@@ -2973,7 +2981,9 @@ struct HistoryRequestSheet: View {
     }
 
     private var maxSelectableDate: Date {
-        PairingDatePlan.defaultHistoryRequestRange(pairingDate: pairingDate).end
+        PairingDatePlan.displayedEndDate(
+            forExclusiveEndDate: PairingDatePlan.normalizedPairingDate(pairingDate)
+        )
     }
 
     private func send() {
@@ -3009,10 +3019,15 @@ struct SettingsTabView: View {
     @State private var isPreparingShare = false
     @State private var isStoppingShare = false
     @State private var isDeletingICloudData = false
+    @State private var isDeletingAcceptedSharedZones = false
     @State private var activeSharePreparationID: UUID?
     @State private var activeSettingsSheet: SettingsSheet?
     @State private var showStopSharingConfirmation = false
     @State private var showDeleteICloudDataConfirmation = false
+    @State private var showDeleteAcceptedSharedZonesConfirmation = false
+    @State private var showOldSharedCalendarsCleanupPrompt = false
+    @State private var promptedOldSharedOwnerSignature: String?
+    @State private var oldSharedCalendarsMessage: String?
 
     private var calendarAccessButtonTitle: String {
         let strings = settings.strings
@@ -3051,6 +3066,79 @@ struct SettingsTabView: View {
         )
     }
 
+    private var ownerMemberIDForPartnerHistory: String {
+        settings.partnerShareOwnerID ?? settings.partnerMemberID
+    }
+
+    private var myCalendarScopeValue: String {
+        sharingScopeValue(
+            direction: .meSharedToPartner,
+            ownerMemberID: nil
+        )
+    }
+
+    private var partnerCalendarScopeValue: String {
+        sharingScopeValue(
+            direction: .partnerSharedToMe,
+            ownerMemberID: ownerMemberIDForPartnerHistory
+        )
+    }
+
+    private var prePairingHistoryScopeValue: String {
+        let strings = settings.strings
+        guard let pairingDate = settings.pairingDate else {
+            return strings.requestRequiredValue
+        }
+        let calendar = Calendar.current
+        let normalizedPairingDate = PairingDatePlan.normalizedPairingDate(pairingDate, calendar: calendar)
+        let authorizedStartDate = PrePairingHistoryAccessPlan.contiguousAuthorizedStartDate(
+            pairingDate: normalizedPairingDate,
+            accessRequests: accessRequests,
+            currentMemberID: settings.currentMemberID,
+            ownerMemberID: ownerMemberIDForPartnerHistory,
+            direction: .partnerSharedToMe,
+            calendar: calendar
+        )
+        guard authorizedStartDate < normalizedPairingDate else {
+            return strings.requestRequiredValue
+        }
+        return strings.historyAuthorizedFromValue(authorizedStartDate)
+    }
+
+    private var nextHistoryRequestRange: PairingHistoryRequestRange {
+        let pairingDate = settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(.now)
+        return PrePairingHistoryAccessPlan.defaultNextRequestRange(
+            pairingDate: pairingDate,
+            accessRequests: accessRequests,
+            currentMemberID: settings.currentMemberID,
+            ownerMemberID: ownerMemberIDForPartnerHistory
+        )
+    }
+
+    private func sharingScopeValue(
+        direction: PrePairingHistoryAccessPlan.Direction,
+        ownerMemberID: String?
+    ) -> String {
+        let strings = settings.strings
+        guard let pairingDate = settings.pairingDate else {
+            return strings.sharedAfterPairingDateValue
+        }
+        let calendar = Calendar.current
+        let normalizedPairingDate = PairingDatePlan.normalizedPairingDate(pairingDate, calendar: calendar)
+        let authorizedStartDate = PrePairingHistoryAccessPlan.contiguousAuthorizedStartDate(
+            pairingDate: normalizedPairingDate,
+            accessRequests: accessRequests,
+            currentMemberID: settings.currentMemberID,
+            ownerMemberID: ownerMemberID,
+            direction: direction,
+            calendar: calendar
+        )
+        guard authorizedStartDate < normalizedPairingDate else {
+            return strings.sharedAfterPairingDateValue
+        }
+        return strings.sharedAfterDateValue(authorizedStartDate)
+    }
+
     var body: some View {
         @Bindable var settings = settings
         let strings = settings.strings
@@ -3062,6 +3150,9 @@ struct SettingsTabView: View {
                     pairingDate: settings.pairingDate,
                     partnerNickname: settings.partnerMemberID,
                     partnerICloudIdentity: partnerICloudIdentityValue,
+                    myCalendarScopeValue: myCalendarScopeValue,
+                    partnerCalendarScopeValue: partnerCalendarScopeValue,
+                    prePairingHistoryScopeValue: prePairingHistoryScopeValue,
                     isCloudKitEnabled: services.isCloudKitEnabled,
                     isPreparingShare: isPreparingShare,
                     isCheckingCloudKitAccount: isCheckingCloudKitAccount,
@@ -3087,6 +3178,27 @@ struct SettingsTabView: View {
                 )
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .listRowBackground(Color.clear)
+            }
+
+            if !settings.inactiveSharedOwnerIDs.isEmpty || oldSharedCalendarsMessage != nil {
+                Section(strings.oldSharedCalendarsSection) {
+                    if !settings.inactiveSharedOwnerIDs.isEmpty {
+                        Text(strings.oldSharedCalendarsDescription(count: settings.inactiveSharedOwnerIDs.count))
+                            .foregroundStyle(.secondary)
+                        Button(
+                            strings.cleanupOldSharedCalendarsButton(isDeleting: isDeletingAcceptedSharedZones),
+                            role: .destructive
+                        ) {
+                            showDeleteAcceptedSharedZonesConfirmation = true
+                        }
+                        .disabled(!services.isCloudKitEnabled || isDeletingAcceptedSharedZones)
+                    }
+                    if let oldSharedCalendarsMessage {
+                        Text(oldSharedCalendarsMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             Section(strings.profileSection) {
@@ -3260,6 +3372,16 @@ struct SettingsTabView: View {
             authorizationState = services.calendarAccess.authorizationState()
             refreshCalendars()
             ensurePairingDateIfNeeded()
+            presentOldSharedCalendarsPromptIfNeeded()
+        }
+        .onChange(of: pairingStatus) { _, _ in
+            presentOldSharedCalendarsPromptIfNeeded()
+        }
+        .onChange(of: settings.inactiveSharedOwnerIDs) { _, newOwnerIDs in
+            if newOwnerIDs.isEmpty {
+                promptedOldSharedOwnerSignature = nil
+            }
+            presentOldSharedCalendarsPromptIfNeeded()
         }
         .sheet(item: $preparedShare) { share in
             CloudSharingController(preparedShare: share) { message in
@@ -3269,7 +3391,10 @@ struct SettingsTabView: View {
         .sheet(item: $activeSettingsSheet) { sheet in
             switch sheet {
             case .historyRequest:
-                HistoryRequestSheet(pairingDate: settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(.now)) { startDate, endDate in
+                HistoryRequestSheet(
+                    pairingDate: settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(.now),
+                    initialRange: nextHistoryRequestRange
+                ) { startDate, endDate in
                     sendAccessRequest(startDate: startDate, endDate: endDate)
                 }
             }
@@ -3281,6 +3406,22 @@ struct SettingsTabView: View {
             Button(strings.cancelButton, role: .cancel) {}
         } message: {
             Text(strings.unpairConfirmationMessage)
+        }
+        .alert(strings.oldSharedCalendarsCleanupPromptTitle, isPresented: $showOldSharedCalendarsCleanupPrompt) {
+            Button(strings.cleanupOldSharedCalendarsButton(isDeleting: false), role: .destructive) {
+                Task { await deleteAcceptedSharedZones() }
+            }
+            Button(strings.cancelButton, role: .cancel) {}
+        } message: {
+            Text(strings.oldSharedCalendarsCleanupPromptMessage)
+        }
+        .alert(strings.cleanupOldSharedCalendarsConfirmationTitle, isPresented: $showDeleteAcceptedSharedZonesConfirmation) {
+            Button(strings.cleanupOldSharedCalendarsButton(isDeleting: false), role: .destructive) {
+                Task { await deleteAcceptedSharedZones() }
+            }
+            Button(strings.cancelButton, role: .cancel) {}
+        } message: {
+            Text(strings.cleanupOldSharedCalendarsConfirmationMessage)
         }
         .alert(strings.deleteICloudDataConfirmationTitle, isPresented: $showDeleteICloudDataConfirmation) {
             Button(strings.deleteICloudDataButton, role: .destructive) {
@@ -3383,6 +3524,19 @@ struct SettingsTabView: View {
         settings.markPairingDateIfNeeded()
     }
 
+    private func presentOldSharedCalendarsPromptIfNeeded() {
+        let ownerSignature = settings.inactiveSharedOwnerIDs.sorted().joined(separator: "|")
+        guard !ownerSignature.isEmpty else { return }
+        guard OldSharedCalendarsCleanupPromptPlan.shouldPresent(
+            pairingStatus: pairingStatus,
+            inactiveSharedOwnerIDs: settings.inactiveSharedOwnerIDs,
+            hasPresentedPrompt: promptedOldSharedOwnerSignature == ownerSignature
+        ) else { return }
+
+        promptedOldSharedOwnerSignature = ownerSignature
+        showOldSharedCalendarsCleanupPrompt = true
+    }
+
     @discardableResult
     private func sendAccessRequest(startDate: Date, endDate: Date) -> Bool {
         errorMessage = nil
@@ -3401,9 +3555,35 @@ struct SettingsTabView: View {
             return false
         }
 
+        let validation = PrePairingHistoryAccessPlan.validation(
+            requestedStartDate: normalizedStartDate,
+            requestedEndDate: exclusiveEndDate,
+            pairingDate: settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(.now),
+            accessRequests: accessRequests,
+            currentMemberID: settings.currentMemberID,
+            ownerMemberID: ownerMemberIDForPartnerHistory,
+            calendar: calendar
+        )
+        switch validation {
+        case .valid:
+            break
+        case .invalidRange:
+            accessRequestMessage = settings.strings.invalidAccessRequestRangeMessage
+            return false
+        case .alreadyAuthorized:
+            accessRequestMessage = settings.strings.accessRequestAlreadyAuthorizedMessage
+            return false
+        case .overlapsAuthorized:
+            accessRequestMessage = settings.strings.accessRequestOverlapsAuthorizedMessage
+            return false
+        case .overlapsExistingRequest:
+            accessRequestMessage = settings.strings.accessRequestOverlapsExistingRequestMessage
+            return false
+        }
+
         let request = CalendarAccessRequest(
             requesterMemberID: settings.currentMemberID,
-            ownerMemberID: settings.partnerShareOwnerID ?? settings.partnerMemberID,
+            ownerMemberID: ownerMemberIDForPartnerHistory,
             requestedStartDate: normalizedStartDate,
             requestedEndDate: exclusiveEndDate,
             sourceRawValue: CalendarAccessRequestSource.localOutgoing.rawValue
@@ -3479,9 +3659,11 @@ struct SettingsTabView: View {
         defer { timeoutTask.cancel() }
 
         do {
+            let pairingID = settings.ensurePairingID()
             let share = try await cloudKit.prepareShare(
                 ownerMemberID: settings.currentMemberID,
-                ownerICloudEmailAddress: settings.currentICloudEmailAddress
+                ownerICloudEmailAddress: settings.currentICloudEmailAddress,
+                pairingID: pairingID
             )
             guard activeSharePreparationID == preparationID else { return }
             settings.iCloudSharingEnabled = true
@@ -3530,8 +3712,40 @@ struct SettingsTabView: View {
             settings.partnerShareOwnerID = nil
             settings.partnerICloudEmailAddresses = []
             settings.outgoingShareParticipantIDs = []
+            settings.clearPairingID()
+            settings.inactiveSharedOwnerIDs = []
             settings.clearPairingDate()
             errorMessage = settings.strings.unpairSucceeded
+        } catch {
+            errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+        }
+    }
+
+    @MainActor
+    private func deleteAcceptedSharedZones() async {
+        guard !isDeletingAcceptedSharedZones else { return }
+        errorMessage = nil
+        oldSharedCalendarsMessage = nil
+        guard let cloudKit = services.cloudKitIfAvailable else {
+            errorMessage = settings.strings.iCloudSharingUnavailableLocalBuild
+            return
+        }
+
+        let ownerIDs = settings.inactiveSharedOwnerIDs
+        guard !ownerIDs.isEmpty else { return }
+
+        isDeletingAcceptedSharedZones = true
+        defer { isDeletingAcceptedSharedZones = false }
+
+        do {
+            try await cloudKit.deleteAcceptedSharedZones(ownerIDs: ownerIDs)
+            try ShareCalLocalDataCleanupService.purgeSharedOwnerData(
+                ownerMemberIDs: Set(ownerIDs),
+                modelContext: modelContext
+            )
+            settings.inactiveSharedOwnerIDs = []
+            oldSharedCalendarsMessage = settings.strings.cleanupOldSharedCalendarsSucceeded
+            syncNow()
         } catch {
             errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
         }
@@ -3558,6 +3772,8 @@ struct SettingsTabView: View {
             settings.partnerShareOwnerID = nil
             settings.partnerICloudEmailAddresses = []
             settings.outgoingShareParticipantIDs = []
+            settings.clearPairingID()
+            settings.inactiveSharedOwnerIDs = []
             settings.clearPairingDate()
             settings.lastSyncAt = nil
             settings.lastSyncError = nil

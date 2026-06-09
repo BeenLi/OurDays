@@ -127,8 +127,14 @@ struct ShareCalStrings {
     var pairingDayLabel: String { text("Pairing Date", "配对日") }
     var sharingScopeTitle: String { text("Sharing Scope", "共享范围") }
     var sharedAfterPairingDateValue: String { text("After pairing date", "配对日之后") }
+    func sharedAfterDateValue(_ date: Date) -> String {
+        text("After \(pairingDateText(for: date))", "\(pairingDateText(for: date))之后")
+    }
     var prePairingHistoryLabel: String { text("Pre-pairing history", "配对前历史") }
     var requestRequiredValue: String { text("Request required", "需要申请") }
+    func historyAuthorizedFromValue(_ date: Date) -> String {
+        text("Authorized from \(pairingDateText(for: date))", "已授权自 \(pairingDateText(for: date))")
+    }
     var noICloudSharingIdentity: String { text("Not connected", "未连接") }
     var pairingDescription: String {
         text(
@@ -162,6 +168,15 @@ struct ShareCalStrings {
     var invalidAccessRequestRangeMessage: String {
         text("End date must be after start date.", "结束日期必须晚于开始日期。")
     }
+    var accessRequestAlreadyAuthorizedMessage: String {
+        text("This range is already authorized.", "该范围已授权，无需重复申请。")
+    }
+    var accessRequestOverlapsAuthorizedMessage: String {
+        text("This range overlaps authorized history. Please adjust the dates.", "申请范围与已授权历史重叠，请调整日期。")
+    }
+    var accessRequestOverlapsExistingRequestMessage: String {
+        text("This range overlaps an existing request. Please adjust the dates.", "申请范围与已有申请重叠，请调整日期。")
+    }
     var unpairButton: String { text("Unpair", "解除配对") }
     var unpairConfirmationTitle: String { text("Unpair?", "解除配对？") }
     var unpairConfirmationMessage: String {
@@ -171,6 +186,26 @@ struct ShareCalStrings {
         )
     }
     var unpairSucceeded: String { text("Unpaired.", "已解除配对。") }
+    var oldSharedCalendarsSection: String { text("Old Shared Calendars", "旧共享") }
+    var oldSharedCalendarsCleanupPromptTitle: String {
+        text("Old Shared Calendars Found", "发现旧共享")
+    }
+    var oldSharedCalendarsCleanupPromptMessage: String {
+        text(
+            "Your current pairing is active, but this device still has old accepted ShareCal shares. You can remove them now or later from Settings.",
+            "当前配对已生效，但本设备仍有旧的 ShareCal accepted share。你可以现在移除，也可以稍后在设置中处理。"
+        )
+    }
+    var cleanupOldSharedCalendarsConfirmationTitle: String {
+        text("Remove Old Shared Calendars?", "移除旧共享？")
+    }
+    var cleanupOldSharedCalendarsConfirmationMessage: String {
+        text(
+            "This removes old accepted ShareCal shares from this device. It will not delete your original Calendar events or your current pairing.",
+            "这会从本设备移除旧的 ShareCal accepted share。它不会删除系统日历中的原始日程，也不会删除当前配对。"
+        )
+    }
+    var cleanupOldSharedCalendarsSucceeded: String { text("Old shared calendars removed.", "旧共享已移除。") }
     var deleteICloudDataButton: String { text("Delete My iCloud Data", "删除我的 iCloud 数据") }
     var deletingICloudDataButton: String { text("Deleting My iCloud Data...", "正在删除我的 iCloud 数据...") }
     var deleteICloudDataConfirmationTitle: String { text("Delete My iCloud Data?", "删除我的 iCloud 数据？") }
@@ -337,6 +372,17 @@ struct ShareCalStrings {
         case .approved: text("Approved", "已同意")
         case .declined: text("Declined", "已拒绝")
         }
+    }
+
+    func oldSharedCalendarsDescription(count: Int) -> String {
+        text(
+            "\(count) old accepted ShareCal share(s) are ignored by the current pairing.",
+            "当前配对已忽略 \(count) 个旧 ShareCal accepted share。"
+        )
+    }
+
+    func cleanupOldSharedCalendarsButton(isDeleting: Bool) -> String {
+        isDeleting ? text("Removing Old Shares...", "正在移除旧共享...") : text("Remove Old Shares", "移除旧共享")
     }
 
     func invitationConflictMessage(eventTitle: String, timeText: String, additionalConflictCount: Int) -> String {
@@ -763,6 +809,207 @@ enum PairingDatePlan {
     }
 }
 
+enum PrePairingHistoryAccessPlan {
+    enum Direction {
+        case partnerSharedToMe
+        case meSharedToPartner
+    }
+
+    enum Validation: Equatable {
+        case valid
+        case invalidRange
+        case alreadyAuthorized
+        case overlapsAuthorized
+        case overlapsExistingRequest
+    }
+
+    static func contiguousAuthorizedStartDate(
+        pairingDate: Date,
+        accessRequests: [CalendarAccessRequest],
+        currentMemberID: String,
+        ownerMemberID: String?,
+        direction: Direction,
+        calendar: Calendar = .current
+    ) -> Date {
+        let normalizedPairingDate = PairingDatePlan.normalizedPairingDate(pairingDate, calendar: calendar)
+        let intervals = approvedIntervals(
+            accessRequests,
+            currentMemberID: currentMemberID,
+            ownerMemberID: ownerMemberID,
+            direction: direction,
+            calendar: calendar
+        )
+
+        var authorizedStartDate = normalizedPairingDate
+        var didExpand = true
+        while didExpand {
+            didExpand = false
+            for interval in intervals where interval.start < authorizedStartDate && interval.end >= authorizedStartDate {
+                authorizedStartDate = interval.start
+                didExpand = true
+            }
+        }
+        return authorizedStartDate
+    }
+
+    static func defaultNextRequestRange(
+        pairingDate: Date,
+        accessRequests: [CalendarAccessRequest],
+        currentMemberID: String,
+        ownerMemberID: String?,
+        calendar: Calendar = .current
+    ) -> PairingHistoryRequestRange {
+        let authorizedStartDate = contiguousAuthorizedStartDate(
+            pairingDate: pairingDate,
+            accessRequests: accessRequests,
+            currentMemberID: currentMemberID,
+            ownerMemberID: ownerMemberID,
+            direction: .partnerSharedToMe,
+            calendar: calendar
+        )
+        let displayedEndDate = PairingDatePlan.displayedEndDate(
+            forExclusiveEndDate: authorizedStartDate,
+            calendar: calendar
+        )
+        let startDate = calendar.date(byAdding: .day, value: -30, to: authorizedStartDate) ?? displayedEndDate
+        return PairingHistoryRequestRange(start: startDate, end: displayedEndDate)
+    }
+
+    static func validation(
+        requestedStartDate: Date,
+        requestedEndDate: Date,
+        pairingDate: Date,
+        accessRequests: [CalendarAccessRequest],
+        currentMemberID: String,
+        ownerMemberID: String?,
+        calendar: Calendar = .current
+    ) -> Validation {
+        let normalizedStartDate = calendar.startOfDay(for: requestedStartDate)
+        let normalizedEndDate = calendar.startOfDay(for: requestedEndDate)
+        guard normalizedEndDate > normalizedStartDate else { return .invalidRange }
+
+        let approvedRanges = mergedIntervals(approvedIntervals(
+            accessRequests,
+            currentMemberID: currentMemberID,
+            ownerMemberID: ownerMemberID,
+            direction: .partnerSharedToMe,
+            calendar: calendar
+        ))
+        if approvedRanges.contains(where: { interval in
+            interval.start <= normalizedStartDate && normalizedEndDate <= interval.end
+        }) {
+            return .alreadyAuthorized
+        }
+        if approvedRanges.contains(where: { overlaps($0, start: normalizedStartDate, end: normalizedEndDate) }) {
+            return .overlapsAuthorized
+        }
+
+        let existingPendingRanges = pendingOutgoingIntervals(
+            accessRequests,
+            currentMemberID: currentMemberID,
+            ownerMemberID: ownerMemberID,
+            calendar: calendar
+        )
+        if existingPendingRanges.contains(where: { overlaps($0, start: normalizedStartDate, end: normalizedEndDate) }) {
+            return .overlapsExistingRequest
+        }
+
+        return .valid
+    }
+
+    private static func approvedIntervals(
+        _ accessRequests: [CalendarAccessRequest],
+        currentMemberID: String,
+        ownerMemberID: String?,
+        direction: Direction,
+        calendar: Calendar
+    ) -> [DateInterval] {
+        accessRequests.compactMap { request in
+            guard request.status == .approved,
+                  matches(request, currentMemberID: currentMemberID, ownerMemberID: ownerMemberID, direction: direction) else {
+                return nil
+            }
+            return interval(for: request, calendar: calendar)
+        }
+    }
+
+    private static func pendingOutgoingIntervals(
+        _ accessRequests: [CalendarAccessRequest],
+        currentMemberID: String,
+        ownerMemberID: String?,
+        calendar: Calendar
+    ) -> [DateInterval] {
+        accessRequests.compactMap { request in
+            guard request.status == .pending,
+                  request.source != .privateOwnerZone,
+                  normalizedID(request.requesterMemberID) == normalizedID(currentMemberID),
+                  matchesOwner(request, ownerMemberID: ownerMemberID) else {
+                return nil
+            }
+            return interval(for: request, calendar: calendar)
+        }
+    }
+
+    private static func matches(
+        _ request: CalendarAccessRequest,
+        currentMemberID: String,
+        ownerMemberID: String?,
+        direction: Direction
+    ) -> Bool {
+        switch direction {
+        case .partnerSharedToMe:
+            return request.source != .privateOwnerZone
+                && normalizedID(request.requesterMemberID) == normalizedID(currentMemberID)
+                && matchesOwner(request, ownerMemberID: ownerMemberID)
+        case .meSharedToPartner:
+            return request.source == .privateOwnerZone
+        }
+    }
+
+    private static func interval(for request: CalendarAccessRequest, calendar: Calendar) -> DateInterval? {
+        let startDate = calendar.startOfDay(for: request.requestedStartDate)
+        let endDate = calendar.startOfDay(for: request.requestedEndDate)
+        guard endDate > startDate else { return nil }
+        return DateInterval(start: startDate, end: endDate)
+    }
+
+    private static func matchesOwner(_ request: CalendarAccessRequest, ownerMemberID: String?) -> Bool {
+        guard let ownerMemberID = normalizedID(ownerMemberID), !ownerMemberID.isEmpty else { return true }
+        return normalizedID(request.ownerMemberID) == ownerMemberID
+    }
+
+    private static func normalizedID(_ value: String?) -> String? {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func mergedIntervals(_ intervals: [DateInterval]) -> [DateInterval] {
+        intervals.sorted { lhs, rhs in
+            if lhs.start == rhs.start {
+                return lhs.end < rhs.end
+            }
+            return lhs.start < rhs.start
+        }
+        .reduce(into: []) { partialResult, interval in
+            guard let last = partialResult.last else {
+                partialResult.append(interval)
+                return
+            }
+            if interval.start <= last.end {
+                partialResult[partialResult.count - 1] = DateInterval(
+                    start: last.start,
+                    end: max(last.end, interval.end)
+                )
+            } else {
+                partialResult.append(interval)
+            }
+        }
+    }
+
+    private static func overlaps(_ interval: DateInterval, start: Date, end: Date) -> Bool {
+        interval.start < end && start < interval.end
+    }
+}
+
 enum CalendarSharingWindowPlan {
     static let defaultEndDate = Date.distantFuture
 
@@ -862,9 +1109,46 @@ enum EventDetailInteractionPlan {
 }
 
 enum CalendarAccessRequestListPlan {
+    private struct LogicalRequestKey: Hashable {
+        let requesterMemberID: String
+        let ownerMemberID: String
+        let requestedStartDate: Date
+        let requestedEndDate: Date
+    }
+
+    private static func logicalKey(for request: CalendarAccessRequest) -> LogicalRequestKey {
+        LogicalRequestKey(
+            requesterMemberID: request.requesterMemberID.trimmingCharacters(in: .whitespacesAndNewlines),
+            ownerMemberID: request.ownerMemberID.trimmingCharacters(in: .whitespacesAndNewlines),
+            requestedStartDate: request.requestedStartDate,
+            requestedEndDate: request.requestedEndDate
+        )
+    }
+
+    private static func preferredRequest(in requests: [CalendarAccessRequest]) -> CalendarAccessRequest? {
+        requests.max { lhs, rhs in
+            if lhs.updatedAt == rhs.updatedAt {
+                if lhs.status == .pending && rhs.status != .pending {
+                    return true
+                }
+                if lhs.status != .pending && rhs.status == .pending {
+                    return false
+                }
+                return lhs.id < rhs.id
+            }
+            return lhs.updatedAt < rhs.updatedAt
+        }
+    }
+
+    private static func collapsedRequests(_ requests: [CalendarAccessRequest]) -> [CalendarAccessRequest] {
+        Dictionary(grouping: requests, by: logicalKey(for:))
+            .values
+            .compactMap(preferredRequest(in:))
+    }
+
     static func pendingIncoming(_ requests: [CalendarAccessRequest]) -> [CalendarAccessRequest] {
-        requests
-            .filter { $0.source == .privateOwnerZone && $0.status == .pending }
+        collapsedRequests(requests.filter { $0.source == .privateOwnerZone })
+            .filter { $0.status == .pending }
             .sorted { lhs, rhs in
                 if lhs.createdAt == rhs.createdAt {
                     return lhs.id < rhs.id
@@ -877,16 +1161,54 @@ enum CalendarAccessRequestListPlan {
         _ requests: [CalendarAccessRequest],
         currentMemberID: String
     ) -> [CalendarAccessRequest] {
-        requests
-            .filter { request in
+        collapsedRequests(
+            requests.filter { request in
                 request.requesterMemberID == currentMemberID && request.source != .privateOwnerZone
             }
+        )
             .sorted { lhs, rhs in
                 if lhs.createdAt == rhs.createdAt {
                     return lhs.id < rhs.id
                 }
                 return lhs.createdAt < rhs.createdAt
             }
+    }
+
+    static func pendingOutgoingRequestsNotSupersededByTerminalCopies(
+        _ requests: [CalendarAccessRequest],
+        currentMemberID: String
+    ) -> [CalendarAccessRequest] {
+        let outgoingRequests = requests.filter { request in
+            request.requesterMemberID == currentMemberID && request.source != .privateOwnerZone
+        }
+        let requestsByKey = Dictionary(grouping: outgoingRequests, by: logicalKey(for:))
+        return outgoingRequests
+            .filter { request in
+                guard request.status == .pending else { return false }
+                let matchingRequests = requestsByKey[logicalKey(for: request)] ?? []
+                return !matchingRequests.contains { matchingRequest in
+                    matchingRequest.status != .pending
+                        && matchingRequest.updatedAt >= request.updatedAt
+                }
+            }
+            .sorted { lhs, rhs in
+                if lhs.updatedAt == rhs.updatedAt {
+                    return lhs.id < rhs.id
+                }
+                return lhs.updatedAt < rhs.updatedAt
+            }
+    }
+}
+
+enum CalendarAccessRequestCloudUploadPlan {
+    static func requestsNeedingUpload(
+        _ requests: [CalendarAccessRequest],
+        currentMemberID: String
+    ) -> [CalendarAccessRequest] {
+        CalendarAccessRequestListPlan.pendingOutgoingRequestsNotSupersededByTerminalCopies(
+            requests,
+            currentMemberID: currentMemberID
+        )
     }
 }
 
@@ -1031,6 +1353,64 @@ enum PairingSettingsPlan {
 
     private static func normalizedIDs(_ ids: [String]) -> [String] {
         ids.compactMap(normalizedID)
+    }
+
+    private static func normalizedID(_ id: String?) -> String? {
+        guard let id else { return nil }
+        let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedID.isEmpty ? nil : trimmedID
+    }
+}
+
+enum OldSharedCalendarsCleanupPromptPlan {
+    static func shouldPresent(
+        pairingStatus: PairingStatus,
+        inactiveSharedOwnerIDs: [String],
+        hasPresentedPrompt: Bool
+    ) -> Bool {
+        pairingStatus == .paired
+            && !inactiveSharedOwnerIDs.isEmpty
+            && !hasPresentedPrompt
+    }
+}
+
+enum LegacyPairingIDMigrationPlan {
+    static func partnerOwnerIDsForSelection(
+        partnerShareOwnerID: String?,
+        outgoingParticipantIDs: [String],
+        hasStartedPairing: Bool
+    ) -> [String] {
+        if let partnerShareOwnerID = normalizedID(partnerShareOwnerID) {
+            return [partnerShareOwnerID]
+        }
+
+        guard hasStartedPairing else { return [] }
+        let outgoingIDs = normalizedUniqueIDs(outgoingParticipantIDs)
+        return outgoingIDs.count == 1 ? outgoingIDs : []
+    }
+
+    static func shouldGeneratePairingID(
+        currentPairingID: String?,
+        hasStartedPairing: Bool,
+        partnerShareOwnerID: String?,
+        outgoingParticipantIDs: [String],
+        sharedZoneOwnerIDs: [String]
+    ) -> Bool {
+        guard normalizedID(currentPairingID) == nil else { return false }
+        let partnerOwnerIDs = Set(
+            partnerOwnerIDsForSelection(
+                partnerShareOwnerID: partnerShareOwnerID,
+                outgoingParticipantIDs: outgoingParticipantIDs,
+                hasStartedPairing: hasStartedPairing
+            )
+        )
+        guard !partnerOwnerIDs.isEmpty else { return false }
+        let sharedOwnerIDs = Set(normalizedUniqueIDs(sharedZoneOwnerIDs))
+        return !partnerOwnerIDs.isDisjoint(with: sharedOwnerIDs)
+    }
+
+    private static func normalizedUniqueIDs(_ ids: [String]) -> [String] {
+        Array(Set(ids.compactMap(normalizedID))).sorted()
     }
 
     private static func normalizedID(_ id: String?) -> String? {
@@ -1573,6 +1953,43 @@ enum ShareCalLocalDataCleanupService {
             for comment in existingComments where deletedMirrorIDs.contains(comment.eventMirrorID) {
                 modelContext.delete(comment)
             }
+        }
+
+        try modelContext.save()
+    }
+
+    static func purgeSharedOwnerData(
+        ownerMemberIDs: Set<String>,
+        modelContext: ModelContext
+    ) throws {
+        guard !ownerMemberIDs.isEmpty else { return }
+
+        let existingMirrors = try modelContext.fetch(FetchDescriptor<EventMirror>())
+        var deletedMirrorIDs = Set<String>()
+        for mirror in existingMirrors where ownerMemberIDs.contains(mirror.ownerMemberID) {
+            deletedMirrorIDs.insert(mirror.id)
+            modelContext.delete(mirror)
+        }
+
+        if !deletedMirrorIDs.isEmpty {
+            let existingComments = try modelContext.fetch(FetchDescriptor<EventComment>())
+            for comment in existingComments where deletedMirrorIDs.contains(comment.eventMirrorID) {
+                modelContext.delete(comment)
+            }
+        }
+
+        let existingInvitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
+        for invitation in existingInvitations
+            where ownerMemberIDs.contains(invitation.creatorMemberID)
+                || ownerMemberIDs.contains(invitation.inviteeMemberID) {
+            modelContext.delete(invitation)
+        }
+
+        let existingAccessRequests = try modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())
+        for request in existingAccessRequests
+            where ownerMemberIDs.contains(request.requesterMemberID)
+                || ownerMemberIDs.contains(request.ownerMemberID) {
+            modelContext.delete(request)
         }
 
         try modelContext.save()

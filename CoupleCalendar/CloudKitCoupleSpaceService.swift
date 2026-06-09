@@ -202,7 +202,7 @@ enum CloudKitShareRootICloudEmailPlan {
     static let writesOwnerICloudEmailAddress = false
 
     static func ownerMemberIDValue(ownerMemberID: String, ownerICloudEmailAddress: String?) -> String {
-        ICloudSharingIdentityDisplayPlan.normalizedEmailAddress(ownerICloudEmailAddress) ?? ownerMemberID
+        ownerMemberID
     }
 
     static func applyOwnerICloudEmailAddress(_ emailAddress: String?, to record: CKRecord) {
@@ -220,6 +220,34 @@ enum CloudKitShareRootICloudEmailPlan {
                 ].compactMap { $0 }
             }
         )
+    }
+}
+
+enum CloudKitShareRootPairingPlan {
+    static let pairingIDKey = "pairingID"
+
+    static func applyMetadata(
+        ownerMemberID: String,
+        ownerICloudEmailAddress: String?,
+        pairingID: String?,
+        to record: CKRecord
+    ) {
+        record["schemaVersion"] = 1 as CKRecordValue
+        record[CloudKitShareRootICloudEmailPlan.ownerMemberIDKey] = ownerMemberID as CKRecordValue
+        if let pairingID = normalizedID(pairingID) {
+            record[pairingIDKey] = pairingID as CKRecordValue
+        }
+        CloudKitShareRootICloudEmailPlan.applyOwnerICloudEmailAddress(ownerICloudEmailAddress, to: record)
+    }
+
+    static func pairingID(from record: CKRecord?) -> String? {
+        normalizedID(record?[pairingIDKey] as? String)
+    }
+
+    private static func normalizedID(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? nil : trimmedValue
     }
 }
 
@@ -257,6 +285,117 @@ enum CloudKitSharedDatabaseImportPlan {
                 cloudKitRecordName: mirror.cloudKitRecordName
             )
         }
+    }
+}
+
+struct CloudKitSharedZonePairingInfo: Equatable {
+    let zoneID: CKRecordZone.ID
+    let pairingID: String?
+}
+
+struct PairingSharedZoneSelection: Equatable {
+    let pairingID: String?
+    let activeSharedZoneIDs: [CKRecordZone.ID]
+    let activePartnerOwnerID: String?
+    let inactiveSharedOwnerIDs: [String]
+}
+
+enum PairingSharedZoneSelectionPlan {
+    static func selection(
+        currentPairingID: String?,
+        sharedZones: [CloudKitSharedZonePairingInfo],
+        allowsPairingIDConflictResolution: Bool = true,
+        legacyPartnerOwnerIDs: [String] = []
+    ) -> PairingSharedZoneSelection {
+        let normalizedCurrentPairingID = normalizedID(currentPairingID)
+        let selection = pairingIDSelection(
+            currentPairingID: normalizedCurrentPairingID,
+            sharedZones: sharedZones,
+            allowsPairingIDConflictResolution: allowsPairingIDConflictResolution,
+            legacyPartnerOwnerIDs: legacyPartnerOwnerIDs
+        )
+        let selectedPairingID = selection.pairingID
+        let activeSharedZones = selection.activeSharedZones
+        let activeOwnerIDs = Set(activeSharedZones.map(\.zoneID.ownerName))
+        let inactiveOwnerIDs = sharedZones
+            .map(\.zoneID.ownerName)
+            .filter { !activeOwnerIDs.contains($0) }
+            .sorted()
+        let activePartnerOwnerID = activeSharedZones
+            .map(\.zoneID.ownerName)
+            .sorted()
+            .first
+
+        return PairingSharedZoneSelection(
+            pairingID: selectedPairingID,
+            activeSharedZoneIDs: activeSharedZones.map(\.zoneID),
+            activePartnerOwnerID: activePartnerOwnerID,
+            inactiveSharedOwnerIDs: inactiveOwnerIDs
+        )
+    }
+
+    private static func pairingIDSelection(
+        currentPairingID: String?,
+        sharedZones: [CloudKitSharedZonePairingInfo],
+        allowsPairingIDConflictResolution: Bool,
+        legacyPartnerOwnerIDs: [String]
+    ) -> (pairingID: String?, activeSharedZones: [CloudKitSharedZonePairingInfo]) {
+        guard let currentPairingID else {
+            guard let pairingID = unambiguousPairingID(from: sharedZones) else {
+                return (nil, [])
+            }
+            return (
+                pairingID,
+                sharedZones.filter { normalizedID($0.pairingID) == pairingID }
+            )
+        }
+
+        let exactMatches = sharedZones.filter { normalizedID($0.pairingID) == currentPairingID }
+        if !exactMatches.isEmpty {
+            return (currentPairingID, exactMatches)
+        }
+
+        let legacyPartnerOwnerIDs = Set(legacyPartnerOwnerIDs.compactMap(normalizedID))
+        if !legacyPartnerOwnerIDs.isEmpty {
+            let legacyMatches = sharedZones.filter {
+                normalizedID($0.pairingID) == nil && legacyPartnerOwnerIDs.contains($0.zoneID.ownerName)
+            }
+            if !legacyMatches.isEmpty {
+                return (currentPairingID, legacyMatches)
+            }
+
+            let trustedRemoteMatches = sharedZones.filter {
+                legacyPartnerOwnerIDs.contains($0.zoneID.ownerName) && normalizedID($0.pairingID) != nil
+            }
+            let trustedRemotePairingIDs = Set(trustedRemoteMatches.compactMap { normalizedID($0.pairingID) })
+            if trustedRemotePairingIDs.count == 1,
+               let trustedRemotePairingID = trustedRemotePairingIDs.first {
+                let canonicalPairingID = min(currentPairingID, trustedRemotePairingID)
+                return (canonicalPairingID, trustedRemoteMatches)
+            }
+        }
+
+        let remotePairingIDs = Set(sharedZones.compactMap { normalizedID($0.pairingID) })
+        guard allowsPairingIDConflictResolution,
+              remotePairingIDs.count == 1,
+              let remotePairingID = remotePairingIDs.first else {
+            return (currentPairingID, [])
+        }
+
+        let canonicalPairingID = min(currentPairingID, remotePairingID)
+        let resolvingSharedZones = sharedZones.filter { normalizedID($0.pairingID) == remotePairingID }
+        return (canonicalPairingID, resolvingSharedZones)
+    }
+
+    private static func unambiguousPairingID(from sharedZones: [CloudKitSharedZonePairingInfo]) -> String? {
+        let pairingIDs = Set(sharedZones.compactMap { normalizedID($0.pairingID) })
+        return pairingIDs.count == 1 ? pairingIDs.first : nil
+    }
+
+    private static func normalizedID(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? nil : trimmedValue
     }
 }
 
@@ -311,6 +450,22 @@ enum CloudKitAccessRequestWritePlan {
         currentMemberID: String
     ) -> CloudKitAccessRequestWriteDestination {
         ownerMemberID == currentMemberID ? .privateOwnerZone : .acceptedSharedZone
+    }
+}
+
+enum CloudKitAccessRequestSharedZonePlan {
+    static func targetZoneID(
+        ownerMemberID: String,
+        acceptedSharedZoneIDs: [CKRecordZone.ID]
+    ) -> CKRecordZone.ID? {
+        let trimmedOwnerMemberID = ownerMemberID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedOwnerMemberID.isEmpty else { return nil }
+
+        if let matchingZoneID = acceptedSharedZoneIDs.first(where: { $0.ownerName == trimmedOwnerMemberID }) {
+            return matchingZoneID
+        }
+
+        return acceptedSharedZoneIDs.count == 1 ? acceptedSharedZoneIDs[0] : nil
     }
 }
 
@@ -1284,13 +1439,18 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
-    func prepareShare(ownerMemberID: String, ownerICloudEmailAddress: String? = nil) async throws -> PreparedCloudShare {
+    func prepareShare(
+        ownerMemberID: String,
+        ownerICloudEmailAddress: String? = nil,
+        pairingID: String
+    ) async throws -> PreparedCloudShare {
         cloudKitSharingInfo("prepareShare begin ownerMemberIDPresent=\((!ownerMemberID.isEmpty).description)")
         try await ensureZone()
 
         let root = try await rootRecordForSharing(
             ownerMemberID: ownerMemberID,
-            ownerICloudEmailAddress: ownerICloudEmailAddress
+            ownerICloudEmailAddress: ownerICloudEmailAddress,
+            pairingID: pairingID
         )
         if let shareReference = root.record.share {
             cloudKitSharingInfo("prepareShare found existing share root=\(root.record.recordID.recordName) share=\(shareReference.recordID.recordName)")
@@ -1399,11 +1559,16 @@ final class CloudKitCoupleSpaceService {
     }
 
     @discardableResult
-    func ensureShareRoot(ownerMemberID: String, ownerICloudEmailAddress: String? = nil) async throws -> CKRecord {
+    func ensureShareRoot(
+        ownerMemberID: String,
+        ownerICloudEmailAddress: String? = nil,
+        pairingID: String? = nil
+    ) async throws -> CKRecord {
         try await ensureZone()
         let root = try await rootRecordForSharing(
             ownerMemberID: ownerMemberID,
-            ownerICloudEmailAddress: ownerICloudEmailAddress
+            ownerICloudEmailAddress: ownerICloudEmailAddress,
+            pairingID: pairingID
         )
         return try await saveRootRecord(root.record)
     }
@@ -1464,6 +1629,7 @@ final class CloudKitCoupleSpaceService {
         let record = CKRecord(recordType: ShareCalLaunchDiagnosticPlan.cloudKitWriteProbeRecordType, recordID: recordID)
         record["schemaVersion"] = 1 as CKRecordValue
         record["ownerMemberID"] = "write-probe" as CKRecordValue
+        record[CloudKitShareRootPairingPlan.pairingIDKey] = "write-probe-pairing" as CKRecordValue
         record["createdAt"] = Date() as CKRecordValue
 
         cloudKitSharingInfo("writeProbe save begin label=\(label) record=\(recordName)")
@@ -1696,27 +1862,30 @@ final class CloudKitCoupleSpaceService {
 
     private func rootRecordForSharing(
         ownerMemberID: String,
-        ownerICloudEmailAddress: String?
+        ownerICloudEmailAddress: String?,
+        pairingID: String?
     ) async throws -> ShareRootRecord {
         let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
-        let rootOwnerMemberID = CloudKitShareRootICloudEmailPlan.ownerMemberIDValue(
-            ownerMemberID: ownerMemberID,
-            ownerICloudEmailAddress: ownerICloudEmailAddress
-        )
         if let existingRoot = try await fetchRecordIfPresent(with: rootRecordID) {
             cloudKitSharingInfo("rootRecordForSharing found existing root=\(rootRecordID.recordName) hasShare=\((existingRoot.share != nil).description)")
-            existingRoot["schemaVersion"] = 1 as CKRecordValue
-            existingRoot["ownerMemberID"] = rootOwnerMemberID as CKRecordValue
-            CloudKitShareRootICloudEmailPlan.applyOwnerICloudEmailAddress(ownerICloudEmailAddress, to: existingRoot)
+            CloudKitShareRootPairingPlan.applyMetadata(
+                ownerMemberID: ownerMemberID,
+                ownerICloudEmailAddress: ownerICloudEmailAddress,
+                pairingID: pairingID,
+                to: existingRoot
+            )
             return ShareRootRecord(record: existingRoot, state: .existing)
         }
 
         cloudKitSharingInfo("rootRecordForSharing creating new root=\(rootRecordID.recordName)")
         let root = CKRecord(recordType: "CoupleSpace", recordID: rootRecordID)
-        root["schemaVersion"] = 1 as CKRecordValue
         root["createdAt"] = Date() as CKRecordValue
-        root["ownerMemberID"] = rootOwnerMemberID as CKRecordValue
-        CloudKitShareRootICloudEmailPlan.applyOwnerICloudEmailAddress(ownerICloudEmailAddress, to: root)
+        CloudKitShareRootPairingPlan.applyMetadata(
+            ownerMemberID: ownerMemberID,
+            ownerICloudEmailAddress: ownerICloudEmailAddress,
+            pairingID: pairingID,
+            to: root
+        )
         return ShareRootRecord(record: root, state: .created)
     }
 
@@ -1915,7 +2084,7 @@ final class CloudKitCoupleSpaceService {
             try await ensureShareRoot(ownerMemberID: currentMemberID)
             try await saveCalendarAccessRequestsForSync([request], in: zoneID, database: privateDatabase)
         case .acceptedSharedZone:
-            let targetZoneID = try await acceptedSharedZoneID()
+            let targetZoneID = try await acceptedSharedZoneID(ownerMemberID: request.ownerMemberID)
             try await saveCalendarAccessRequestsForSync([request], in: targetZoneID, database: sharedDatabase)
         }
     }
@@ -2141,6 +2310,37 @@ final class CloudKitCoupleSpaceService {
         zoneIDs.map(\.ownerName).sorted()
     }
 
+    func fetchSharedZonePairingInfos(sharedZoneIDs: [CKRecordZone.ID]) async throws -> [CloudKitSharedZonePairingInfo] {
+        guard !sharedZoneIDs.isEmpty else { return [] }
+        let rootRecordIDs = sharedZoneIDs.map(CloudKitShareHierarchyPlan.rootRecordID(zoneID:))
+        let recordsByID = try await fetchRecordsForUpsertIfPresent(
+            with: rootRecordIDs,
+            database: sharedDatabase
+        )
+        return sharedZoneIDs.map { zoneID in
+            let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
+            return CloudKitSharedZonePairingInfo(
+                zoneID: zoneID,
+                pairingID: CloudKitShareRootPairingPlan.pairingID(from: recordsByID[rootRecordID])
+            )
+        }
+    }
+
+    func deleteAcceptedSharedZones(ownerIDs: [String]) async throws {
+        let ownerIDSet = Set(ownerIDs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+        guard !ownerIDSet.isEmpty else { return }
+        let zoneIDs = try await sharedCoupleSpaceZoneIDs()
+            .filter { ownerIDSet.contains($0.ownerName) }
+        guard !zoneIDs.isEmpty else { return }
+        do {
+            _ = try await sharedDatabase.modifyRecordZones(saving: [], deleting: zoneIDs)
+            cloudKitSharingInfo("deleteAcceptedSharedZones succeeded owners=\(ownerIDSet.sorted().joined(separator: ","))")
+        } catch {
+            cloudKitSharingError("deleteAcceptedSharedZones failed owners=\(ownerIDSet.sorted().joined(separator: ",")) error=\(describeCloudKitFailure(error))")
+            throw error
+        }
+    }
+
     func fetchSharedOwnerICloudEmailAddresses(sharedZoneIDs: [CKRecordZone.ID]) async throws -> [String] {
         guard !sharedZoneIDs.isEmpty else { return [] }
         let rootRecordIDs = sharedZoneIDs.map(CloudKitShareHierarchyPlan.rootRecordID(zoneID:))
@@ -2276,18 +2476,21 @@ final class CloudKitCoupleSpaceService {
         )
     }
 
-    private func acceptedSharedZoneID() async throws -> CKRecordZone.ID {
+    private func acceptedSharedZoneID(ownerMemberID: String) async throws -> CKRecordZone.ID {
         let zoneIDs = try await sharedCoupleSpaceZoneIDs()
-        if let zoneID = zoneIDs.first {
-            cloudKitSharingInfo("acceptedSharedZoneID selected owner=\(zoneID.ownerName)")
+        if let zoneID = CloudKitAccessRequestSharedZonePlan.targetZoneID(
+            ownerMemberID: ownerMemberID,
+            acceptedSharedZoneIDs: zoneIDs
+        ) {
+            cloudKitSharingInfo("acceptedSharedZoneID matched accessRequestOwner=\(ownerMemberID) owner=\(zoneID.ownerName)")
             return zoneID
         }
 
-        cloudKitSharingError("acceptedSharedZoneID failed; no accepted share zones")
+        cloudKitSharingError("acceptedSharedZoneID failed accessRequestOwner=\(ownerMemberID) zones=\(zoneIDs.map(\.ownerName).joined(separator: ","))")
         throw NSError(
             domain: CKError.errorDomain,
             code: CKError.Code.unknownItem.rawValue,
-            userInfo: [NSLocalizedDescriptionKey: "No accepted CloudKit share is available for calendar access requests."]
+            userInfo: [NSLocalizedDescriptionKey: "No accepted CloudKit share is available for calendar access requests owned by \(ownerMemberID)."]
         )
     }
 

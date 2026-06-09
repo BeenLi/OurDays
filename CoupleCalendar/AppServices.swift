@@ -52,8 +52,14 @@ final class SettingsStore {
     var partnerICloudEmailAddresses: [String] {
         didSet { defaults.set(partnerICloudEmailAddresses, forKey: Key.partnerICloudEmailAddresses) }
     }
+    var inactiveSharedOwnerIDs: [String] {
+        didSet { defaults.set(inactiveSharedOwnerIDs, forKey: Key.inactiveSharedOwnerIDs) }
+    }
     var outgoingShareParticipantIDs: [String] {
         didSet { defaults.set(outgoingShareParticipantIDs, forKey: Key.outgoingShareParticipantIDs) }
+    }
+    var pairingID: String? {
+        didSet { saveOptionalString(pairingID, forKey: Key.pairingID) }
     }
     var iCloudSharingEnabled: Bool {
         didSet { defaults.set(iCloudSharingEnabled, forKey: Key.iCloudSharingEnabled) }
@@ -88,7 +94,9 @@ final class SettingsStore {
         partnerMemberID = defaults.string(forKey: Key.partnerMemberID) ?? "partner"
         partnerShareOwnerID = defaults.string(forKey: Key.partnerShareOwnerID)
         partnerICloudEmailAddresses = defaults.stringArray(forKey: Key.partnerICloudEmailAddresses) ?? []
+        inactiveSharedOwnerIDs = defaults.stringArray(forKey: Key.inactiveSharedOwnerIDs) ?? []
         outgoingShareParticipantIDs = defaults.stringArray(forKey: Key.outgoingShareParticipantIDs) ?? []
+        pairingID = defaults.string(forKey: Key.pairingID)
         iCloudSharingEnabled = defaults.object(forKey: Key.iCloudSharingEnabled) as? Bool ?? true
         hasStartedPairing = defaults.object(forKey: Key.hasStartedPairing) as? Bool ?? false
         pairingDate = defaults.object(forKey: Key.pairingDate) as? Date
@@ -127,6 +135,20 @@ final class SettingsStore {
         pairingDate = nil
     }
 
+    func ensurePairingID() -> String {
+        if let pairingID = normalizedID(pairingID) {
+            self.pairingID = pairingID
+            return pairingID
+        }
+        let pairingID = UUID().uuidString
+        self.pairingID = pairingID
+        return pairingID
+    }
+
+    func clearPairingID() {
+        pairingID = nil
+    }
+
     private func saveOptionalDate(_ value: Date?, forKey key: String) {
         if let value {
             defaults.set(value, forKey: key)
@@ -135,13 +157,21 @@ final class SettingsStore {
         }
     }
 
+    private func normalizedID(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? nil : trimmedValue
+    }
+
     private enum Key {
         static let currentMemberID = "currentMemberID"
         static let currentICloudEmailAddress = "currentICloudEmailAddress"
         static let partnerMemberID = "partnerMemberID"
         static let partnerShareOwnerID = "partnerShareOwnerID"
         static let partnerICloudEmailAddresses = "partnerICloudEmailAddresses"
+        static let inactiveSharedOwnerIDs = "inactiveSharedOwnerIDs"
         static let outgoingShareParticipantIDs = "outgoingShareParticipantIDs"
+        static let pairingID = "pairingID"
         static let iCloudSharingEnabled = "iCloudSharingEnabled"
         static let hasStartedPairing = "hasStartedPairing"
         static let pairingDate = "pairingDate"
@@ -341,16 +371,23 @@ struct SyncCoordinator {
                     return
                 }
 
+                let accessRequestsNeedingCloudUpload = CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
+                    localAccessRequests,
+                    currentMemberID: settings.currentMemberID
+                )
                 let hasCloudWrites = !mirrorsNeedingCloudUpload.isEmpty
                     || !hardDeletedMirrors.isEmpty
                     || !canceledInvitations.isEmpty
+                    || !accessRequestsNeedingCloudUpload.isEmpty
                 let shouldUpdateShareRootMetadata = settings.hasStartedPairing
                     || settings.partnerShareOwnerID != nil
                     || !settings.outgoingShareParticipantIDs.isEmpty
+                    || settings.pairingID != nil
                 if hasCloudWrites || shouldUpdateShareRootMetadata {
                     try await cloudKit.ensureShareRoot(
                         ownerMemberID: settings.currentMemberID,
-                        ownerICloudEmailAddress: settings.currentICloudEmailAddress
+                        ownerICloudEmailAddress: settings.currentICloudEmailAddress,
+                        pairingID: settings.pairingID
                     )
                     timing.mark("cloudShareRootReady")
                     if hasCloudWrites {
@@ -362,6 +399,13 @@ struct SyncCoordinator {
                             try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
                         }
                         timing.mark("cloudCanceledInvitationsSaved count=\(canceledInvitations.count)")
+                        for request in accessRequestsNeedingCloudUpload {
+                            try await cloudKit.saveCalendarAccessRequestForSync(
+                                request,
+                                currentMemberID: settings.currentMemberID
+                            )
+                        }
+                        timing.mark("cloudAccessRequestsSaved count=\(accessRequestsNeedingCloudUpload.count)")
                     }
                 } else {
                     timing.mark("cloudWritesSkipped")
@@ -382,19 +426,57 @@ struct SyncCoordinator {
                 timing.mark("cloudOutgoingParticipantsFetched count=\(settings.outgoingShareParticipantIDs.count)")
                 let fetchedSharedZoneIDs = try await sharedZoneIDs
                 timing.mark("cloudSharedZonesFetched count=\(fetchedSharedZoneIDs.count)")
+                if LegacyPairingIDMigrationPlan.shouldGeneratePairingID(
+                    currentPairingID: settings.pairingID,
+                    hasStartedPairing: settings.hasStartedPairing,
+                    partnerShareOwnerID: settings.partnerShareOwnerID,
+                    outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
+                    sharedZoneOwnerIDs: fetchedSharedZoneIDs.map(\.ownerName)
+                ) {
+                    let pairingID = settings.ensurePairingID()
+                    try await cloudKit.ensureShareRoot(
+                        ownerMemberID: settings.currentMemberID,
+                        ownerICloudEmailAddress: settings.currentICloudEmailAddress,
+                        pairingID: pairingID
+                    )
+                    timing.mark("cloudLegacyPairingIDMigrated")
+                }
+                let sharedZonePairingInfos = try await cloudKit.fetchSharedZonePairingInfos(sharedZoneIDs: fetchedSharedZoneIDs)
+                let legacyPartnerOwnerIDs = LegacyPairingIDMigrationPlan.partnerOwnerIDsForSelection(
+                    partnerShareOwnerID: settings.partnerShareOwnerID,
+                    outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
+                    hasStartedPairing: settings.hasStartedPairing
+                )
+                let pairingSelection = PairingSharedZoneSelectionPlan.selection(
+                    currentPairingID: settings.pairingID,
+                    sharedZones: sharedZonePairingInfos,
+                    allowsPairingIDConflictResolution: settings.partnerShareOwnerID == nil,
+                    legacyPartnerOwnerIDs: legacyPartnerOwnerIDs
+                )
+                if let selectedPairingID = pairingSelection.pairingID,
+                   settings.pairingID != selectedPairingID {
+                    settings.pairingID = selectedPairingID
+                    try await cloudKit.ensureShareRoot(
+                        ownerMemberID: settings.currentMemberID,
+                        ownerICloudEmailAddress: settings.currentICloudEmailAddress,
+                        pairingID: selectedPairingID
+                    )
+                }
+                let activeSharedZoneIDs = pairingSelection.activeSharedZoneIDs
+                settings.inactiveSharedOwnerIDs = pairingSelection.inactiveSharedOwnerIDs
+                timing.mark("cloudActiveSharedZones selected=\(activeSharedZoneIDs.count) inactive=\(settings.inactiveSharedOwnerIDs.count)")
 
-                async let accessRequestsTask = cloudKit.fetchCalendarAccessRequests(sharedZoneIDs: fetchedSharedZoneIDs)
-                async let sharedMirrorsTask = cloudKit.fetchSharedEventMirrors(sharedZoneIDs: fetchedSharedZoneIDs)
-                async let commentsTask = cloudKit.fetchEventComments(sharedZoneIDs: fetchedSharedZoneIDs)
-                async let invitationsTask = cloudKit.fetchEventInvitations(sharedZoneIDs: fetchedSharedZoneIDs)
-                async let sharedOwnerEmailAddressesTask = cloudKit.fetchSharedOwnerICloudEmailAddresses(sharedZoneIDs: fetchedSharedZoneIDs)
+                async let accessRequestsTask = cloudKit.fetchCalendarAccessRequests(sharedZoneIDs: activeSharedZoneIDs)
+                async let sharedMirrorsTask = cloudKit.fetchSharedEventMirrors(sharedZoneIDs: activeSharedZoneIDs)
+                async let commentsTask = cloudKit.fetchEventComments(sharedZoneIDs: activeSharedZoneIDs)
+                async let invitationsTask = cloudKit.fetchEventInvitations(sharedZoneIDs: activeSharedZoneIDs)
+                async let sharedOwnerEmailAddressesTask = cloudKit.fetchSharedOwnerICloudEmailAddresses(sharedZoneIDs: activeSharedZoneIDs)
 
                 let cloudAccessRequests = try await accessRequestsTask
                 try upsert(accessRequests: cloudAccessRequests, modelContext: modelContext)
                 timing.mark("cloudAccessRequestsFetched count=\(cloudAccessRequests.count)")
                 let previousPartnerShareOwnerID = settings.partnerShareOwnerID
-                let sharedOwnerIDs = cloudKit.sharedOwnerIDs(from: fetchedSharedZoneIDs)
-                let partnerShareOwnerID = sharedOwnerIDs.first
+                let partnerShareOwnerID = pairingSelection.activePartnerOwnerID
                 settings.partnerShareOwnerID = partnerShareOwnerID
                 if partnerShareOwnerID != nil || !settings.outgoingShareParticipantIDs.isEmpty {
                     settings.hasStartedPairing = true
@@ -429,7 +511,9 @@ struct SyncCoordinator {
             } else if !settings.iCloudSharingEnabled {
                 settings.partnerShareOwnerID = nil
                 settings.partnerICloudEmailAddresses = []
+                settings.inactiveSharedOwnerIDs = []
                 settings.outgoingShareParticipantIDs = []
+                settings.clearPairingID()
                 settings.hasStartedPairing = false
             } else {
                 timing.mark("cloudSyncSkippedUnpaired")

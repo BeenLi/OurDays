@@ -31,7 +31,7 @@ struct RootView: View {
         PendingActionBadgePlan.count(
             invitations: invitations,
             accessRequests: accessRequests,
-            currentMemberID: settings.currentMemberID
+            currentMemberID: settings.currentLocalOwnerID
         )
     }
 
@@ -187,7 +187,7 @@ struct CalendarTabView: View {
     var visibleMirrors: [EventMirror] {
         CalendarMirrorVisibilityPlan.memberMirrors(
             activeMirrors,
-            currentMemberID: settings.currentMemberID,
+            currentMemberID: settings.currentLocalOwnerID,
             partnerShareOwnerID: settings.partnerShareOwnerID
         ).filter { mirror in
             visibleInterval.contains(mirror.startDate)
@@ -197,8 +197,8 @@ struct CalendarTabView: View {
     var acceptedJointEvents: [JointScheduleEvent] {
         JointSchedulePlan.jointEvents(
             from: invitations,
-            currentMemberID: settings.currentMemberID,
-            partnerMemberID: settings.partnerMemberID
+            currentMemberID: settings.currentLocalOwnerID,
+            partnerMemberID: settings.partnerOwnerIDForLocalData
         )
     }
 
@@ -216,7 +216,7 @@ struct CalendarTabView: View {
     }
 
     var myEvents: [EventMirror] {
-        visibleOrdinaryMirrors.filter { $0.ownerMemberID == settings.currentMemberID }
+        visibleOrdinaryMirrors.filter { $0.ownerMemberID == settings.currentLocalOwnerID }
     }
 
     var visiblePartnerMirrors: [EventMirror] {
@@ -236,7 +236,7 @@ struct CalendarTabView: View {
             containing: selectedDate,
             mirrors: visibleOrdinaryMirrors,
             jointEvents: visibleJointEvents,
-            currentMemberID: settings.currentMemberID
+            currentMemberID: settings.currentLocalOwnerID
         )
     }
 
@@ -258,7 +258,7 @@ struct CalendarTabView: View {
     }
 
     var localDisplayRefreshKey: String {
-        "\(mode.rawValue):\(Int(visibleInterval.start.timeIntervalSince1970)):\(Int(visibleInterval.end.timeIntervalSince1970)):\(settings.currentMemberID)"
+        "\(mode.rawValue):\(Int(visibleInterval.start.timeIntervalSince1970)):\(Int(visibleInterval.end.timeIntervalSince1970)):\(settings.currentLocalOwnerID)"
     }
 
     var body: some View {
@@ -308,14 +308,14 @@ struct CalendarTabView: View {
                             dayStart: selectedDayStart,
                             myTitle: strings.memberColumnTitle(
                                 baseTitle: strings.meTitle,
-                                nickname: settings.currentMemberID
+                                nickname: settings.currentDisplayName
                             ),
                             myEvents: myEvents,
                             jointEvents: visibleJointEvents,
                             focusedJointEventID: focusedJointEventID,
                             partnerTitle: strings.memberColumnTitle(
                                 baseTitle: strings.partnerTitle,
-                                nickname: settings.partnerMemberID
+                                nickname: settings.partnerDisplayName
                             ),
                             partnerEvents: partnerEvents,
                             availableWidth: proxy.size.width,
@@ -362,8 +362,8 @@ struct CalendarTabView: View {
         }
 
         let sample = ShareCalReviewSampleData.build(
-            currentMemberID: settings.currentMemberID,
-            partnerMemberID: settings.partnerMemberID
+            currentMemberID: settings.currentLocalOwnerID,
+            partnerMemberID: settings.partnerOwnerIDForLocalData
         )
         sample.mirrors.forEach(modelContext.insert)
         sample.invitations.forEach(modelContext.insert)
@@ -398,7 +398,7 @@ struct CalendarTabView: View {
         )
         localDisplayMirrors = CalendarDisplayMirrorPlan.displayMirrors(
             from: sourceEvents,
-            ownerMemberID: settings.currentMemberID
+            ownerMemberID: settings.currentLocalOwnerID
         )
     }
 }
@@ -2003,11 +2003,11 @@ struct CreateInviteView: View {
             if !skipConflictCheck {
                 let candidate = try CreateInvitePlan.conflictCandidateMirror(
                     from: draft,
-                    ownerMemberID: settings.currentMemberID
+                    ownerMemberID: settings.currentLocalOwnerID
                 )
                 let conflicts = InvitationConflictPlan.conflicts(
                     for: candidate,
-                    partnerMemberID: settings.partnerMemberID,
+                    partnerMemberID: settings.partnerOwnerIDForLocalData,
                     mirrors: mirrors
                 )
                 if let firstConflict = conflicts.first {
@@ -2027,12 +2027,12 @@ struct CreateInviteView: View {
             let mirror = try CreateInvitePlan.mirror(
                 from: draft,
                 createdEvent: createdEvent,
-                ownerMemberID: settings.currentMemberID
+                ownerMemberID: settings.currentLocalOwnerID
             )
             let invitation = try CreateInvitePlan.invitation(
                 from: draft,
-                creatorMemberID: settings.currentMemberID,
-                inviteeMemberID: settings.partnerMemberID
+                creatorMemberID: settings.currentLocalOwnerID,
+                inviteeMemberID: settings.partnerOwnerIDForLocalData
             )
             invitation.createdLocalEventID = createdEvent.eventIdentifier
             try upsertMirror(mirror)
@@ -2058,12 +2058,11 @@ struct CreateInviteView: View {
             Task {
                 do {
                     try await cloudKit.ensureShareRoot(
-                        ownerMemberID: settings.currentMemberID,
-                        ownerICloudEmailAddress: settings.currentICloudEmailAddress,
+                        ownerMemberID: settings.currentLocalOwnerID,
                         pairingID: settings.pairingID
                     )
                     try await cloudKit.saveMirrorsForSync([mirror])
-                    try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                    try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentLocalOwnerID)
                     dismiss()
                 } catch {
                     errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
@@ -2149,7 +2148,7 @@ struct EventDetailView: View {
         NavigationStack {
             List {
                 Section {
-                    LabeledContent(strings.ownerLabel, value: event.ownerMemberID == settings.currentMemberID ? strings.meTitle : strings.partnerTitle)
+                    LabeledContent(strings.ownerLabel, value: event.ownerMemberID == settings.currentLocalOwnerID ? strings.meTitle : strings.partnerTitle)
                     LabeledContent(strings.calendarLabel, value: event.sourceCalendarTitle)
                     LabeledContent(strings.startsLabel, value: event.startDate.formatted(date: .abbreviated, time: .shortened))
                     LabeledContent(strings.endsLabel, value: event.endDate.formatted(date: .abbreviated, time: .shortened))
@@ -2255,7 +2254,7 @@ struct EventDetailView: View {
         inviteSuccessMessage = nil
         let conflicts = InvitationConflictPlan.conflicts(
             for: event,
-            partnerMemberID: settings.partnerMemberID,
+            partnerMemberID: settings.partnerOwnerIDForLocalData,
             mirrors: mirrors
         )
         guard let firstConflict = conflicts.first else {
@@ -2277,8 +2276,8 @@ struct EventDetailView: View {
         inviteError = nil
         inviteSuccessMessage = nil
         let invitation = EventInvitation(
-            creatorMemberID: settings.currentMemberID,
-            inviteeMemberID: settings.partnerMemberID,
+            creatorMemberID: settings.currentLocalOwnerID,
+            inviteeMemberID: settings.partnerOwnerIDForLocalData,
             title: event.title,
             startDate: event.startDate,
             endDate: event.endDate,
@@ -2293,7 +2292,7 @@ struct EventDetailView: View {
             if let cloudKit = services.cloudKitIfAvailable {
                 Task {
                     do {
-                        try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                        try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentLocalOwnerID)
                         inviteSuccessMessage = settings.strings.invitationSentMessage
                     } catch {
                         inviteError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
@@ -2320,14 +2319,14 @@ struct EventDetailView: View {
     private func addComment() {
         let comment = services.commentService.createComment(
             eventMirrorID: event.id,
-            authorMemberID: settings.currentMemberID,
+            authorMemberID: settings.currentLocalOwnerID,
             body: commentBody
         )
         modelContext.insert(comment)
         do {
             try modelContext.save()
             let eventOwnerMemberID = event.ownerMemberID
-            let currentMemberID = settings.currentMemberID
+            let currentMemberID = settings.currentLocalOwnerID
             let eventRecordName = event.cloudKitRecordName ?? event.mirrorKey
             if let cloudKit = services.cloudKitIfAvailable {
                 Task {
@@ -2388,7 +2387,7 @@ struct InvitesTabView: View {
                 if !filtered.isEmpty {
                     Section(strings.invitationStatusTitle(for: status)) {
                         ForEach(filtered) { invitation in
-                            InvitationRow(invitation: invitation, currentMemberID: settings.currentMemberID) {
+                            InvitationRow(invitation: invitation, currentMemberID: settings.currentLocalOwnerID) {
                                 accept(invitation)
                             } decline: {
                                 decline(invitation)
@@ -2431,7 +2430,7 @@ struct InvitesTabView: View {
             let mirror = AcceptedInvitationMirrorPlan.mirror(
                 from: invitation,
                 createdEvent: createdEvent,
-                ownerMemberID: settings.currentMemberID
+                ownerMemberID: settings.currentLocalOwnerID
             )
             try upsertAcceptedMirror(mirror)
             settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
@@ -2500,7 +2499,7 @@ struct InvitesTabView: View {
         guard let cloudKit = services.cloudKitIfAvailable else { return }
         Task {
             do {
-                try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentLocalOwnerID)
             } catch {
                 errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
             }
@@ -2523,7 +2522,7 @@ struct InvitesTabView: View {
             do {
                 try await cloudKit.saveCalendarAccessRequestForSync(
                     request,
-                    currentMemberID: settings.currentMemberID
+                    currentMemberID: settings.currentLocalOwnerID
                 )
             } catch {
                 errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
@@ -2626,7 +2625,6 @@ struct PairingStatusCard: View {
     let status: PairingStatus
     let pairingDate: Date?
     let partnerNickname: String
-    let partnerICloudIdentity: String
     let myCalendarScopeValue: String
     let partnerCalendarScopeValue: String
     let prePairingHistoryScopeValue: String
@@ -2744,10 +2742,6 @@ struct PairingStatusCard: View {
                     .font(.title3.weight(.semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
-                Text("\(strings.partnerICloudIdentityLabel): \(partnerICloudIdentity)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -3046,7 +3040,7 @@ struct SettingsTabView: View {
     }
 
     private var outgoingAccessRequests: [CalendarAccessRequest] {
-        CalendarAccessRequestListPlan.outgoing(accessRequests, currentMemberID: settings.currentMemberID)
+        CalendarAccessRequestListPlan.outgoing(accessRequests, currentMemberID: settings.currentLocalOwnerID)
     }
 
     private var pairingStatus: PairingStatus {
@@ -3057,17 +3051,8 @@ struct SettingsTabView: View {
         )
     }
 
-    private var partnerICloudIdentityValue: String {
-        PairingSettingsPlan.partnerIdentity(
-            incomingOwnerID: settings.partnerShareOwnerID,
-            outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
-            partnerICloudEmailAddresses: settings.partnerICloudEmailAddresses,
-            emptyValue: settings.strings.noICloudSharingIdentity
-        )
-    }
-
     private var ownerMemberIDForPartnerHistory: String {
-        settings.partnerShareOwnerID ?? settings.partnerMemberID
+        settings.partnerOwnerIDForLocalData
     }
 
     private var myCalendarScopeValue: String {
@@ -3094,7 +3079,7 @@ struct SettingsTabView: View {
         let authorizedStartDate = PrePairingHistoryAccessPlan.contiguousAuthorizedStartDate(
             pairingDate: normalizedPairingDate,
             accessRequests: accessRequests,
-            currentMemberID: settings.currentMemberID,
+            currentMemberID: settings.currentLocalOwnerID,
             ownerMemberID: ownerMemberIDForPartnerHistory,
             direction: .partnerSharedToMe,
             calendar: calendar
@@ -3110,7 +3095,7 @@ struct SettingsTabView: View {
         return PrePairingHistoryAccessPlan.defaultNextRequestRange(
             pairingDate: pairingDate,
             accessRequests: accessRequests,
-            currentMemberID: settings.currentMemberID,
+            currentMemberID: settings.currentLocalOwnerID,
             ownerMemberID: ownerMemberIDForPartnerHistory
         )
     }
@@ -3128,7 +3113,7 @@ struct SettingsTabView: View {
         let authorizedStartDate = PrePairingHistoryAccessPlan.contiguousAuthorizedStartDate(
             pairingDate: normalizedPairingDate,
             accessRequests: accessRequests,
-            currentMemberID: settings.currentMemberID,
+            currentMemberID: settings.currentLocalOwnerID,
             ownerMemberID: ownerMemberID,
             direction: direction,
             calendar: calendar
@@ -3148,8 +3133,7 @@ struct SettingsTabView: View {
                 PairingStatusCard(
                     status: pairingStatus,
                     pairingDate: settings.pairingDate,
-                    partnerNickname: settings.partnerMemberID,
-                    partnerICloudIdentity: partnerICloudIdentityValue,
+                    partnerNickname: settings.partnerDisplayName,
                     myCalendarScopeValue: myCalendarScopeValue,
                     partnerCalendarScopeValue: partnerCalendarScopeValue,
                     prePairingHistoryScopeValue: prePairingHistoryScopeValue,
@@ -3205,33 +3189,19 @@ struct SettingsTabView: View {
                 LabeledContent {
                     TextField(
                         strings.myDisplayNamePlaceholder,
-                        text: $settings.currentMemberID
+                        text: $settings.currentDisplayName
                     )
                     .multilineTextAlignment(.trailing)
-                    .textInputAutocapitalization(.never)
                     .accessibilityLabel(strings.myNicknameLabel)
                 } label: {
                     Text(strings.myNicknameLabel)
                 }
                 LabeledContent {
                     TextField(
-                        strings.myICloudEmailPlaceholder,
-                        text: $settings.currentICloudEmailAddress
-                    )
-                    .multilineTextAlignment(.trailing)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
-                    .accessibilityLabel(strings.myICloudEmailLabel)
-                } label: {
-                    Text(strings.myICloudEmailLabel)
-                }
-                LabeledContent {
-                    TextField(
                         strings.partnerDisplayNamePlaceholder,
-                        text: $settings.partnerMemberID
+                        text: $settings.partnerNoteName
                     )
                     .multilineTextAlignment(.trailing)
-                    .textInputAutocapitalization(.never)
                     .accessibilityLabel(strings.partnerNicknameEditLabel)
                 } label: {
                     Text(strings.partnerNicknameEditLabel)
@@ -3560,7 +3530,7 @@ struct SettingsTabView: View {
             requestedEndDate: exclusiveEndDate,
             pairingDate: settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(.now),
             accessRequests: accessRequests,
-            currentMemberID: settings.currentMemberID,
+            currentMemberID: settings.currentLocalOwnerID,
             ownerMemberID: ownerMemberIDForPartnerHistory,
             calendar: calendar
         )
@@ -3582,7 +3552,7 @@ struct SettingsTabView: View {
         }
 
         let request = CalendarAccessRequest(
-            requesterMemberID: settings.currentMemberID,
+            requesterMemberID: settings.currentLocalOwnerID,
             ownerMemberID: ownerMemberIDForPartnerHistory,
             requestedStartDate: normalizedStartDate,
             requestedEndDate: exclusiveEndDate,
@@ -3620,7 +3590,7 @@ struct SettingsTabView: View {
             do {
                 try await cloudKit.saveCalendarAccessRequestForSync(
                     request,
-                    currentMemberID: settings.currentMemberID
+                    currentMemberID: settings.currentLocalOwnerID
                 )
             } catch {
                 errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
@@ -3643,6 +3613,11 @@ struct SettingsTabView: View {
             errorMessage = settings.strings.iCloudSharingUnavailableLocalBuild
             return
         }
+        guard let displayName = PairingSettingsPlan.normalizedDisplayName(settings.currentDisplayName) else {
+            errorMessage = settings.strings.currentDisplayNameRequiredMessage
+            return
+        }
+        settings.currentDisplayName = displayName
 
         let preparationID = UUID()
         activeSharePreparationID = preparationID
@@ -3661,9 +3636,13 @@ struct SettingsTabView: View {
         do {
             let pairingID = settings.ensurePairingID()
             let share = try await cloudKit.prepareShare(
-                ownerMemberID: settings.currentMemberID,
-                ownerICloudEmailAddress: settings.currentICloudEmailAddress,
+                ownerMemberID: settings.currentLocalOwnerID,
                 pairingID: pairingID
+            )
+            try await cloudKit.saveMemberProfileForSync(
+                ownerMemberID: settings.currentLocalOwnerID,
+                pairingID: pairingID,
+                displayName: displayName
             )
             guard activeSharePreparationID == preparationID else { return }
             settings.iCloudSharingEnabled = true
@@ -3700,9 +3679,9 @@ struct SettingsTabView: View {
         do {
             let localOwnerIDsToPurge = ICloudSharingTeardownPlan.localOwnerIDsToPurge(
                 partnerShareOwnerID: settings.partnerShareOwnerID,
-                legacyPartnerMemberID: settings.partnerMemberID
+                legacyPartnerMemberID: settings.partnerNoteName
             )
-            try await cloudKit.stopSharing(ownerMemberID: settings.currentMemberID)
+            try await cloudKit.stopSharing(ownerMemberID: settings.currentLocalOwnerID)
             try ShareCalLocalDataCleanupService.purgeSharedOwnerMirrors(
                 ownerMemberIDs: localOwnerIDsToPurge,
                 modelContext: modelContext
@@ -3710,6 +3689,7 @@ struct SettingsTabView: View {
             settings.iCloudSharingEnabled = false
             settings.hasStartedPairing = false
             settings.partnerShareOwnerID = nil
+            settings.partnerSyncedDisplayName = nil
             settings.partnerICloudEmailAddresses = []
             settings.outgoingShareParticipantIDs = []
             settings.clearPairingID()
@@ -3764,12 +3744,13 @@ struct SettingsTabView: View {
         defer { isDeletingICloudData = false }
 
         do {
-            try await cloudKit.deleteICloudData(ownerMemberID: settings.currentMemberID)
+            try await cloudKit.deleteICloudData(ownerMemberID: settings.currentLocalOwnerID)
             try ShareCalLocalDataCleanupService.purge(modelContext: modelContext)
             cloudKitDiagnosticMessage = nil
             settings.iCloudSharingEnabled = false
             settings.hasStartedPairing = false
             settings.partnerShareOwnerID = nil
+            settings.partnerSyncedDisplayName = nil
             settings.partnerICloudEmailAddresses = []
             settings.outgoingShareParticipantIDs = []
             settings.clearPairingID()
@@ -3796,10 +3777,29 @@ struct SettingsTabView: View {
         defer { isCheckingCloudKitAccount = false }
 
         let diagnostic = await cloudKit.accountDiagnostic()
-        cloudKitDiagnosticMessage = diagnostic.displayText
+        cloudKitDiagnosticMessage = localPairingDiagnosticText(cloudKitDiagnostic: diagnostic)
         if !diagnostic.isAccountAvailable {
             errorMessage = settings.strings.cloudKitAccountStatus(diagnostic.accountStatus)
         }
+    }
+
+    private func localPairingDiagnosticText(cloudKitDiagnostic: CloudKitAccountDiagnostic) -> String {
+        [
+            "Pairing ID: \(diagnosticShortCode(settings.pairingID))",
+            "Local Owner ID: \(diagnosticShortCode(settings.currentLocalOwnerID))",
+            "Partner Owner ID: \(diagnosticShortCode(settings.partnerShareOwnerID))",
+            "Inactive Shared Zones: \(settings.inactiveSharedOwnerIDs.count)",
+            "",
+            cloudKitDiagnostic.displayText
+        ].joined(separator: "\n")
+    }
+
+    private func diagnosticShortCode(_ value: String?) -> String {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return "none"
+        }
+        return String(value.prefix(12))
     }
 }
 

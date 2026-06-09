@@ -1016,6 +1016,51 @@ final class PairingSettingsPlanTests: XCTestCase {
             "Not connected"
         )
     }
+
+    func testPartnerDisplayNamePrefersLocalNoteThenSyncedProfileThenReadableICloudIdentity() {
+        XCTAssertEqual(
+            PairingSettingsPlan.partnerDisplayName(
+                partnerNoteName: " Local note ",
+                partnerSyncedDisplayName: "Remote name",
+                partnerICloudIdentity: "partner@icloud.com",
+                fallback: "Partner"
+            ),
+            "Local note"
+        )
+        XCTAssertEqual(
+            PairingSettingsPlan.partnerDisplayName(
+                partnerNoteName: " ",
+                partnerSyncedDisplayName: " Remote name ",
+                partnerICloudIdentity: "partner@icloud.com",
+                fallback: "Partner"
+            ),
+            "Remote name"
+        )
+        XCTAssertEqual(
+            PairingSettingsPlan.partnerDisplayName(
+                partnerNoteName: "",
+                partnerSyncedDisplayName: nil,
+                partnerICloudIdentity: "partner@icloud.com",
+                fallback: "Partner"
+            ),
+            "partner@icloud.com"
+        )
+        XCTAssertEqual(
+            PairingSettingsPlan.partnerDisplayName(
+                partnerNoteName: nil,
+                partnerSyncedDisplayName: " ",
+                partnerICloudIdentity: "Not connected",
+                fallback: "Partner"
+            ),
+            "Partner"
+        )
+    }
+
+    func testNormalizesCurrentDisplayNameForProfileSync() {
+        XCTAssertEqual(PairingSettingsPlan.normalizedDisplayName(" Manu "), "Manu")
+        XCTAssertNil(PairingSettingsPlan.normalizedDisplayName(" "))
+        XCTAssertNil(PairingSettingsPlan.normalizedDisplayName(nil))
+    }
 }
 
 final class PairingSharedZoneSelectionPlanTests: XCTestCase {
@@ -1306,6 +1351,57 @@ final class AppLanguageSettingsTests: XCTestCase {
 
 }
 
+final class SettingsStoreIdentityMigrationTests: XCTestCase {
+    func testCreatesStableLocalOwnerIDAndPersistsItAcrossLaunches() throws {
+        let suiteName = "SettingsStoreIdentityMigrationTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let firstLaunchSettings = SettingsStore(defaults: defaults)
+        let generatedOwnerID = firstLaunchSettings.currentLocalOwnerID
+
+        XCTAssertTrue(generatedOwnerID.hasPrefix("local-owner-"))
+        XCTAssertEqual(firstLaunchSettings.currentDisplayName, "")
+
+        firstLaunchSettings.currentDisplayName = "New nickname"
+        let secondLaunchSettings = SettingsStore(defaults: defaults)
+
+        XCTAssertEqual(secondLaunchSettings.currentLocalOwnerID, generatedOwnerID)
+        XCTAssertEqual(secondLaunchSettings.currentDisplayName, "New nickname")
+    }
+
+    func testMigratesLegacyMemberIDsToDisplayOnlyNames() throws {
+        let suiteName = "SettingsStoreIdentityMigrationTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("legacy-me", forKey: "currentMemberID")
+        defaults.set("legacy-partner", forKey: "partnerMemberID")
+
+        let settings = SettingsStore(defaults: defaults)
+
+        XCTAssertTrue(settings.currentLocalOwnerID.hasPrefix("local-owner-"))
+        XCTAssertNotEqual(settings.currentLocalOwnerID, "legacy-me")
+        XCTAssertEqual(settings.currentDisplayName, "legacy-me")
+        XCTAssertEqual(settings.partnerNoteName, "legacy-partner")
+        XCTAssertEqual(settings.legacyCurrentOwnerIDForLocalDataMigration, "legacy-me")
+    }
+
+    func testPartnerSyncedDisplayNameIsPersistedSeparatelyFromPartnerNoteName() throws {
+        let suiteName = "SettingsStoreIdentityMigrationTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = SettingsStore(defaults: defaults)
+        settings.partnerNoteName = "Home note"
+        settings.partnerSyncedDisplayName = "Remote nickname"
+
+        let relaunchedSettings = SettingsStore(defaults: defaults)
+
+        XCTAssertEqual(relaunchedSettings.partnerNoteName, "Home note")
+        XCTAssertEqual(relaunchedSettings.partnerSyncedDisplayName, "Remote nickname")
+    }
+}
+
 final class ShareCalStringsTests: XCTestCase {
     func testEnglishKeepsCurrentPrimaryLabels() {
         let strings = ShareCalStrings(language: .english)
@@ -1316,6 +1412,7 @@ final class ShareCalStringsTests: XCTestCase {
         XCTAssertEqual(strings.profileSection, "Profile")
         XCTAssertEqual(strings.myNicknameLabel, "My Nickname")
         XCTAssertEqual(strings.partnerNicknameEditLabel, "Partner Note")
+        XCTAssertEqual(strings.currentDisplayNameRequiredMessage, "Enter your nickname before pairing.")
         XCTAssertEqual(strings.memberColumnTitle(baseTitle: strings.meTitle, nickname: "partner"), "Me (partner)")
         XCTAssertEqual(strings.memberColumnTitle(baseTitle: strings.partnerTitle, nickname: "yoki"), "Partner (yoki)")
         XCTAssertEqual(strings.memberColumnTitle(baseTitle: strings.partnerTitle, nickname: " "), "Partner")
@@ -1356,6 +1453,7 @@ final class ShareCalStringsTests: XCTestCase {
         XCTAssertEqual(strings.profileSection, "个人资料")
         XCTAssertEqual(strings.myNicknameLabel, "我的昵称")
         XCTAssertEqual(strings.partnerNicknameEditLabel, "对方备注名")
+        XCTAssertEqual(strings.currentDisplayNameRequiredMessage, "配对前请先填写我的昵称。")
         XCTAssertEqual(strings.memberColumnTitle(baseTitle: strings.meTitle, nickname: "partner"), "我（partner）")
         XCTAssertEqual(strings.memberColumnTitle(baseTitle: strings.partnerTitle, nickname: "yoki"), "对方（yoki）")
         XCTAssertEqual(strings.memberColumnTitle(baseTitle: strings.partnerTitle, nickname: " "), "对方")
@@ -2491,6 +2589,78 @@ final class CloudKitShareRootICloudEmailPlanTests: XCTestCase {
     }
 }
 
+final class MemberProfileRecordMapperTests: XCTestCase {
+    func testBuildsDeterministicRecordNameFromOwnerAndPairingID() {
+        XCTAssertEqual(
+            MemberProfileRecordMapper.recordName(ownerMemberID: "local-owner-123", pairingID: "pair-abc"),
+            "member-profile:local-owner-123:pair-abc"
+        )
+    }
+
+    func testEncodesAndDecodesMemberProfileRecord() throws {
+        let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
+        let updatedAt = Date(timeIntervalSince1970: 1_800)
+        let profile = CloudKitMemberProfile(
+            ownerMemberID: "local-owner-123",
+            pairingID: "pair-abc",
+            displayName: " Manu ",
+            updatedAt: updatedAt
+        )
+
+        let record = MemberProfileRecordMapper.record(from: profile, zoneID: zoneID)
+        let decodedProfile = try MemberProfileRecordMapper.memberProfile(from: record)
+
+        XCTAssertEqual(record.recordType, "MemberProfile")
+        XCTAssertEqual(record.recordID.recordName, "member-profile:local-owner-123:pair-abc")
+        XCTAssertEqual(record[MemberProfileRecordMapper.Key.ownerMemberID] as? String, "local-owner-123")
+        XCTAssertEqual(record[MemberProfileRecordMapper.Key.pairingID] as? String, "pair-abc")
+        XCTAssertEqual(record[MemberProfileRecordMapper.Key.displayName] as? String, "Manu")
+        XCTAssertEqual(record[MemberProfileRecordMapper.Key.updatedAt] as? Date, updatedAt)
+        XCTAssertEqual(decodedProfile, CloudKitMemberProfile(
+            ownerMemberID: "local-owner-123",
+            pairingID: "pair-abc",
+            displayName: "Manu",
+            updatedAt: updatedAt
+        ))
+    }
+
+    func testSelectsPartnerDisplayNameFromMatchingPairingAndDifferentOwner() {
+        let current = CloudKitMemberProfile(
+            ownerMemberID: "local-owner",
+            pairingID: "pair-current",
+            displayName: "Me",
+            updatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let stale = CloudKitMemberProfile(
+            ownerMemberID: "partner-owner",
+            pairingID: "pair-old",
+            displayName: "Old name",
+            updatedAt: Date(timeIntervalSince1970: 2_000)
+        )
+        let olderPartner = CloudKitMemberProfile(
+            ownerMemberID: "partner-owner",
+            pairingID: "pair-current",
+            displayName: "Older name",
+            updatedAt: Date(timeIntervalSince1970: 3_000)
+        )
+        let newerPartner = CloudKitMemberProfile(
+            ownerMemberID: "partner-owner",
+            pairingID: "pair-current",
+            displayName: "Newer name",
+            updatedAt: Date(timeIntervalSince1970: 4_000)
+        )
+
+        XCTAssertEqual(
+            MemberProfileDisplayPlan.partnerSyncedDisplayName(
+                from: [stale, newerPartner, current, olderPartner],
+                currentLocalOwnerID: "local-owner",
+                pairingID: "pair-current"
+            ),
+            "Newer name"
+        )
+    }
+}
+
 final class ShareCalAcceptedShareSignalTests: XCTestCase {
     func testMarkAcceptedCreatesPendingSyncSignalAndConsumeClearsIt() throws {
         let suiteName = "ShareCalAcceptedShareSignalTests-\(UUID().uuidString)"
@@ -3366,6 +3536,15 @@ final class CloudKitBatchUpsertPlanTests: XCTestCase {
                 CommentRecordMapper.Key.editedAt,
                 CommentRecordMapper.Key.deletedAt,
                 CommentRecordMapper.Key.isRead
+            ]
+        )
+        XCTAssertEqual(
+            CloudKitForegroundQueryPlan.desiredKeys(forRecordType: MemberProfileRecordMapper.recordType),
+            [
+                MemberProfileRecordMapper.Key.ownerMemberID,
+                MemberProfileRecordMapper.Key.pairingID,
+                MemberProfileRecordMapper.Key.displayName,
+                MemberProfileRecordMapper.Key.updatedAt
             ]
         )
     }

@@ -20,6 +20,8 @@
 		11A000540000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000480000000000000001 /* Models.swift */; };
 		11A000550000000000000001 /* EventServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004A0000000000000001 /* EventServices.swift */; };
 		11A000560000000000000001 /* CloudKitCoupleSpaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */; };
+		11A000590000000000000001 /* AppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000500000000000000001 /* AppServices.swift */; };
+		11A0005A0000000000000001 /* CalendarAccessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004E0000000000000001 /* CalendarAccessService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -277,6 +279,8 @@
 				11A000540000000000000001 /* Models.swift in Sources */,
 				11A000550000000000000001 /* EventServices.swift in Sources */,
 				11A000560000000000000001 /* CloudKitCoupleSpaceService.swift in Sources */,
+				11A000590000000000000001 /* AppServices.swift in Sources */,
+				11A0005A0000000000000001 /* CalendarAccessService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

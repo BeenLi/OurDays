@@ -28,6 +28,14 @@ DEFINE SCHEMA
         deletedAt TIMESTAMP
     );
 
+    RECORD TYPE MemberProfile (
+        "___recordID" REFERENCE QUERYABLE,
+        ownerMemberID STRING QUERYABLE,
+        pairingID STRING QUERYABLE,
+        displayName STRING,
+        updatedAt TIMESTAMP QUERYABLE SORTABLE
+    );
+
     RECORD TYPE EventInvitation (
         "___recordID" REFERENCE QUERYABLE,
         creatorMemberID STRING QUERYABLE,

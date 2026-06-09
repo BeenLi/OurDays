@@ -37,17 +37,23 @@ private struct SyncTimingLog {
 
 @Observable
 final class SettingsStore {
-    var currentMemberID: String {
-        didSet { defaults.set(currentMemberID, forKey: Key.currentMemberID) }
+    var currentLocalOwnerID: String {
+        didSet { defaults.set(currentLocalOwnerID, forKey: Key.currentLocalOwnerID) }
+    }
+    var currentDisplayName: String {
+        didSet { defaults.set(currentDisplayName, forKey: Key.currentDisplayName) }
     }
     var currentICloudEmailAddress: String {
         didSet { defaults.set(currentICloudEmailAddress, forKey: Key.currentICloudEmailAddress) }
     }
-    var partnerMemberID: String {
-        didSet { defaults.set(partnerMemberID, forKey: Key.partnerMemberID) }
+    var partnerNoteName: String {
+        didSet { defaults.set(partnerNoteName, forKey: Key.partnerNoteName) }
     }
     var partnerShareOwnerID: String? {
         didSet { saveOptionalString(partnerShareOwnerID, forKey: Key.partnerShareOwnerID) }
+    }
+    var partnerSyncedDisplayName: String? {
+        didSet { saveOptionalString(partnerSyncedDisplayName, forKey: Key.partnerSyncedDisplayName) }
     }
     var partnerICloudEmailAddresses: [String] {
         didSet { defaults.set(partnerICloudEmailAddresses, forKey: Key.partnerICloudEmailAddresses) }
@@ -84,15 +90,40 @@ final class SettingsStore {
     }
     var lastSyncError: String?
     var syncPhase: SyncPhase = .idle
+    private(set) var legacyCurrentOwnerIDForLocalDataMigration: String?
 
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        currentMemberID = defaults.string(forKey: Key.currentMemberID) ?? "me"
+        let legacyCurrentMemberID = defaults.string(forKey: Key.currentMemberID)
+        let storedOwnerID = Self.normalizedString(defaults.string(forKey: Key.currentLocalOwnerID))
+        let localOwnerID: String
+        if let storedOwnerID {
+            localOwnerID = storedOwnerID
+        } else {
+            let generatedOwnerID = "local-owner-\(UUID().uuidString)"
+            localOwnerID = generatedOwnerID
+            defaults.set(generatedOwnerID, forKey: Key.currentLocalOwnerID)
+        }
+        let normalizedLegacyCurrentMemberID = Self.normalizedString(legacyCurrentMemberID)
+        currentLocalOwnerID = localOwnerID
+        if storedOwnerID == nil,
+           let legacyCurrentMemberID = normalizedLegacyCurrentMemberID,
+           legacyCurrentMemberID != localOwnerID {
+            legacyCurrentOwnerIDForLocalDataMigration = legacyCurrentMemberID
+        } else {
+            legacyCurrentOwnerIDForLocalDataMigration = nil
+        }
+        currentDisplayName = Self.normalizedString(defaults.string(forKey: Key.currentDisplayName))
+            ?? normalizedLegacyCurrentMemberID
+            ?? ""
         currentICloudEmailAddress = defaults.string(forKey: Key.currentICloudEmailAddress) ?? ""
-        partnerMemberID = defaults.string(forKey: Key.partnerMemberID) ?? "partner"
+        partnerNoteName = Self.normalizedString(defaults.string(forKey: Key.partnerNoteName))
+            ?? Self.normalizedString(defaults.string(forKey: Key.partnerMemberID))
+            ?? ""
         partnerShareOwnerID = defaults.string(forKey: Key.partnerShareOwnerID)
+        partnerSyncedDisplayName = Self.normalizedString(defaults.string(forKey: Key.partnerSyncedDisplayName))
         partnerICloudEmailAddresses = defaults.stringArray(forKey: Key.partnerICloudEmailAddresses) ?? []
         inactiveSharedOwnerIDs = defaults.stringArray(forKey: Key.inactiveSharedOwnerIDs) ?? []
         outgoingShareParticipantIDs = defaults.stringArray(forKey: Key.outgoingShareParticipantIDs) ?? []
@@ -163,11 +194,21 @@ final class SettingsStore {
         return trimmedValue.isEmpty ? nil : trimmedValue
     }
 
+    private static func normalizedString(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? nil : trimmedValue
+    }
+
     private enum Key {
+        static let currentLocalOwnerID = "currentLocalOwnerID"
+        static let currentDisplayName = "currentDisplayName"
         static let currentMemberID = "currentMemberID"
         static let currentICloudEmailAddress = "currentICloudEmailAddress"
+        static let partnerNoteName = "partnerNoteName"
         static let partnerMemberID = "partnerMemberID"
         static let partnerShareOwnerID = "partnerShareOwnerID"
+        static let partnerSyncedDisplayName = "partnerSyncedDisplayName"
         static let partnerICloudEmailAddresses = "partnerICloudEmailAddresses"
         static let inactiveSharedOwnerIDs = "inactiveSharedOwnerIDs"
         static let outgoingShareParticipantIDs = "outgoingShareParticipantIDs"
@@ -184,6 +225,29 @@ final class SettingsStore {
 extension SettingsStore {
     var strings: ShareCalStrings {
         ShareCalStrings(language: appLanguage)
+    }
+
+    var readablePartnerICloudIdentity: String {
+        PairingSettingsPlan.partnerIdentity(
+            incomingOwnerID: partnerShareOwnerID,
+            outgoingParticipantIDs: outgoingShareParticipantIDs,
+            partnerICloudEmailAddresses: partnerICloudEmailAddresses,
+            emptyValue: strings.noICloudSharingIdentity
+        )
+    }
+
+    var partnerDisplayName: String {
+        PairingSettingsPlan.partnerDisplayName(
+            partnerNoteName: partnerNoteName,
+            partnerSyncedDisplayName: partnerSyncedDisplayName,
+            partnerICloudIdentity: readablePartnerICloudIdentity,
+            fallback: strings.partnerTitle
+        )
+    }
+
+    var partnerOwnerIDForLocalData: String {
+        let trimmedNoteName = partnerNoteName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return partnerShareOwnerID ?? (trimmedNoteName.isEmpty ? "partner" : trimmedNoteName)
     }
 }
 
@@ -260,6 +324,9 @@ struct SyncCoordinator {
             }
             timing.mark("calendarSelectionReady selected=\(settings.selectedCalendarIDs.count)")
 
+            try migrateLegacyLocalOwnerDataIfNeeded(modelContext: modelContext, settings: settings)
+            timing.mark("legacyLocalOwnerMigrationChecked")
+
             let localAccessRequests = try modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())
             if settings.hasStartedPairing || settings.partnerShareOwnerID != nil || !settings.outgoingShareParticipantIDs.isEmpty {
                 settings.markPairingDateIfNeeded(at: syncedAt)
@@ -279,7 +346,7 @@ struct SyncCoordinator {
             let mirrors = eventMirrorService.makeMirrors(
                 from: sourceEvents,
                 selectedCalendarIDs: settings.selectedCalendarIDs,
-                ownerMemberID: settings.currentMemberID,
+                ownerMemberID: settings.currentLocalOwnerID,
                 visibility: settings.defaultVisibility,
                 sharingWindows: sharingWindows
             )
@@ -292,7 +359,7 @@ struct SyncCoordinator {
             let currentMirrorKeys = Set(mirrors.map(\.mirrorKey))
             let existingShadows = try modelContext.fetch(FetchDescriptor<LocalEventShadow>())
             let existingLocalMirrors = try localMirrors(
-                ownerMemberID: settings.currentMemberID,
+                ownerMemberID: settings.currentLocalOwnerID,
                 modelContext: modelContext
             )
             timing.mark(
@@ -373,7 +440,7 @@ struct SyncCoordinator {
 
                 let accessRequestsNeedingCloudUpload = CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
                     localAccessRequests,
-                    currentMemberID: settings.currentMemberID
+                    currentMemberID: settings.currentLocalOwnerID
                 )
                 let hasCloudWrites = !mirrorsNeedingCloudUpload.isEmpty
                     || !hardDeletedMirrors.isEmpty
@@ -385,24 +452,31 @@ struct SyncCoordinator {
                     || settings.pairingID != nil
                 if hasCloudWrites || shouldUpdateShareRootMetadata {
                     try await cloudKit.ensureShareRoot(
-                        ownerMemberID: settings.currentMemberID,
-                        ownerICloudEmailAddress: settings.currentICloudEmailAddress,
+                        ownerMemberID: settings.currentLocalOwnerID,
                         pairingID: settings.pairingID
                     )
                     timing.mark("cloudShareRootReady")
+                    if let pairingID = normalizedID(settings.pairingID) {
+                        try await saveCurrentMemberProfileIfPossible(
+                            cloudKit: cloudKit,
+                            settings: settings,
+                            pairingID: pairingID
+                        )
+                        timing.mark("cloudMemberProfileChecked")
+                    }
                     if hasCloudWrites {
                         try await cloudKit.saveMirrorsForSync(mirrorsNeedingCloudUpload)
                         timing.mark("cloudMirrorsSaved count=\(mirrorsNeedingCloudUpload.count)")
                         try await cloudKit.deleteMirrorsForSync(hardDeletedMirrors)
                         timing.mark("cloudHardDeletesSaved count=\(hardDeletedMirrors.count)")
                         for invitation in canceledInvitations {
-                            try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                            try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentLocalOwnerID)
                         }
                         timing.mark("cloudCanceledInvitationsSaved count=\(canceledInvitations.count)")
                         for request in accessRequestsNeedingCloudUpload {
                             try await cloudKit.saveCalendarAccessRequestForSync(
                                 request,
-                                currentMemberID: settings.currentMemberID
+                                currentMemberID: settings.currentLocalOwnerID
                             )
                         }
                         timing.mark("cloudAccessRequestsSaved count=\(accessRequestsNeedingCloudUpload.count)")
@@ -414,7 +488,7 @@ struct SyncCoordinator {
                 try await cloudKit.foregroundSync()
                 timing.mark("cloudSyncEngineFinished")
                 async let outgoingShareParticipantIdentitySnapshot = cloudKit.fetchOutgoingShareParticipantIdentitySnapshot(
-                    ownerMemberID: settings.currentMemberID
+                    ownerMemberID: settings.currentLocalOwnerID
                 )
                 async let sharedZoneIDs = cloudKit.fetchSharedCoupleSpaceZoneIDs()
                 let fetchedOutgoingShareParticipantIdentitySnapshot = try await outgoingShareParticipantIdentitySnapshot
@@ -435,8 +509,12 @@ struct SyncCoordinator {
                 ) {
                     let pairingID = settings.ensurePairingID()
                     try await cloudKit.ensureShareRoot(
-                        ownerMemberID: settings.currentMemberID,
-                        ownerICloudEmailAddress: settings.currentICloudEmailAddress,
+                        ownerMemberID: settings.currentLocalOwnerID,
+                        pairingID: pairingID
+                    )
+                    try await saveCurrentMemberProfileIfPossible(
+                        cloudKit: cloudKit,
+                        settings: settings,
                         pairingID: pairingID
                     )
                     timing.mark("cloudLegacyPairingIDMigrated")
@@ -457,8 +535,12 @@ struct SyncCoordinator {
                    settings.pairingID != selectedPairingID {
                     settings.pairingID = selectedPairingID
                     try await cloudKit.ensureShareRoot(
-                        ownerMemberID: settings.currentMemberID,
-                        ownerICloudEmailAddress: settings.currentICloudEmailAddress,
+                        ownerMemberID: settings.currentLocalOwnerID,
+                        pairingID: selectedPairingID
+                    )
+                    try await saveCurrentMemberProfileIfPossible(
+                        cloudKit: cloudKit,
+                        settings: settings,
                         pairingID: selectedPairingID
                     )
                 }
@@ -470,6 +552,7 @@ struct SyncCoordinator {
                 async let sharedMirrorsTask = cloudKit.fetchSharedEventMirrors(sharedZoneIDs: activeSharedZoneIDs)
                 async let commentsTask = cloudKit.fetchEventComments(sharedZoneIDs: activeSharedZoneIDs)
                 async let invitationsTask = cloudKit.fetchEventInvitations(sharedZoneIDs: activeSharedZoneIDs)
+                async let memberProfilesTask = cloudKit.fetchMemberProfiles(sharedZoneIDs: activeSharedZoneIDs)
                 async let sharedOwnerEmailAddressesTask = cloudKit.fetchSharedOwnerICloudEmailAddresses(sharedZoneIDs: activeSharedZoneIDs)
 
                 let cloudAccessRequests = try await accessRequestsTask
@@ -487,10 +570,18 @@ struct SyncCoordinator {
                     merging: settings.partnerICloudEmailAddresses,
                     sharedOwnerEmailAddresses
                 )
+                let memberProfiles = try await memberProfilesTask
+                settings.partnerSyncedDisplayName = normalizedID(settings.pairingID).flatMap { pairingID in
+                    MemberProfileDisplayPlan.partnerSyncedDisplayName(
+                        from: memberProfiles,
+                        currentLocalOwnerID: settings.currentLocalOwnerID,
+                        pairingID: pairingID
+                    )
+                }
                 let sharedMirrors = try await sharedMirrorsTask
                 let importableSharedMirrors = CloudKitSharedDatabaseImportPlan.importableMirrors(
                     sharedMirrors,
-                    currentMemberID: settings.currentMemberID
+                    currentMemberID: settings.currentLocalOwnerID
                 )
                 timing.mark("cloudSharedMirrorsFetched count=\(sharedMirrors.count) importable=\(importableSharedMirrors.count)")
                 let ownerIDsToPurge = Set([previousPartnerShareOwnerID, partnerShareOwnerID].compactMap { $0 })
@@ -510,6 +601,7 @@ struct SyncCoordinator {
                 timing.mark("cloudInvitationsFetched count=\(cloudInvitations.count)")
             } else if !settings.iCloudSharingEnabled {
                 settings.partnerShareOwnerID = nil
+                settings.partnerSyncedDisplayName = nil
                 settings.partnerICloudEmailAddresses = []
                 settings.inactiveSharedOwnerIDs = []
                 settings.outgoingShareParticipantIDs = []
@@ -536,6 +628,47 @@ struct SyncCoordinator {
             predicate: #Predicate { $0.ownerMemberID == ownerMemberID }
         )
         return try modelContext.fetch(descriptor)
+    }
+
+    private func migrateLegacyLocalOwnerDataIfNeeded(
+        modelContext: ModelContext,
+        settings: SettingsStore
+    ) throws {
+        guard let legacyOwnerID = normalizedID(settings.legacyCurrentOwnerIDForLocalDataMigration),
+              legacyOwnerID != settings.currentLocalOwnerID else {
+            return
+        }
+
+        let descriptor = FetchDescriptor<EventMirror>(
+            predicate: #Predicate { $0.ownerMemberID == legacyOwnerID }
+        )
+        let legacyMirrors = try modelContext.fetch(descriptor)
+        guard !legacyMirrors.isEmpty else { return }
+        for mirror in legacyMirrors {
+            mirror.ownerMemberID = settings.currentLocalOwnerID
+        }
+        try modelContext.save()
+    }
+
+    private func normalizedID(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? nil : trimmedValue
+    }
+
+    private func saveCurrentMemberProfileIfPossible(
+        cloudKit: CloudKitCoupleSpaceService,
+        settings: SettingsStore,
+        pairingID: String
+    ) async throws {
+        guard let displayName = PairingSettingsPlan.normalizedDisplayName(settings.currentDisplayName) else {
+            return
+        }
+        try await cloudKit.saveMemberProfileForSync(
+            ownerMemberID: settings.currentLocalOwnerID,
+            pairingID: pairingID,
+            displayName: displayName
+        )
     }
 
     private func upsert(mirrors: [EventMirror], modelContext: ModelContext) throws {

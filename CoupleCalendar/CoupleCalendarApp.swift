@@ -55,7 +55,7 @@ enum ShareCalLaunchDiagnostics {
 
         if ShareCalLaunchDiagnosticPlan.shouldRunStopSharingProbe(arguments: arguments) {
             do {
-                try await services.cloudKit.stopSharing(ownerMemberID: settings.currentMemberID)
+                try await services.cloudKit.stopSharing(ownerMemberID: settings.currentLocalOwnerID)
                 NSLog("ShareCal stop sharing probe succeeded")
             } catch {
                 NSLog("ShareCal stop sharing probe failed: \(error)")

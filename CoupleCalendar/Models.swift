@@ -104,6 +104,7 @@ struct ShareCalStrings {
     var partnerNicknameEditLabel: String { text("Partner Note", "对方备注名") }
     var myDisplayNamePlaceholder: String { text("My nickname", "我的昵称") }
     var partnerDisplayNamePlaceholder: String { text("Partner note", "对方备注名") }
+    var currentDisplayNameRequiredMessage: String { text("Enter your nickname before pairing.", "配对前请先填写我的昵称。") }
     var languageSection: String { text("Language", "语言") }
     var appLanguagePicker: String { text("App language", "应用语言") }
     var calendarAccessSection: String { text("Calendar Access", "日历访问") }
@@ -1351,6 +1352,28 @@ enum PairingSettingsPlan {
         )
     }
 
+    static func partnerDisplayName(
+        partnerNoteName: String?,
+        partnerSyncedDisplayName: String?,
+        partnerICloudIdentity: String,
+        fallback: String
+    ) -> String {
+        if let noteName = normalizedID(partnerNoteName) {
+            return noteName
+        }
+        if let syncedDisplayName = normalizedID(partnerSyncedDisplayName) {
+            return syncedDisplayName
+        }
+        if isReadableICloudIdentity(partnerICloudIdentity) {
+            return partnerICloudIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return fallback
+    }
+
+    static func normalizedDisplayName(_ displayName: String?) -> String? {
+        normalizedID(displayName)
+    }
+
     private static func normalizedIDs(_ ids: [String]) -> [String] {
         ids.compactMap(normalizedID)
     }
@@ -1359,6 +1382,16 @@ enum PairingSettingsPlan {
         guard let id else { return nil }
         let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedID.isEmpty ? nil : trimmedID
+    }
+
+    private static func isReadableICloudIdentity(_ value: String) -> Bool {
+        let identities = value
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return !identities.isEmpty && identities.allSatisfy {
+            ICloudSharingIdentityDisplayPlan.normalizedEmailAddress($0) != nil
+        }
     }
 }
 

@@ -602,6 +602,109 @@ enum CloudKitRecordMappingError: Error {
     case missingField(String)
 }
 
+struct CloudKitMemberProfile: Equatable {
+    let ownerMemberID: String
+    let pairingID: String
+    let displayName: String
+    let updatedAt: Date
+}
+
+enum MemberProfileRecordMapper {
+    static let recordType = "MemberProfile"
+
+    enum Key {
+        static let ownerMemberID = "ownerMemberID"
+        static let pairingID = "pairingID"
+        static let displayName = "displayName"
+        static let updatedAt = "updatedAt"
+    }
+
+    static func recordName(ownerMemberID: String, pairingID: String) -> String {
+        "member-profile:\(normalizedRequired(ownerMemberID)):\(normalizedRequired(pairingID))"
+    }
+
+    static func record(
+        from profile: CloudKitMemberProfile,
+        zoneID: CKRecordZone.ID,
+        parentRecordID: CKRecord.ID? = nil,
+        existingRecord: CKRecord? = nil
+    ) -> CKRecord {
+        let recordID = CKRecord.ID(
+            recordName: recordName(ownerMemberID: profile.ownerMemberID, pairingID: profile.pairingID),
+            zoneID: zoneID
+        )
+        let record = existingRecord ?? CKRecord(recordType: recordType, recordID: recordID)
+        CloudKitShareHierarchyPlan.attach(record, toShareRoot: parentRecordID)
+        record[Key.ownerMemberID] = normalizedRequired(profile.ownerMemberID) as CKRecordValue
+        record[Key.pairingID] = normalizedRequired(profile.pairingID) as CKRecordValue
+        record[Key.displayName] = normalizedDisplayName(profile.displayName) as CKRecordValue
+        record[Key.updatedAt] = profile.updatedAt as CKRecordValue
+        return record
+    }
+
+    static func memberProfile(from record: CKRecord) throws -> CloudKitMemberProfile {
+        guard let ownerMemberID = record[Key.ownerMemberID] as? String else {
+            throw CloudKitRecordMappingError.missingField(Key.ownerMemberID)
+        }
+        guard let pairingID = record[Key.pairingID] as? String else {
+            throw CloudKitRecordMappingError.missingField(Key.pairingID)
+        }
+        guard let displayName = record[Key.displayName] as? String else {
+            throw CloudKitRecordMappingError.missingField(Key.displayName)
+        }
+        guard let updatedAt = record[Key.updatedAt] as? Date else {
+            throw CloudKitRecordMappingError.missingField(Key.updatedAt)
+        }
+        return CloudKitMemberProfile(
+            ownerMemberID: normalizedRequired(ownerMemberID),
+            pairingID: normalizedRequired(pairingID),
+            displayName: normalizedDisplayName(displayName),
+            updatedAt: updatedAt
+        )
+    }
+
+    private static func normalizedRequired(_ value: String) -> String {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? value : trimmedValue
+    }
+
+    private static func normalizedDisplayName(_ value: String) -> String {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? "Partner" : trimmedValue
+    }
+}
+
+enum MemberProfileDisplayPlan {
+    static func partnerSyncedDisplayName(
+        from profiles: [CloudKitMemberProfile],
+        currentLocalOwnerID: String,
+        pairingID: String
+    ) -> String? {
+        let normalizedCurrentOwnerID = normalizedID(currentLocalOwnerID)
+        let normalizedPairingID = normalizedID(pairingID)
+        return profiles
+            .filter { profile in
+                normalizedID(profile.pairingID) == normalizedPairingID
+                    && normalizedID(profile.ownerMemberID) != normalizedCurrentOwnerID
+                    && normalizedID(profile.displayName) != nil
+            }
+            .sorted {
+                if $0.updatedAt == $1.updatedAt {
+                    return $0.ownerMemberID < $1.ownerMemberID
+                }
+                return $0.updatedAt > $1.updatedAt
+            }
+            .first
+            .map { $0.displayName.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    private static func normalizedID(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? nil : trimmedValue
+    }
+}
+
 enum CloudKitBatchUpsertPlan {
     static func recordIDs(forMirrors mirrors: [EventMirror], zoneID: CKRecordZone.ID) -> [CKRecord.ID] {
         uniqued(
@@ -631,6 +734,20 @@ enum CloudKitBatchUpsertPlan {
         uniqued(
             comments.map { comment in
                 CKRecord.ID(recordName: comment.cloudKitRecordName ?? comment.id, zoneID: zoneID)
+            }
+        )
+    }
+
+    static func recordIDs(forMemberProfiles profiles: [CloudKitMemberProfile], zoneID: CKRecordZone.ID) -> [CKRecord.ID] {
+        uniqued(
+            profiles.map { profile in
+                CKRecord.ID(
+                    recordName: MemberProfileRecordMapper.recordName(
+                        ownerMemberID: profile.ownerMemberID,
+                        pairingID: profile.pairingID
+                    ),
+                    zoneID: zoneID
+                )
             }
         )
     }
@@ -702,6 +819,13 @@ enum CloudKitForegroundQueryPlan {
                 CommentRecordMapper.Key.deletedAt,
                 CommentRecordMapper.Key.isRead
             ]
+        case MemberProfileRecordMapper.recordType:
+            [
+                MemberProfileRecordMapper.Key.ownerMemberID,
+                MemberProfileRecordMapper.Key.pairingID,
+                MemberProfileRecordMapper.Key.displayName,
+                MemberProfileRecordMapper.Key.updatedAt
+            ]
         default:
             nil
         }
@@ -710,7 +834,10 @@ enum CloudKitForegroundQueryPlan {
 
 enum CloudKitRecordQueryFailurePlan {
     static func canTreatMissingRecordTypeAsEmpty(recordType: String, error: Error) -> Bool {
-        recordType == CalendarAccessRequestRecordMapper.legacyRecordType && isMissingRecordType(error)
+        [
+            CalendarAccessRequestRecordMapper.legacyRecordType,
+            MemberProfileRecordMapper.recordType
+        ].contains(recordType) && isMissingRecordType(error)
     }
 
     static func isMissingRecordType(_ error: Error) -> Bool {
@@ -2042,6 +2169,23 @@ final class CloudKitCoupleSpaceService {
         cloudKitSharingInfo("deleteMirrorsForSync succeeded count=\(recordIDs.count)")
     }
 
+    func saveMemberProfileForSync(
+        ownerMemberID: String,
+        pairingID: String,
+        displayName: String,
+        updatedAt: Date = .now
+    ) async throws {
+        try await ensureZone()
+        try await ensureShareRoot(ownerMemberID: ownerMemberID, pairingID: pairingID)
+        let profile = CloudKitMemberProfile(
+            ownerMemberID: ownerMemberID,
+            pairingID: pairingID,
+            displayName: displayName,
+            updatedAt: updatedAt
+        )
+        try await saveMemberProfilesForSync([profile], in: zoneID, database: privateDatabase)
+    }
+
     func queueInvitationsForSync(_ invitations: [EventInvitation]) {
         ensureSyncDriverStarted()
         let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
@@ -2206,6 +2350,52 @@ final class CloudKitCoupleSpaceService {
     }
 
     @MainActor
+    private func saveMemberProfilesForSync(
+        _ profiles: [CloudKitMemberProfile],
+        in targetZoneID: CKRecordZone.ID,
+        database: CKDatabase
+    ) async throws {
+        guard !profiles.isEmpty else {
+            cloudKitSharingInfo("saveMemberProfilesForSync skipped; no profiles")
+            return
+        }
+
+        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: targetZoneID)
+        let existingRecordsByID = try await fetchRecordsForUpsertIfPresent(
+            with: CloudKitBatchUpsertPlan.recordIDs(forMemberProfiles: profiles, zoneID: targetZoneID),
+            database: database
+        )
+        var records: [CKRecord] = []
+        for profile in profiles {
+            let recordName = MemberProfileRecordMapper.recordName(
+                ownerMemberID: profile.ownerMemberID,
+                pairingID: profile.pairingID
+            )
+            let recordID = CKRecord.ID(recordName: recordName, zoneID: targetZoneID)
+            records.append(
+                MemberProfileRecordMapper.record(
+                    from: profile,
+                    zoneID: targetZoneID,
+                    parentRecordID: parentRecordID,
+                    existingRecord: existingRecordsByID[recordID]
+                )
+            )
+        }
+
+        cloudKitSharingInfo(
+            "saveMemberProfilesForSync saving records=\(records.map { "\($0.recordType):\($0.recordID.recordName)" }.joined(separator: ",")) zoneOwner=\(targetZoneID.ownerName)"
+        )
+        _ = try await modifyRecords(
+            saving: records,
+            deleting: [],
+            savePolicy: .changedKeys,
+            atomically: false,
+            database: database
+        )
+        cloudKitSharingInfo("saveMemberProfilesForSync succeeded count=\(records.count)")
+    }
+
+    @MainActor
     private func saveCommentsForSync(
         _ comments: [EventComment],
         in targetZoneID: CKRecordZone.ID,
@@ -2351,6 +2541,20 @@ final class CloudKitCoupleSpaceService {
         let emailAddresses = CloudKitShareRootICloudEmailPlan.emailAddresses(from: Array(recordsByID.values))
         cloudKitSharingInfo("fetchSharedOwnerICloudEmailAddresses fetched count=\(emailAddresses.count)")
         return emailAddresses
+    }
+
+    func fetchMemberProfiles(sharedZoneIDs: [CKRecordZone.ID]) async throws -> [CloudKitMemberProfile] {
+        guard !sharedZoneIDs.isEmpty else { return [] }
+        let recordsByZone = try await fetchRecordsByZone(
+            recordType: MemberProfileRecordMapper.recordType,
+            in: sharedZoneIDs,
+            database: sharedDatabase
+        )
+        let profiles = try recordsByZone
+            .flatMap(\.records)
+            .map(MemberProfileRecordMapper.memberProfile(from:))
+        cloudKitSharingInfo("fetchMemberProfiles fetched records=\(profiles.count)")
+        return profiles
     }
 
     func fetchEventComments() async throws -> [EventComment] {

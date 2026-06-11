@@ -1,125 +1,141 @@
-# CoupleCalendar
+# ShareCal（CoupleCalendar）
 
-## Simulator Test Devices
+ShareCal 是一款**严格两人配对**的情侣共享日历 iOS App：双方各自挑选要共享的系统日历，App 将所选日程镜像到 iCloud 并通过一条 CKShare 互相可见。不上传账号密码、不依赖任何自建服务器——所有数据只存在于两个人自己的 iCloud 中。
 
-Use these fixed simulator instances for the two-device CloudKit Share smoke test:
+## 功能特性
 
-| Role | Simulator | UDID |
+- **两人配对**：通过 iCloud 共享链接配对；配对确立后，经旧链接加入的第三人会在同步时被自动移除；接受陌生人的分享会触发"更换配对"确认，多余的历史共享自动退出。
+- **日程同步**：从系统日历（EventKit）镜像所选日历的日程，支持可见性控制（完整详情 / 仅忙碌）；本地日历的增删改在每次同步时自动收敛。
+- **日程邀请**：给对方发日程邀请，对方接受后自动写入其系统日历；状态（待处理/已接受/已拒绝/已取消）双向同步。
+- **日程评论**：对任意一方的日程留言，支持编辑、删除与已读状态。
+- **历史日历申请**：默认只共享配对日之后的日程；想看配对前的历史需向对方发起申请，对方批准后按时间窗放行。
+- **昵称体系**：对方显示为"备注名 > 对方同步的昵称 > 兜底"，不展示邮箱等 iCloud 身份信息。
+- **中英双语**：内置中/英文案，可在设置中切换。
+
+## 产品 UI
+
+App 为三个 Tab 的标准 iOS 结构：
+
+| Tab | 内容 |
+| --- | --- |
+| **日历** | 日 / 周视图，"我"与"对方"双列时间轴，重叠日程并列展示；点击日程查看详情与评论 |
+| **邀请** | 收到的日程邀请与历史日历申请的待办列表（Tab 角标提示未处理数量） |
+| **设置** | 配对状态卡（发起配对 / 解除配对 / 同步 / 申请历史）、昵称与备注、共享日历选择、默认可见性、语言、删除 iCloud 数据 |
+
+<!-- 截图待补充：将截图放入 docs/screenshots/ 后取消注释
+| 日历 | 邀请 | 设置 |
 | --- | --- | --- |
-| Owner | iPhone 17 | `5509EBC5-44A3-4C7D-862D-2811FA330AF1` |
-| Partner | iPhone 17 Pro | `E75449FE-AD7B-429B-84A5-12ED862B2349` |
+| ![日历](docs/screenshots/calendar.png) | ![邀请](docs/screenshots/invites.png) | ![设置](docs/screenshots/settings.png) |
+-->
 
-These simulator instances preserve their iCloud sign-in state as long as the
-same UDIDs are reused. Do not erase, delete, or recreate them unless you intend
-to sign in to iCloud again.
+## 技术栈
 
-Useful commands:
+| 层 | 技术 |
+| --- | --- |
+| UI | SwiftUI（`@Observable`），无第三方依赖 |
+| 本地存储 | SwiftData（仅作本地缓存，`cloudKitDatabase: .none`）+ UserDefaults（设置与配对状态） |
+| 云同步 | CloudKit：私有数据库自有 `CoupleSpace` zone + CKShare 层级共享；`CKSyncEngine` 推送变更 |
+| 系统日历 | EventKit（读取所选日历、为接受的邀请创建日程） |
+| 身份 | CloudKit `userRecordID` 作为唯一成员 ID（即共享 zone 的 ownerName，无自建账号体系） |
+| 测试 | XCTest，决策逻辑收敛在无状态 "Plan enum" 中直接单测 |
+| 最低系统 | iOS 18.0 |
 
-```bash
-xcrun simctl boot 5509EBC5-44A3-4C7D-862D-2811FA330AF1
-xcrun simctl boot E75449FE-AD7B-429B-84A5-12ED862B2349
-open -a Simulator
+## 数据同步架构
+
+两人各自拥有一个私有 `CoupleSpace` zone，所有记录挂在 `couple-space-root` 根记录下，由一条 CKShare 整体共享给对方；对方通过共享数据库（sharedCloudDatabase）读取。**zone 的 ownerName 就是数据归属的权威身份**。
+
+```mermaid
+flowchart LR
+    subgraph DeviceA["📱 A 的设备"]
+        EKA["系统日历<br/>(EventKit)"] -->|"镜像生成 EventMirror"| SyncA["SyncCoordinator<br/>foregroundSync"]
+        SyncA <--> SDA[("SwiftData<br/>本地缓存")]
+        UIA["SwiftUI 三 Tab"] --- SDA
+    end
+
+    subgraph iCloud["☁️ iCloud (CloudKit)"]
+        subgraph PrivA["A 的私有数据库 · CoupleSpace zone (owner = A 的 userRecordID)"]
+            RootA["couple-space-root"] --- RecA["EventMirror / EventInvitation<br/>EventComment / MemberProfile<br/>历史申请(以 Invitation 传输)"]
+            ShareA{{"CKShare<br/>(链接邀请)"}}
+        end
+        subgraph PrivB["B 的私有数据库 · CoupleSpace zone (owner = B 的 userRecordID)"]
+            RootB["couple-space-root"] --- RecB["EventMirror / EventInvitation<br/>EventComment / MemberProfile / ..."]
+            ShareB{{"CKShare"}}
+        end
+    end
+
+    subgraph DeviceB["📱 B 的设备"]
+        EKB["系统日历<br/>(EventKit)"] -->|镜像生成| SyncB["SyncCoordinator"]
+        SyncB <--> SDB[("SwiftData<br/>本地缓存")]
+        UIB["SwiftUI 三 Tab"] --- SDB
+    end
+
+    SyncA -->|"写入自己的日程/邀请/资料"| PrivA
+    SyncB -->|写入| PrivB
+    ShareA -.->|"B 接受分享后<br/>经共享数据库读取 A 的 zone"| SyncB
+    ShareB -.->|"A 经共享数据库读取 B 的 zone"| SyncA
+    SyncA -->|"对 B 日程的评论/邀请回应<br/>写入 B 的共享 zone"| PrivB
+    SyncB -->|"对 A 日程的评论/回应写入 A 的 zone"| PrivA
 ```
 
-## CloudKit Schema
+各类数据的完整流转（配对 → 日程 → 邀请 → 评论）：
 
-Release builds use the Production CloudKit environment. Before a Release
-simulator or TestFlight build can create a share, the schema for
-`iCloud.com.leeberty.CoupleCalendar` must be imported into Development and then
-deployed to Production from CloudKit Console.
+```mermaid
+sequenceDiagram
+    participant A as A 的设备
+    participant CA as A 的私有 zone (iCloud)
+    participant CB as B 的私有 zone (iCloud)
+    participant B as B 的设备
 
-Save a CloudKit management token in `cktool`, or set
-`CLOUDKIT_MANAGEMENT_TOKEN`, then import the schema into Development:
+    rect rgb(235, 244, 255)
+    Note over A,B: ① 配对（双向各建一条 CKShare）
+    A->>CA: 创建 CoupleSpace zone + root + CKShare，生成邀请链接
+    A-->>B: 把链接发给对方（iMessage / 微信等）
+    B->>CA: 接受分享 → A 的 zone 出现在 B 的共享数据库
+    Note over B: 记下 partnerID = zone ownerName（A 的 userRecordID）
+    B->>CB: 同样发起分享，A 接受 → 双向建立
+    Note over A,B: 校验：我 share 的参与者 userRecordID == 我接受的 zone ownerName<br/>一致即配对成立；不一致弹冲突二选一；多余 zone 自动退出
+    Note over A: 此后第三人经旧链接加入<br/>会在下次同步时被自动移除（两人锁）
+    end
 
-```bash
-xcrun cktool save-token --type management --method keychain
-Scripts/import-cloudkit-schema.sh development
+    rect rgb(235, 255, 240)
+    Note over A,B: ② 日程同步（每次前台同步）
+    A->>A: 从 EventKit 重新生成所选日历的 EventMirror（含删除墓碑）
+    A->>CA: 仅上传有变化的 mirror
+    B->>CA: 从共享数据库拉取 A 的 mirror → 存入本地 SwiftData → 显示在"对方"列
+    end
+
+    rect rgb(255, 248, 235)
+    Note over A,B: ③ 日程邀请
+    A->>CA: 创建 EventInvitation（写入自己的 zone）
+    B->>CA: 读到邀请 → 接受/拒绝，状态写回 A 的共享 zone
+    B->>B: 接受后在自己的系统日历创建该日程
+    end
+
+    rect rgb(250, 240, 255)
+    Note over A,B: ④ 评论 / 历史申请（写入路径规则相同）
+    A->>CA: 评论自己的日程 → 写自己的 zone
+    A->>CB: 评论 B 的日程 → 写 B 的共享 zone
+    Note over A,B: 历史日历申请以带 history-access-request 前缀的<br/>EventInvitation 记录传输，批准后扩大共享时间窗
+    end
 ```
 
-The management token must be generated for Apple Developer team `3SF92B92JF`
-with access to container `iCloud.com.leeberty.CoupleCalendar`.
+要点：
 
-`cktool import-schema` cannot import directly into Production. After the
-Development import succeeds, open CloudKit Console for the Development
-environment and run `Deploy Schema Changes...` to deploy the same record types
-and indexes to Production.
+- **配对身份只有一套**：成员 ID = CloudKit `userRecordID`，天然等于 zone 的 ownerName，没有本地 UUID、没有 pairingID，"对方是谁"由 `TwoPersonPairingPlan` 单点裁决。
+- **镜像是派生数据**：自己的 EventMirror 每次同步都从 EventKit 重建，SwiftData 只是缓存，删库重装后重新同步即可恢复。
+- **写入路径规则**：自己的数据写自己的私有 zone；针对对方数据的回应（评论、邀请状态、申请批复）写进对方的共享 zone。
 
-The import script first checks that the local schema contains every CloudKit
-record type and field currently written by the app, plus the CloudKit Sharing
-system type `cloudkit.share`, then calls `cktool`.
-
-For a quick local schema coverage check and Development import, the default is
-also Development:
+## 开发
 
 ```bash
-Scripts/import-cloudkit-schema.sh
+# 构建
+xcodebuild -project CoupleCalendar.xcodeproj -scheme CoupleCalendar \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+
+# 单元测试
+xcodebuild -project CoupleCalendar.xcodeproj -scheme CoupleCalendar \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:CoupleCalendarTests
 ```
 
-If `Create or Open Share` reports `Cannot create new type CoupleSpace in
-production schema`, the app reached the correct Production container, but this
-schema has not been deployed yet, or a new field was added after the last
-Production schema deployment.
-
-If it reports `Cannot create new type cloudkit.share in production schema`, the
-business record types are deployed but the CloudKit Sharing system schema is
-missing. Create one share in the Development environment first, rerun the
-Development import if needed, then deploy schema changes to Production again.
-
-After deploying schema changes, rerun the Owner simulator flow and then retry
-the Partner invitation flow.
-
-## Release CloudKit Share Smoke Test
-
-Use `Release` with `CoupleCalendarProduction.entitlements` when validating
-Production CloudKit sharing on the two fixed simulators.
-
-Owner setup:
-
-```bash
-xcodebuild \
-  -project CoupleCalendar.xcodeproj \
-  -scheme CoupleCalendar \
-  -configuration Release \
-  -destination 'platform=iOS Simulator,id=5509EBC5-44A3-4C7D-862D-2811FA330AF1' \
-  build
-```
-
-Launch the Owner app with `-ShareCalSeedCalendarEvent` to create or reuse a
-real EventKit event named `ShareCal E2E Smoke Test` in the writable `ShareCal`
-calendar. Then tap `Sync`; the Owner should show one event in the `Me` column.
-
-Open `Settings > Create or Open Share`. Existing shares are upgraded to allow an
-iCloud invite link, and the system sharing UI can be used to open the invitation
-on the Partner simulator.
-
-Partner validation:
-
-1. Install and run the same Release build on
-   `E75449FE-AD7B-429B-84A5-12ED862B2349`.
-2. Open the Owner share URL on the Partner simulator and accept the system
-   prompt.
-3. Tap `Sync` in Partner.
-
-Expected result: Partner logs show `acceptShare succeeded` and
-`fetchSharedEventMirrors fetched records=1`, and the Partner UI shows
-`ShareCal E2E Smoke Test` in the `Partner` column. If the Partner simulator has
-no writable calendar, the app creates and selects a local `ShareCal` calendar
-before syncing.
-
-## Stop Sharing Privacy Probe
-
-Release builds include launch diagnostics for validating that a stopped share is
-not readable from the Partner simulator.
-
-1. Before stopping sharing, run the Partner app with
-   `-ShareCalSharedReadProbe`. The runtime log prints `Shared Zones` and shared
-   record counts for `EventMirror`, `EventComment`, `EventInvitation`, and
-   `CalendarAccessRequest`.
-2. Run the Owner app with `-ShareCalStopICloudSharing`. The runtime log must
-   print `ShareCal stop sharing probe succeeded`. If it reports an iCloud
-   account error, refresh the Owner simulator's Apple Account sign-in and retry.
-3. Run the Partner app with `-ShareCalSharedReadProbe` again.
-
-Expected result after a successful stop-sharing probe: `Shared Zones: 0`, all
-shared record counts are `0`, and the log prints
-`ShareCal shared read probe proves no access: true`.
+- 代码架构与约定见 [CLAUDE.md](CLAUDE.md)。
+- CloudKit Schema 部署、固定双模拟器冒烟测试、停止共享隐私验证等运维流程见 [docs/development.md](docs/development.md)。

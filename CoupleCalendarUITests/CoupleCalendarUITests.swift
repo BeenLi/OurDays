@@ -8,7 +8,21 @@ final class CoupleCalendarUITests: XCTestCase {
 
         XCTAssertTrue(app.buttons["compact-date-picker-button"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["compact-create-invite-button"].exists)
-        XCTAssertTrue(app.buttons["compact-sync-button"].exists)
+        XCTAssertFalse(app.buttons["compact-sync-button"].exists)
+    }
+
+    func testSwipingContentAreaChangesSelectedDate() {
+        let app = XCUIApplication()
+        app.launch()
+        dismissInitialProfilePromptIfNeeded(in: app)
+
+        let datePickerButton = app.buttons["compact-date-picker-button"]
+        XCTAssertTrue(datePickerButton.waitForExistence(timeout: 3))
+        let initialTitle = datePickerButton.value as? String
+
+        app.swipeLeft()
+
+        XCTAssertNotEqual(datePickerButton.value as? String, initialTitle)
     }
 
     func testFirstLaunchGuidanceNavigatesToCalendarSettings() {

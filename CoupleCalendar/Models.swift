@@ -652,6 +652,20 @@ enum CalendarDateNavigationPlan {
     }
 }
 
+enum CalendarSwipeNavigationPlan {
+    static func direction(
+        horizontalTranslation: CGFloat,
+        verticalTranslation: CGFloat,
+        minimumDistance: CGFloat = 50,
+        dominanceRatio: CGFloat = 1.5
+    ) -> CalendarNavigationDirection? {
+        guard abs(horizontalTranslation) >= minimumDistance,
+              abs(horizontalTranslation) > abs(verticalTranslation) * dominanceRatio
+        else { return nil }
+        return horizontalTranslation < 0 ? .next : .previous
+    }
+}
+
 enum HierarchicalDatePickerLevel: Equatable {
     case month
     case months

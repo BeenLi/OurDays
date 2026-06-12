@@ -884,16 +884,11 @@ struct CalendarTabView: View {
                 selectedDate: $selectedDate,
                 mode: $mode,
                 title: CalendarDateNavigationPlan.compactTitle(for: selectedDate, mode: mode, locale: settings.appLanguage.locale),
-                syncPhase: settings.syncPhase,
-                hasSyncError: settings.lastSyncError != nil,
                 onOpenPicker: {
                     activeCalendarSheet = .datePicker
                 },
                 onCreateInvite: {
                     activeCalendarSheet = .createInvite
-                },
-                onSync: {
-                    syncNow()
                 }
             )
             .padding(.horizontal)
@@ -909,45 +904,61 @@ struct CalendarTabView: View {
                     .padding(.horizontal)
             }
 
-            if let setupGuidanceStep {
-                CalendarSetupGuidanceCard(step: setupGuidanceStep) {
-                    onOpenSettings(settingsFocusTarget(for: setupGuidanceStep))
-                }
-                .padding(.horizontal)
-                .frame(maxHeight: .infinity, alignment: .center)
-            } else if localDisplayMirrors.isEmpty && visiblePartnerMirrors.isEmpty && visibleJointEvents.isEmpty {
-                ShareCalEmptyState()
+            Group {
+                if let setupGuidanceStep {
+                    CalendarSetupGuidanceCard(step: setupGuidanceStep) {
+                        onOpenSettings(settingsFocusTarget(for: setupGuidanceStep))
+                    }
                     .padding(.horizontal)
                     .frame(maxHeight: .infinity, alignment: .center)
-            } else {
-                GeometryReader { proxy in
-                    switch mode {
-                    case .day:
-                        DayAlignedTimelineView(
-                            dayStart: selectedDayStart,
-                            myTitle: strings.memberColumnTitle(
-                                baseTitle: strings.meTitle,
-                                nickname: settings.currentDisplayName
-                            ),
-                            myEvents: myEvents,
-                            jointEvents: visibleJointEvents,
-                            focusedJointEventID: focusedJointEventID,
-                            partnerTitle: strings.memberColumnTitle(
-                                baseTitle: strings.partnerTitle,
-                                nickname: settings.partnerDisplayName
-                            ),
-                            partnerEvents: partnerEvents,
-                            availableWidth: proxy.size.width,
-                            onSelect: { selectedEvent = $0 }
-                        )
-                    case .week:
-                        WeekAgendaView(
-                            days: weekAgendaDays,
-                            mirrorByID: visibleMirrorByID,
-                            onSelect: { selectedEvent = $0 }
-                        )
+                } else if localDisplayMirrors.isEmpty && visiblePartnerMirrors.isEmpty && visibleJointEvents.isEmpty {
+                    ScrollView {
+                        ShareCalEmptyState()
+                            .padding(.horizontal)
+                            .containerRelativeFrame(.vertical)
+                    }
+                    .scrollBounceBehavior(.always, axes: [.vertical])
+                } else {
+                    GeometryReader { proxy in
+                        switch mode {
+                        case .day:
+                            DayAlignedTimelineView(
+                                dayStart: selectedDayStart,
+                                myTitle: strings.memberColumnTitle(
+                                    baseTitle: strings.meTitle,
+                                    nickname: settings.currentDisplayName
+                                ),
+                                myEvents: myEvents,
+                                jointEvents: visibleJointEvents,
+                                focusedJointEventID: focusedJointEventID,
+                                partnerTitle: strings.memberColumnTitle(
+                                    baseTitle: strings.partnerTitle,
+                                    nickname: settings.partnerDisplayName
+                                ),
+                                partnerEvents: partnerEvents,
+                                availableWidth: proxy.size.width,
+                                onSelect: { selectedEvent = $0 }
+                            )
+                        case .week:
+                            WeekAgendaView(
+                                days: weekAgendaDays,
+                                mirrorByID: visibleMirrorByID,
+                                onSelect: { selectedEvent = $0 }
+                            )
+                        }
                     }
                 }
+            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(swipeNavigationGesture)
+            .refreshable {
+                await performSync()
+            }
+            .accessibilityAction(named: Text(strings.previousDateAccessibilityLabel)) {
+                moveSelectedDate(.previous)
+            }
+            .accessibilityAction(named: Text(strings.nextDateAccessibilityLabel)) {
+                moveSelectedDate(.next)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -1000,16 +1011,35 @@ struct CalendarTabView: View {
         }
     }
 
-    private func syncNow() {
-        guard settings.syncPhase != .syncing else { return }
-        Task {
-            let coordinator = SyncCoordinator(
-                calendarAccess: services.calendarAccess,
-                eventMirrorService: services.eventMirrorService,
-                cloudKit: services.cloudKitIfAvailable
+    private var swipeNavigationGesture: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onEnded { value in
+                guard let direction = CalendarSwipeNavigationPlan.direction(
+                    horizontalTranslation: value.translation.width,
+                    verticalTranslation: value.translation.height
+                ) else { return }
+                moveSelectedDate(direction)
+            }
+    }
+
+    private func moveSelectedDate(_ direction: CalendarNavigationDirection) {
+        withAnimation(.easeInOut(duration: 0.16)) {
+            selectedDate = CalendarDateNavigationPlan.date(
+                afterMoving: selectedDate,
+                mode: mode,
+                direction: direction
             )
-            await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
         }
+    }
+
+    private func performSync() async {
+        guard settings.syncPhase != .syncing else { return }
+        let coordinator = SyncCoordinator(
+            calendarAccess: services.calendarAccess,
+            eventMirrorService: services.eventMirrorService,
+            cloudKit: services.cloudKitIfAvailable
+        )
+        await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
     }
 
     private func refreshLocalDisplayMirrors() {
@@ -1030,11 +1060,8 @@ struct CompactCalendarTopBar: View {
     @Binding var selectedDate: Date
     @Binding var mode: CalendarMode
     let title: String
-    let syncPhase: SyncPhase
-    let hasSyncError: Bool
     let onOpenPicker: () -> Void
     let onCreateInvite: () -> Void
-    let onSync: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -1042,13 +1069,6 @@ struct CompactCalendarTopBar: View {
                 .frame(width: 72)
 
             HStack(spacing: 4) {
-                CompactIconButton(
-                    systemName: "chevron.left",
-                    accessibilityLabel: settings.strings.previousDateAccessibilityLabel
-                ) {
-                    move(.previous)
-                }
-
                 Button {
                     onOpenPicker()
                 } label: {
@@ -1080,40 +1100,17 @@ struct CompactCalendarTopBar: View {
                 .disabled(Calendar.current.isDateInToday(selectedDate))
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("compact-today-button")
-
-                CompactIconButton(
-                    systemName: "chevron.right",
-                    accessibilityLabel: settings.strings.nextDateAccessibilityLabel
-                ) {
-                    move(.next)
-                }
             }
             .layoutPriority(1)
 
-            HStack(spacing: 6) {
-                CompactIconButton(
-                    systemName: "plus",
-                    accessibilityLabel: settings.strings.createInviteAccessibilityLabel,
-                    accessibilityIdentifier: "compact-create-invite-button",
-                    action: onCreateInvite
-                )
-
-                CompactSyncButton(
-                    syncPhase: syncPhase,
-                    hasSyncError: hasSyncError,
-                    onSync: onSync
-                )
-            }
+            CompactIconButton(
+                systemName: "plus",
+                accessibilityLabel: settings.strings.createInviteAccessibilityLabel,
+                accessibilityIdentifier: "compact-create-invite-button",
+                action: onCreateInvite
+            )
         }
         .frame(height: 38)
-    }
-
-    private func move(_ direction: CalendarNavigationDirection) {
-        selectedDate = CalendarDateNavigationPlan.date(
-            afterMoving: selectedDate,
-            mode: mode,
-            direction: direction
-        )
     }
 }
 
@@ -1165,56 +1162,6 @@ struct CompactIconButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityIdentifier(accessibilityIdentifier ?? accessibilityLabel)
-    }
-}
-
-struct CompactSyncButton: View {
-    @Environment(SettingsStore.self) private var settings
-    let syncPhase: SyncPhase
-    let hasSyncError: Bool
-    let onSync: () -> Void
-
-    var body: some View {
-        Button {
-            onSync()
-        } label: {
-            ZStack(alignment: .topTrailing) {
-                Group {
-                    if syncPhase == .syncing {
-                        ProgressView()
-                            .controlSize(.small)
-                            .scaleEffect(0.78)
-                    } else {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                }
-                .frame(width: 34, height: 34)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 7, height: 7)
-                    .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1.5))
-                    .offset(x: 2, y: -2)
-            }
-        }
-        .buttonStyle(.plain)
-        .disabled(syncPhase == .syncing)
-        .accessibilityLabel(settings.strings.syncAccessibilityLabel)
-        .accessibilityIdentifier("compact-sync-button")
-    }
-
-    private var statusColor: Color {
-        switch syncPhase {
-        case .syncing:
-            return .blue
-        case .failed:
-            return .red
-        case .idle:
-            return hasSyncError ? .orange : .green
-        }
     }
 }
 
@@ -1348,66 +1295,6 @@ struct CalendarSetupGuidanceCard: View {
         case .pairing:
             return "person.badge.plus"
         }
-    }
-}
-
-struct CalendarDateNavigator: View {
-    @Environment(SettingsStore.self) private var settings
-    @Binding var selectedDate: Date
-    let mode: CalendarMode
-    let title: String
-    let onOpenPicker: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Button {
-                move(.previous)
-            } label: {
-                Image(systemName: "chevron.left")
-                    .frame(width: 34, height: 34)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel(settings.strings.previousDateAccessibilityLabel)
-
-            Button {
-                onOpenPicker()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "calendar")
-                    Text(title)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-                }
-                .frame(maxWidth: .infinity, minHeight: 34)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel(settings.strings.selectDateAccessibilityLabel)
-
-            Button(settings.strings.todayButton) {
-                selectedDate = Calendar.current.startOfDay(for: Date())
-            }
-            .buttonStyle(.bordered)
-            .font(.subheadline.weight(.semibold))
-            .frame(minHeight: 34)
-
-            Button {
-                move(.next)
-            } label: {
-                Image(systemName: "chevron.right")
-                    .frame(width: 34, height: 34)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel(settings.strings.nextDateAccessibilityLabel)
-        }
-    }
-
-    private func move(_ direction: CalendarNavigationDirection) {
-        selectedDate = CalendarDateNavigationPlan.date(
-            afterMoving: selectedDate,
-            mode: mode,
-            direction: direction
-        )
     }
 }
 

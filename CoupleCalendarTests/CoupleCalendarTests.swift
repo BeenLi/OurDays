@@ -3882,6 +3882,31 @@ final class CalendarDateNavigationPlanTests: XCTestCase {
     }
 }
 
+final class CalendarSwipeNavigationPlanTests: XCTestCase {
+    func testLeftSwipeMovesToNextAndRightSwipeMovesToPrevious() {
+        XCTAssertEqual(
+            CalendarSwipeNavigationPlan.direction(horizontalTranslation: -80, verticalTranslation: 10),
+            .next
+        )
+        XCTAssertEqual(
+            CalendarSwipeNavigationPlan.direction(horizontalTranslation: 80, verticalTranslation: -10),
+            .previous
+        )
+    }
+
+    func testMostlyVerticalDragDoesNotNavigate() {
+        XCTAssertNil(
+            CalendarSwipeNavigationPlan.direction(horizontalTranslation: -60, verticalTranslation: 50)
+        )
+    }
+
+    func testDragShorterThanMinimumDistanceDoesNotNavigate() {
+        XCTAssertNil(
+            CalendarSwipeNavigationPlan.direction(horizontalTranslation: -30, verticalTranslation: 0)
+        )
+    }
+}
+
 final class HierarchicalDatePickerPlanTests: XCTestCase {
     func testMonthGridIncludesLeadingAndTrailingDays() throws {
         var calendar = Calendar(identifier: .gregorian)

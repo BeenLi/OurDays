@@ -136,9 +136,11 @@ struct RootView: View {
             // time-based automatic-sync throttle) so a recent sync doesn't cause us to
             // skip and miss the partner activity — and its local notifications — the
             // push just told us about. Still honor the existing-iCloud-data recovery
-            // gate: don't sync/merge before the user has resolved that decision.
+            // decision: never sync/merge while it is unresolved — and use the core
+            // decision (not the prompt-presentation-narrowed gate) so an async push
+            // can't slip through the window when the sheet isn't currently on screen.
             Task {
-                guard !shouldDeferAutomaticSyncForExistingICloudDecision else { return }
+                guard !hasUnresolvedExistingICloudRecoveryDecision else { return }
                 await runForegroundSync(consumingAcceptedShareSignal: false, forceCloudKit: true)
             }
         }
@@ -365,14 +367,22 @@ struct RootView: View {
         )
     }
 
-    private var shouldDeferAutomaticSyncForExistingICloudDecision: Bool {
+    /// Core data-safety fact: the existing-iCloud-data recovery decision is still
+    /// unresolved and the local state looks fresh, so an automatic sync would risk
+    /// merging before the user decides. Independent of whether the prompt is on screen.
+    private var hasUnresolvedExistingICloudRecoveryDecision: Bool {
         ExistingICloudDataRecoveryPlan.shouldDeferAutomaticSync(
             hasResolvedPrompt: settings.hasResolvedExistingICloudDataPrompt,
             hasStartedPairing: settings.hasStartedPairing,
             partnerShareOwnerID: settings.partnerShareOwnerID,
             outgoingShareParticipantIDs: settings.outgoingShareParticipantIDs,
             lastSyncAt: settings.lastSyncAt
-        ) && (!hasEvaluatedExistingICloudDataPrompt || activeRootSheet == .existingICloudDataRecovery)
+        )
+    }
+
+    private var shouldDeferAutomaticSyncForExistingICloudDecision: Bool {
+        hasUnresolvedExistingICloudRecoveryDecision
+            && (!hasEvaluatedExistingICloudDataPrompt || activeRootSheet == .existingICloudDataRecovery)
     }
 
     private func presentInitialProfilePromptIfNeeded() {

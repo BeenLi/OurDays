@@ -2766,7 +2766,17 @@ final class CloudKitCoupleSpaceService {
     private func ensureDatabaseSubscription(subscriptionID: String, database: CKDatabase) async throws {
         let subscription = CKDatabaseSubscription(subscriptionID: subscriptionID)
         let notificationInfo = CKSubscription.NotificationInfo()
-        notificationInfo.shouldSendContentAvailable = true
+        // Deliver a VISIBLE alert rather than relying on a silent (content-available)
+        // push: silent pushes are throttled/dropped under the system's background budget,
+        // so a backgrounded or terminated app could miss them entirely. A visible alert
+        // is delivered by APNs without needing background execution. The wording is
+        // generic because shared-database subscriptions cannot embed record fields in the
+        // push; rich per-item detail still appears in the in-app 动态 feed and in the
+        // local notifications posted on the next foreground sync.
+        notificationInfo.title = "ShareCal"
+        notificationInfo.alertBody = "有新的共享日程动态 · New shared activity"
+        notificationInfo.soundName = "default"
+        notificationInfo.shouldBadge = true
         subscription.notificationInfo = notificationInfo
 
         let operation = CKModifySubscriptionsOperation(

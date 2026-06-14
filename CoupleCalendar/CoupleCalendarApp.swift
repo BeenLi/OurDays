@@ -13,14 +13,20 @@ final class ShareCalAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         return true
     }
 
-    /// Present banners even when the app is in the foreground (e.g. a sync triggered by
-    /// switching tabs surfaces a new partner comment).
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .list, .sound, .badge])
+        if notification.request.trigger is UNPushNotificationTrigger {
+            // A generic CloudKit alert arrived while the app is active. The foreground
+            // sync posts rich, per-item local notifications, so suppress the generic
+            // push banner here to avoid a duplicate.
+            completionHandler([])
+        } else {
+            // Local notifications (our rich per-item ones) present normally in foreground.
+            completionHandler([.banner, .list, .sound, .badge])
+        }
     }
 
     func application(

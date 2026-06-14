@@ -14,7 +14,12 @@
 
 理由：CloudKit 无法可靠把私有/共享数据内容塞进推送 payload；静默推送 + 本地通知能定制文案且适配两人制（对方写入会落到我的 private database）。
 
-备选（未采纳）：直接用 `CKSubscription.NotificationInfo.alertBody` 服务端弹窗——内容受限，共享 zone 变更的可靠性存疑。
+## 交付可靠性修订（2026-06-14，Codex review：静默推送会被节流/丢弃）
+初版订阅只用 `shouldSendContentAvailable`（静默推送）→ 后台/被杀时会被系统后台预算**节流或丢弃**，用户可能收不到任何提醒。改为**可见 alert 推送**（`alertBody` + `shouldBadge` + `soundName` + `title`），由 APNs 直接展示，不依赖后台执行 ⇒ 可靠送达。
+- 取舍：共享数据库订阅（`CKDatabaseSubscription`，shared DB 不支持 `CKQuerySubscription`）无法把记录字段塞进推送，故 alert 文案是**通用双语**（"有新的共享日程动态 · New shared activity"）。
+- 富文本/逐条详情仍来自:in-app 动态 feed + 前台同步时 `postPendingNotifications` 发的本地通知。
+- 去重:`willPresent` 对**远程推送**在前台返回 `[]`(本地富通知负责前台展示),本地通知正常展示。
+- 残留可接受冗余:后台收到通用 alert 后再打开 App,前台同步会补发富本地通知(带详情),视为增强而非缺陷。
 
 ## 触发 4 的 source 语义（修订 2026-06-14，Codex review 发现）
 历史访问请求有三种 source：`localOutgoing`（我刚发出的本地副本）、`privateOwnerZone`（对方发来、落在我的 zone 的来件）、`acceptedSharedZone`（对方对我请求的**回复**副本，从对方 zone 导入）。

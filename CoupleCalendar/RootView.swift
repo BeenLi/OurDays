@@ -135,8 +135,10 @@ struct RootView: View {
             // A CloudKit push reported remote changes. Force a pull (bypassing the
             // time-based automatic-sync throttle) so a recent sync doesn't cause us to
             // skip and miss the partner activity — and its local notifications — the
-            // push just told us about.
+            // push just told us about. Still honor the existing-iCloud-data recovery
+            // gate: don't sync/merge before the user has resolved that decision.
             Task {
+                guard !shouldDeferAutomaticSyncForExistingICloudDecision else { return }
                 await runForegroundSync(consumingAcceptedShareSignal: false, forceCloudKit: true)
             }
         }

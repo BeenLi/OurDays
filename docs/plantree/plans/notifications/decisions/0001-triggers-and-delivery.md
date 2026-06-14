@@ -19,6 +19,7 @@
 - 取舍：共享数据库订阅（`CKDatabaseSubscription`，shared DB 不支持 `CKQuerySubscription`）无法把记录字段塞进推送，故 alert 文案是**通用双语**（"有新的共享日程动态 · New shared activity"）。
 - 富文本/逐条详情仍来自:in-app 动态 feed + 前台同步时 `postPendingNotifications` 发的本地通知。
 - 去重:`willPresent` 对**远程推送**在前台返回 `[]`(本地富通知负责前台展示),本地通知正常展示。
+- 前台到达修订(2026-06-14,Codex review):纯 alert 推送在前台到达时 `didReceiveRemoteNotification` 不触发;`willPresent` 仅抑制横幅会导致**不触发同步、富通知不发**。故 `willPresent` 抑制前先 `ShareCalRemoteChangeSignal.notifyChanged()` 触发同步(前台场景 `scenePhase` 不变不会自动同步)。后台点击通知 → 场景激活 → `scenePhase` 同步,已覆盖。
 - 残留可接受冗余:后台收到通用 alert 后再打开 App,前台同步会补发富本地通知(带详情),视为增强而非缺陷。
 
 ## 触发 4 的 source 语义（修订 2026-06-14，Codex review 发现）

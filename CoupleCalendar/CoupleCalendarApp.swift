@@ -19,9 +19,11 @@ final class ShareCalAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         if notification.request.trigger is UNPushNotificationTrigger {
-            // A generic CloudKit alert arrived while the app is active. The foreground
-            // sync posts rich, per-item local notifications, so suppress the generic
-            // push banner here to avoid a duplicate.
+            // A generic CloudKit alert arrived while the app is active. Kick off a sync
+            // so the rich, per-item local notifications get posted (the scenePhase sync
+            // won't fire — the app is already active), then suppress the generic push
+            // banner here to avoid a duplicate.
+            ShareCalRemoteChangeSignal.notifyChanged()
             completionHandler([])
         } else {
             // Local notifications (our rich per-item ones) present normally in foreground.

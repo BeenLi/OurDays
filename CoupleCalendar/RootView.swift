@@ -380,10 +380,6 @@ struct RootView: View {
         )
     }
 
-    private var shouldDeferAutomaticSyncForExistingICloudDecision: Bool {
-        hasUnresolvedExistingICloudRecoveryDecision
-            && (!hasEvaluatedExistingICloudDataPrompt || activeRootSheet == .existingICloudDataRecovery)
-    }
 
     private func presentInitialProfilePromptIfNeeded() {
         guard activeRootSheet == nil else { return }
@@ -483,7 +479,9 @@ struct RootView: View {
 
     @MainActor
     private func syncAfterSceneBecameActiveIfNeeded(now: Date = .now) async {
-        guard !shouldDeferAutomaticSyncForExistingICloudDecision else { return }
+        // Never auto-sync while the existing-iCloud-data recovery decision is unresolved,
+        // regardless of whether the prompt is currently on screen.
+        guard !hasUnresolvedExistingICloudRecoveryDecision else { return }
         let hasPendingAcceptedShare = ShareCalAcceptedShareSignal.hasPending()
         guard ForegroundSyncPlan.shouldRunAutomaticSync(
             lastSyncAt: settings.lastSyncAt,

@@ -23,6 +23,7 @@
 - 强制同步修订(2026-06-14,Codex review):推送信号原走 `syncAfterSceneBecameActiveIfNeeded`(受 `ForegroundSyncPlan.shouldRunAutomaticSync` 时间节流),刚同步过会被跳过 → 漏掉推送对应的新数据。改为 `runForegroundSync(forceCloudKit: true)` **强制**拉取(仅防并发,不做时间节流),因为推送本身即「确有新数据」的权威信号。
 - 恢复门修订(2026-06-14,Codex review):`runForegroundSync` 是无门禁的核心路径,强制调用会**绕过 existing-iCloud-data 恢复门**(`shouldDeferAutomaticSyncForExistingICloudDecision`)——用户尚未决定如何处理已有 iCloud 数据时不应同步/合并。修为:推送处理在强制同步前仍 `guard !shouldDeferAutomaticSyncForExistingICloudDecision`(保留绕过时间节流,但恢复该门)。原则:按触发可信度匹配同步激进度,但**安全门(数据恢复决策)对所有自动触发都要保留**。
 - 恢复门「核心 vs UI 收窄」修订(2026-06-14,Codex review 二次):`shouldDeferAutomaticSyncForExistingICloudDecision` 把两件事揉在一起——「恢复决策是否未解决」(数据安全事实)与「提示是否正显示」(`&& (!hasEvaluatedExistingICloudDataPrompt || activeRootSheet == .existingICloudDataRecovery)`,UI 时序)。异步推送可能恰好落在「已评估提示但 sheet 不在前台」的窗口 → 收窄后的 gate 返回 false → 推送同步仍会漏过未解决的决策。修为:抽出**核心** `hasUnresolvedExistingICloudRecoveryDecision`(只看决策是否未解决 + 本地态是否 fresh),推送处理 guard 这个核心,不受 sheet 呈现时序影响。
+- 全面收口(2026-06-14,Codex review 三次):scene-active / tab 切换路径(`syncAfterSceneBecameActiveIfNeeded`)同样用收窄 gate,同窗口也会漏过。确认解决路径(`continueUsingExistingICloudData`/`deleteExistingICloudData`)走**未门禁**的 `runForegroundSync` 且置 `hasResolved=true`,不会死锁。故删除收窄 composite,**所有自动触发(push + scene-active + tab)统一 guard 核心 fact**。
 - 残留可接受冗余:后台收到通用 alert 后再打开 App,前台同步会补发富本地通知(带详情),视为增强而非缺陷。
 
 ## 触发 4 的 source 语义（修订 2026-06-14，Codex review 发现）

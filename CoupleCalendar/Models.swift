@@ -1546,7 +1546,12 @@ enum InvitationReuploadPlan {
             uniquingKeysWith: { first, _ in first }
         )
         return local.filter { invitation in
-            invitation.inviteeMemberID == currentMemberID
+            // The invitee is "anyone who is not the creator": the stamped
+            // `inviteeMemberID` is the partner's hashed CloudKit ID and never equals the
+            // recipient's own member ID, so identity must key off the creator (see
+            // InvitationInteractionPlan.canRespond). A terminal status on an invitation
+            // I did NOT create is my accept/decline that the partner's zone may not have.
+            invitation.creatorMemberID != currentMemberID
                 && invitation.status != .pending
                 && cloudStatusByID[invitation.id] != invitation.status
         }

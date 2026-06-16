@@ -18,6 +18,7 @@
 - 同终态性（都终态 / 都 pending）→ last-writer-wins（`incoming >= existing`，相等应用）。
 - **为何不能纯时间戳（Codex stop-review 二次发现）**：`updatedAt` 由各端各自 `.now` 盖戳，**跨端时钟偏移 / CloudKit Date 截断 / 时间戳相等**都会让 requester 的 pending 副本时间戳 ≥ owner 的 approved，纯 `incoming >= existing` 仍会回退审批。owner 是 incoming 请求**唯一**的终态改写者，故「终态 > pending」是精确判据，不依赖时钟。
 - **上传可靠性（2026-06-16，Codex stop-review 三次发现 + 修复）**：merge guard 让「终态压过 pending」后，若 tab 动作的 **fire-and-forget 上传失败**，owner 本地 approved、服务器/partner 仍 pending，且 guard 拒绝让 pending 重现 ⇒ 失败上传**永久化**（旧的回退反而是「自纠正」：重现 → 用户重点 → 重传）。修：新增自限对账——同步导入服务器副本后，比对**本地终态决定**与刚取回的云副本，对「云端落后（缺失或状态不符）」者重传（`CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload` / `InvitationReuploadPlan.responsesNeedingReupload`，纯，6 测）。复用同步已取数据、无新模型字段；**自限**：服务器一旦一致即不再重传（无每次同步 churn）。失败上传在下次同步自愈。
+  - **身份判据修订（2026-06-16，Codex stop-review 四次发现）**：邀请重传初版用 `inviteeMemberID == currentMemberID` 判定「我的回应」——但 `inviteeMemberID` 是 creator 盖的**对方 hashed CloudKit id，永不等于收件人本地 member id**（见 `InvitationInteractionPlan.canRespond` 注释）⇒ 该判据**恒为 false**，邀请重传形同死代码。改为 `creatorMemberID != currentMemberID`（两人制：非创建者即受邀者）。访问请求侧的 `ownerMemberID == currentMemberID` 不同——access request 的 owner id 确等于本机 id（通知 trigger 4 亦依赖之），故保留。
 
 ## 复审推广（2026-06-16，重跑 code-review 发现）
 重跑高 recall 复审发现 **`upsert(invitations:)` 有结构完全相同的竞态且无防护**：邀请被接受/拒绝由 invitee 本地置状态（`EventInvitation.status` setter 顺带 bump `updatedAt`，`Models.swift:2466`）+ fire-and-forget 上传，并发同步重读仍 `pending` 的服务器副本会回退「已接受」。⇒「我接受的邀请又变回待处理」会作为同类 bug 复现。

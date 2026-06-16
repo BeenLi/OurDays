@@ -4764,9 +4764,12 @@ final class StatusReuploadPlanTests: XCTestCase {
         )
     }
 
-    func testReuploadsInviteeResponseWhenServerStillPending() {
-        let local = [invite(id: "i1", invitee: me, status: .accepted)]
-        let cloud = [invite(id: "i1", invitee: me, status: .pending)]
+    func testReuploadsMyResponseWhenServerStillPending() {
+        // Partner created the invitation (I'm the invitee = not the creator); I accepted
+        // locally but the partner's zone copy is still pending. inviteeMemberID is the
+        // partner's hashed id (NOT my member ID), so identity keys off the creator.
+        let local = [invite(id: "i1", creator: partner, status: .accepted)]
+        let cloud = [invite(id: "i1", creator: partner, status: .pending)]
         XCTAssertEqual(
             InvitationReuploadPlan.responsesNeedingReupload(
                 local: local, cloud: cloud, currentMemberID: me
@@ -4775,15 +4778,15 @@ final class StatusReuploadPlanTests: XCTestCase {
         )
     }
 
-    func testDoesNotReuploadInviteeResponseWhenServerAgreesOrNotInvitee() {
+    func testDoesNotReuploadWhenServerAgreesOrIAmTheCreator() {
         let local = [
-            invite(id: "agreed", invitee: me, status: .accepted),
-            invite(id: "theirs", invitee: partner, status: .accepted),
-            invite(id: "pending", invitee: me, status: .pending),
+            invite(id: "agreed", creator: partner, status: .accepted),
+            invite(id: "mine", creator: me, status: .accepted), // I created it — not my response
+            invite(id: "pending", creator: partner, status: .pending),
         ]
         let cloud = [
-            invite(id: "agreed", invitee: me, status: .accepted),
-            invite(id: "theirs", invitee: partner, status: .pending),
+            invite(id: "agreed", creator: partner, status: .accepted),
+            invite(id: "mine", creator: me, status: .pending),
         ]
         XCTAssertTrue(
             InvitationReuploadPlan.responsesNeedingReupload(
@@ -4808,11 +4811,13 @@ final class StatusReuploadPlanTests: XCTestCase {
         )
     }
 
-    private func invite(id: String, invitee: String, status: InvitationStatus) -> EventInvitation {
+    private func invite(id: String, creator: String, status: InvitationStatus) -> EventInvitation {
         EventInvitation(
             id: id,
-            creatorMemberID: partner,
-            inviteeMemberID: invitee,
+            creatorMemberID: creator,
+            // The stamped invitee id is the partner's hashed CloudKit id and never equals
+            // the recipient's own member id — identity must key off the creator instead.
+            inviteeMemberID: "hashed-invitee-id",
             title: "Event",
             startDate: Date(timeIntervalSince1970: 0),
             endDate: Date(timeIntervalSince1970: 60),

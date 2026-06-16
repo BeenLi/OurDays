@@ -693,6 +693,34 @@ struct SyncCoordinator {
                 let cloudInvitations = try await invitationsTask
                 try upsert(invitations: cloudInvitations, modelContext: modelContext)
                 timing.mark("cloudInvitationsFetched count=\(cloudInvitations.count)")
+
+                // Reliability for terminal decisions made in a tab (fire-and-forget
+                // upload): re-upload any local decision the just-fetched server copy
+                // hasn't caught up to, so a failed/missed one-shot upload self-heals on
+                // a later sync rather than being made permanent by the merge guard.
+                // Compares against post-import local state; self-limiting once the
+                // server agrees. See decision 0003.
+                let localRequestsForReupload = try modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())
+                let requestsToReupload = CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload(
+                    local: localRequestsForReupload,
+                    cloud: cloudAccessRequests,
+                    currentMemberID: settings.currentMemberID
+                )
+                for request in requestsToReupload {
+                    try await cloudKit.saveCalendarAccessRequestForSync(request, currentMemberID: settings.currentMemberID)
+                }
+                timing.mark("cloudAccessRequestDecisionsReuploaded count=\(requestsToReupload.count)")
+
+                let localInvitationsForReupload = try modelContext.fetch(FetchDescriptor<EventInvitation>())
+                let invitationsToReupload = InvitationReuploadPlan.responsesNeedingReupload(
+                    local: localInvitationsForReupload,
+                    cloud: cloudInvitations,
+                    currentMemberID: settings.currentMemberID
+                )
+                for invitation in invitationsToReupload {
+                    try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                }
+                timing.mark("cloudInvitationResponsesReuploaded count=\(invitationsToReupload.count)")
             } else if !settings.iCloudSharingEnabled {
                 settings.partnerShareOwnerID = nil
                 settings.partnerSyncedDisplayName = nil

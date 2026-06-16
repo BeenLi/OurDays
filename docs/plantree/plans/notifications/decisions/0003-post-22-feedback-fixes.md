@@ -1,7 +1,7 @@
 # Decision 0003 — build-22 上线后反馈修复（图标角标 + 访问请求审批回退）
 
 - **日期**：2026-06-16
-- **状态**：Accepted + **Code landed（2026-06-16）** —— 230 单测全过；剩两真机端到端验证。
+- **状态**：Accepted + **Code landed（2026-06-16）** —— 236 单测全过；剩两真机端到端验证。
 - **关系**：问题 1 是 [0002](0002-silent-push-and-background-sync.md) 移除 `shouldBadge` 的后续；问题 2 是访问请求同步正确性。
 
 ## 问题 1：App 图标红点「1」一直不消（已查看仍在）
@@ -17,7 +17,7 @@
 - **终态(approved/declined) 永远压过 pending**，无视时间戳——pending 永不回退已决；决定也总能落到 requester（即便 owner 时钟偏慢）。
 - 同终态性（都终态 / 都 pending）→ last-writer-wins（`incoming >= existing`，相等应用）。
 - **为何不能纯时间戳（Codex stop-review 二次发现）**：`updatedAt` 由各端各自 `.now` 盖戳，**跨端时钟偏移 / CloudKit Date 截断 / 时间戳相等**都会让 requester 的 pending 副本时间戳 ≥ owner 的 approved，纯 `incoming >= existing` 仍会回退审批。owner 是 incoming 请求**唯一**的终态改写者，故「终态 > pending」是精确判据，不依赖时钟。
-- 已知遗留边缘（本次不处理）：若上传 Task **失败**（非竞态，网络/错误），owner 本地显示 approved 但服务器/partner 仍 pending，且管道不重传 owner 终态 ⇒ 不一致。当前修复针对用户报告的**本地回退**症状；上传失败重传可后续单列。
+- **上传可靠性（2026-06-16，Codex stop-review 三次发现 + 修复）**：merge guard 让「终态压过 pending」后，若 tab 动作的 **fire-and-forget 上传失败**，owner 本地 approved、服务器/partner 仍 pending，且 guard 拒绝让 pending 重现 ⇒ 失败上传**永久化**（旧的回退反而是「自纠正」：重现 → 用户重点 → 重传）。修：新增自限对账——同步导入服务器副本后，比对**本地终态决定**与刚取回的云副本，对「云端落后（缺失或状态不符）」者重传（`CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload` / `InvitationReuploadPlan.responsesNeedingReupload`，纯，6 测）。复用同步已取数据、无新模型字段；**自限**：服务器一旦一致即不再重传（无每次同步 churn）。失败上传在下次同步自愈。
 
 ## 复审推广（2026-06-16，重跑 code-review 发现）
 重跑高 recall 复审发现 **`upsert(invitations:)` 有结构完全相同的竞态且无防护**：邀请被接受/拒绝由 invitee 本地置状态（`EventInvitation.status` setter 顺带 bump `updatedAt`，`Models.swift:2466`）+ fire-and-forget 上传，并发同步重读仍 `pending` 的服务器副本会回退「已接受」。⇒「我接受的邀请又变回待处理」会作为同类 bug 复现。
@@ -32,10 +32,10 @@
 判断：不为平台约束加复杂度；记录于此。
 
 ## 受影响文件
-- `Models.swift`：新增 `StatusMergePlan`（通用）、`CalendarAccessRequestImportMergePlan`、`InvitationImportMergePlan`、`AppIconBadgePlan`。
-- `AppServices.swift`：`upsert(accessRequests:)` 与 `upsert(invitations:)` 各加 status-aware guard。
+- `Models.swift`：新增 `StatusMergePlan`（通用）、`CalendarAccessRequestImportMergePlan`、`InvitationImportMergePlan`、`AppIconBadgePlan`、`CalendarAccessRequestReuploadPlan`、`InvitationReuploadPlan`。
+- `AppServices.swift`：`upsert(accessRequests:)` 与 `upsert(invitations:)` 各加 status-aware guard；`foregroundSync` 导入后加终态决定的自限对账重传。
 - `RootView.swift`：`import UserNotifications` + `syncAppIconBadge()` + 4 处调用点。
 
 ## 验证
-- 单测：10 新（badge 3 + 访问请求 merge 4 含跨端时钟偏移回退 + 邀请 merge 3），全套 230 过。
+- 单测：16 新（badge 3 + 访问请求 merge 4 含跨端时钟偏移回退 + 邀请 merge 3 + 重传对账 6），全套 236 过。
 - 两真机：owner 点同意一次即生效不回退；查看动态/处理邀请后主屏角标归零。

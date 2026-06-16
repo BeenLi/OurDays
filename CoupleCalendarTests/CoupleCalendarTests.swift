@@ -4717,6 +4717,115 @@ final class InvitationImportMergePlanTests: XCTestCase {
     }
 }
 
+final class StatusReuploadPlanTests: XCTestCase {
+    private let me = "me"
+    private let partner = "you"
+
+    func testReuploadsOwnerApprovalWhenServerStillPending() {
+        // Owner approved locally; the server copy is still pending (one-shot upload
+        // failed). Must be returned for re-upload so it self-heals.
+        let local = [request(id: "r1", owner: me, status: .approved, source: .privateOwnerZone)]
+        let cloud = [request(id: "r1", owner: me, status: .pending, source: .privateOwnerZone)]
+        let result = CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload(
+            local: local, cloud: cloud, currentMemberID: me
+        )
+        XCTAssertEqual(result.map(\.id), ["r1"])
+    }
+
+    func testReuploadsOwnerApprovalWhenMissingFromServer() {
+        let local = [request(id: "r1", owner: me, status: .approved, source: .privateOwnerZone)]
+        let result = CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload(
+            local: local, cloud: [], currentMemberID: me
+        )
+        XCTAssertEqual(result.map(\.id), ["r1"])
+    }
+
+    func testDoesNotReuploadWhenServerAgrees() {
+        // Self-limiting: once the server has the decision, nothing is re-uploaded.
+        let local = [request(id: "r1", owner: me, status: .approved, source: .privateOwnerZone)]
+        let cloud = [request(id: "r1", owner: me, status: .approved, source: .privateOwnerZone)]
+        XCTAssertTrue(
+            CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload(
+                local: local, cloud: cloud, currentMemberID: me
+            ).isEmpty
+        )
+    }
+
+    func testIgnoresPendingAndNonOwnerAndOutgoingRequests() {
+        let local = [
+            request(id: "pending", owner: me, status: .pending, source: .privateOwnerZone),
+            request(id: "notMine", owner: partner, status: .approved, source: .privateOwnerZone),
+            request(id: "outgoing", owner: me, status: .approved, source: .acceptedSharedZone),
+        ]
+        XCTAssertTrue(
+            CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload(
+                local: local, cloud: [], currentMemberID: me
+            ).isEmpty
+        )
+    }
+
+    func testReuploadsInviteeResponseWhenServerStillPending() {
+        let local = [invite(id: "i1", invitee: me, status: .accepted)]
+        let cloud = [invite(id: "i1", invitee: me, status: .pending)]
+        XCTAssertEqual(
+            InvitationReuploadPlan.responsesNeedingReupload(
+                local: local, cloud: cloud, currentMemberID: me
+            ).map(\.id),
+            ["i1"]
+        )
+    }
+
+    func testDoesNotReuploadInviteeResponseWhenServerAgreesOrNotInvitee() {
+        let local = [
+            invite(id: "agreed", invitee: me, status: .accepted),
+            invite(id: "theirs", invitee: partner, status: .accepted),
+            invite(id: "pending", invitee: me, status: .pending),
+        ]
+        let cloud = [
+            invite(id: "agreed", invitee: me, status: .accepted),
+            invite(id: "theirs", invitee: partner, status: .pending),
+        ]
+        XCTAssertTrue(
+            InvitationReuploadPlan.responsesNeedingReupload(
+                local: local, cloud: cloud, currentMemberID: me
+            ).isEmpty
+        )
+    }
+
+    private func request(
+        id: String, owner: String, status: CalendarAccessRequestStatus, source: CalendarAccessRequestSource
+    ) -> CalendarAccessRequest {
+        CalendarAccessRequest(
+            id: id,
+            requesterMemberID: partner,
+            ownerMemberID: owner,
+            requestedStartDate: Date(timeIntervalSince1970: 0),
+            requestedEndDate: Date(timeIntervalSince1970: 60),
+            statusRawValue: status.rawValue,
+            createdAt: Date(timeIntervalSince1970: 0),
+            updatedAt: Date(timeIntervalSince1970: 1),
+            sourceRawValue: source.rawValue
+        )
+    }
+
+    private func invite(id: String, invitee: String, status: InvitationStatus) -> EventInvitation {
+        EventInvitation(
+            id: id,
+            creatorMemberID: partner,
+            inviteeMemberID: invitee,
+            title: "Event",
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date(timeIntervalSince1970: 60),
+            location: nil,
+            notes: nil,
+            statusRawValue: status.rawValue,
+            createdAt: Date(timeIntervalSince1970: 0),
+            updatedAt: Date(timeIntervalSince1970: 1),
+            archivedAt: nil
+        )
+    }
+}
+
 final class AppIconBadgePlanTests: XCTestCase {
     func testSumsUnreadActivityAndPendingActions() {
         XCTAssertEqual(

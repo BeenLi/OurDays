@@ -1507,6 +1507,52 @@ enum InvitationImportMergePlan {
     }
 }
 
+/// Companion to the import merge guards: makes the upload of a local terminal decision
+/// reliable. A tab action (owner approving a history-access request; invitee
+/// accepting/declining an invitation) uploads fire-and-forget, so a failed/missed
+/// one-shot upload would be PERMANENT now that the merge guard refuses to let the stale
+/// server `pending` copy resurface it (the old rollback was perversely self-correcting).
+/// After a sync imports the server's current copies, these plans return the local
+/// terminal decisions the server hasn't caught up to, to be re-uploaded. Self-limiting:
+/// once the server's copy matches, nothing is returned, so there is no per-sync churn.
+enum CalendarAccessRequestReuploadPlan {
+    static func ownerDecisionsNeedingReupload(
+        local: [CalendarAccessRequest],
+        cloud: [CalendarAccessRequest],
+        currentMemberID: String
+    ) -> [CalendarAccessRequest] {
+        let cloudStatusByID = Dictionary(
+            cloud.map { ($0.id, $0.status) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return local.filter { request in
+            request.ownerMemberID == currentMemberID
+                && request.source == .privateOwnerZone
+                && request.status != .pending
+                // nil (missing on server) or a differing status both mean "behind".
+                && cloudStatusByID[request.id] != request.status
+        }
+    }
+}
+
+enum InvitationReuploadPlan {
+    static func responsesNeedingReupload(
+        local: [EventInvitation],
+        cloud: [EventInvitation],
+        currentMemberID: String
+    ) -> [EventInvitation] {
+        let cloudStatusByID = Dictionary(
+            cloud.map { ($0.id, $0.status) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return local.filter { invitation in
+            invitation.inviteeMemberID == currentMemberID
+                && invitation.status != .pending
+                && cloudStatusByID[invitation.id] != invitation.status
+        }
+    }
+}
+
 /// The springboard app-icon badge number = unread activity + pending actions. Kept in
 /// sync on scene-active and whenever the counts change, so viewing activity / acting on
 /// invites drives it to zero. Nothing else sets the icon badge once the silent-push

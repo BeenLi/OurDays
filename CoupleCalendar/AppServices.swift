@@ -855,6 +855,15 @@ struct SyncCoordinator {
                 predicate: #Predicate { $0.id == invitationID }
             )
             if let existing = try modelContext.fetch(descriptor).first {
+                // Same status-aware guard as access requests: never let a stale `pending`
+                // server copy roll back a local accept/decline whose upload is still in
+                // flight. See InvitationImportMergePlan / decision 0003.
+                guard InvitationImportMergePlan.shouldApplyIncoming(
+                    existingStatus: existing.status,
+                    existingUpdatedAt: existing.updatedAt,
+                    incomingStatus: invitation.status,
+                    incomingUpdatedAt: invitation.updatedAt
+                ) else { continue }
                 existing.creatorMemberID = invitation.creatorMemberID
                 existing.inviteeMemberID = invitation.inviteeMemberID
                 existing.title = invitation.title
@@ -882,6 +891,16 @@ struct SyncCoordinator {
                 predicate: #Predicate { $0.id == requestID }
             )
             if let existing = try modelContext.fetch(descriptor).first {
+                // Status-aware merge: a stale `pending` server copy must never roll back
+                // a local decision (e.g. a just-approved request whose upload hasn't
+                // landed), and a decision must always win over pending regardless of
+                // cross-device clock skew. See CalendarAccessRequestImportMergePlan.
+                guard CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+                    existingStatus: existing.status,
+                    existingUpdatedAt: existing.updatedAt,
+                    incomingStatus: request.status,
+                    incomingUpdatedAt: request.updatedAt
+                ) else { continue }
                 existing.requesterMemberID = request.requesterMemberID
                 existing.ownerMemberID = request.ownerMemberID
                 existing.requestedStartDate = request.requestedStartDate

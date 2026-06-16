@@ -1435,6 +1435,89 @@ enum CalendarAccessRequestCloudUploadPlan {
     }
 }
 
+/// Merge guard for importing an access-request copy from CloudKit onto a local copy
+/// with the same `id`. Fixes the "approval reverts / needs several taps" bug: the
+/// owner's approval is saved locally and uploaded fire-and-forget, while a concurrent
+/// sync re-reads the still-`pending` server copy and would overwrite the decision.
+///
+/// The rule is STATUS-AWARE, not purely timestamp-based, because `updatedAt` is stamped
+/// with each device's own `.now` — cross-device clock skew (or CloudKit `Date`
+/// truncation, or equal timestamps) makes raw timestamp ordering unreliable for
+/// comparing the requester's `pending` copy against the owner's `approved` copy. Since
+/// the owner is the SOLE authority on terminal status (the requester only ever sends
+/// `pending` and never mutates it):
+///   - a decision (terminal) always beats `pending`, regardless of timestamp — so
+///     `pending` can never roll back an approval, and a decision always lands on the
+///     requester even if the owner's clock is behind;
+///   - same terminality (both terminal, or both pending) falls back to last-writer-wins,
+///     which is reliable because those are comparisons within one device's own writes.
+/// Core terminality-aware merge policy, shared by every CloudKit-imported record whose
+/// status is mutated locally and uploaded asynchronously (access requests AND
+/// invitations — both have the same stale-overwrite race). Generalized rather than
+/// duplicated per type so a new status-bearing record can't silently miss the guard.
+enum StatusMergePlan {
+    static func shouldApplyIncoming(
+        existingIsTerminal: Bool,
+        existingUpdatedAt: Date,
+        incomingIsTerminal: Bool,
+        incomingUpdatedAt: Date
+    ) -> Bool {
+        if existingIsTerminal != incomingIsTerminal {
+            // A decision always wins over pending, in either direction, ignoring clocks.
+            return incomingIsTerminal
+        }
+        // Both terminal or both pending: last-writer-wins; equal applies (idempotent).
+        return incomingUpdatedAt >= existingUpdatedAt
+    }
+}
+
+enum CalendarAccessRequestImportMergePlan {
+    static func shouldApplyIncoming(
+        existingStatus: CalendarAccessRequestStatus,
+        existingUpdatedAt: Date,
+        incomingStatus: CalendarAccessRequestStatus,
+        incomingUpdatedAt: Date
+    ) -> Bool {
+        StatusMergePlan.shouldApplyIncoming(
+            existingIsTerminal: existingStatus != .pending,
+            existingUpdatedAt: existingUpdatedAt,
+            incomingIsTerminal: incomingStatus != .pending,
+            incomingUpdatedAt: incomingUpdatedAt
+        )
+    }
+}
+
+/// Same race as access requests: the invitee sets `.accepted`/`.declined` locally and
+/// uploads fire-and-forget, so a concurrent sync re-reading the still-`pending` server
+/// copy would roll the decision back. `pending` is the only non-terminal invitation
+/// status; accepted/declined/canceled are terminal.
+enum InvitationImportMergePlan {
+    static func shouldApplyIncoming(
+        existingStatus: InvitationStatus,
+        existingUpdatedAt: Date,
+        incomingStatus: InvitationStatus,
+        incomingUpdatedAt: Date
+    ) -> Bool {
+        StatusMergePlan.shouldApplyIncoming(
+            existingIsTerminal: existingStatus != .pending,
+            existingUpdatedAt: existingUpdatedAt,
+            incomingIsTerminal: incomingStatus != .pending,
+            incomingUpdatedAt: incomingUpdatedAt
+        )
+    }
+}
+
+/// The springboard app-icon badge number = unread activity + pending actions. Kept in
+/// sync on scene-active and whenever the counts change, so viewing activity / acting on
+/// invites drives it to zero. Nothing else sets the icon badge once the silent-push
+/// migration (notifications decision 0002) removed the subscription's `shouldBadge`, so
+/// this is also what clears a badge orphaned by a pre-migration visible push.
+enum AppIconBadgePlan {
+    static func badgeCount(unreadActivityCount: Int, pendingInviteCount: Int) -> Int {
+        max(0, unreadActivityCount + pendingInviteCount)
+    }
+}
+
 enum PendingActionBadgePlan {
     static func count(
         invitations: [EventInvitation],

@@ -18,6 +18,7 @@
 - [roadmap.md](roadmap.md)
 - [decisions/0001-triggers-and-delivery.md](decisions/0001-triggers-and-delivery.md) — 触发范围 + 交付架构（v1）
 - [decisions/0002-silent-push-and-background-sync.md](decisions/0002-silent-push-and-background-sync.md) — 改静默推送（抑制纯事件推送）+ 后台同步（v2，反馈修复）
+- [decisions/0003-post-22-feedback-fixes.md](decisions/0003-post-22-feedback-fixes.md) — build-22 后反馈：图标角标残留 + 访问请求审批回退（v3）
 
 ## 现状（已核实，见 baseline）
 - 推送权限 `aps-environment` 已配（dev+prod）。

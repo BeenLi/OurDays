@@ -1,6 +1,7 @@
 import CloudKit
 import SwiftData
 import SwiftUI
+import UserNotifications
 
 enum ShareCalTab {
     case calendar
@@ -75,6 +76,17 @@ struct RootView: View {
         )
     }
 
+    /// Keep the springboard icon badge in sync with the in-app unread/pending counts.
+    /// Nothing else writes the icon badge after the silent-push migration, so this both
+    /// clears a badge orphaned by an older visible push and makes the badge self-clearing.
+    private func syncAppIconBadge() {
+        let count = AppIconBadgePlan.badgeCount(
+            unreadActivityCount: unreadActivityCount,
+            pendingInviteCount: pendingInviteBadgeCount
+        )
+        UNUserNotificationCenter.current().setBadgeCount(count)
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack {
@@ -125,6 +137,12 @@ struct RootView: View {
             await Task.yield()
             await reevaluateRootSheetFlow()
         }
+        .task {
+            // Clear any badge orphaned by a pre-silent-push build and seed the live count.
+            syncAppIconBadge()
+        }
+        .onChange(of: unreadActivityCount) { _, _ in syncAppIconBadge() }
+        .onChange(of: pendingInviteBadgeCount) { _, _ in syncAppIconBadge() }
         .onReceive(NotificationCenter.default.publisher(for: ShareCalAcceptedShareSignal.notificationName)) { _ in
             Task {
                 checkPendingShareReplacement()
@@ -146,6 +164,7 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
+            syncAppIconBadge()
             Task {
                 await syncAfterSceneBecameActiveIfNeeded()
             }

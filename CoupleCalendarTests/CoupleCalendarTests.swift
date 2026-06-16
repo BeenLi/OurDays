@@ -4619,6 +4619,124 @@ final class LocalNotificationContentPlanTests: XCTestCase {
     }
 }
 
+final class CalendarAccessRequestImportMergePlanTests: XCTestCase {
+    private let older = Date(timeIntervalSince1970: 1_000)
+    private let newer = Date(timeIntervalSince1970: 2_000)
+
+    func testPendingNeverRollsBackLocalApprovalEvenIfPendingTimestampIsNewer() {
+        // Cross-device clock skew: the requester's still-`pending` copy carries a NEWER
+        // updatedAt than the owner's approval. A purely timestamp-based guard would roll
+        // the approval back; the status-aware rule must not.
+        XCTAssertFalse(
+            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+                existingStatus: .approved, existingUpdatedAt: older,
+                incomingStatus: .pending, incomingUpdatedAt: newer
+            )
+        )
+    }
+
+    func testStalePendingDoesNotRollBackApproval() {
+        // The common race: approval saved locally, upload not yet landed, sync re-reads
+        // the older pending server copy.
+        XCTAssertFalse(
+            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+                existingStatus: .approved, existingUpdatedAt: newer,
+                incomingStatus: .pending, incomingUpdatedAt: older
+            )
+        )
+    }
+
+    func testIncomingDecisionAlwaysWinsOverLocalPendingEvenIfOlder() {
+        // The requester importing the owner's approval: it must land even if the owner's
+        // clock is behind the requester's (decision wins over pending, ignoring clocks).
+        XCTAssertTrue(
+            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+                existingStatus: .pending, existingUpdatedAt: newer,
+                incomingStatus: .approved, incomingUpdatedAt: older
+            )
+        )
+    }
+
+    func testSameTerminalityFallsBackToLastWriterWins() {
+        // Both pending: newer applies, equal applies (idempotent), older skips.
+        XCTAssertTrue(
+            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+                existingStatus: .pending, existingUpdatedAt: older,
+                incomingStatus: .pending, incomingUpdatedAt: newer
+            )
+        )
+        XCTAssertTrue(
+            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+                existingStatus: .pending, existingUpdatedAt: newer,
+                incomingStatus: .pending, incomingUpdatedAt: newer
+            )
+        )
+        // Both terminal: last-writer-wins by timestamp (owner's own sequential writes).
+        XCTAssertFalse(
+            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+                existingStatus: .approved, existingUpdatedAt: newer,
+                incomingStatus: .declined, incomingUpdatedAt: older
+            )
+        )
+    }
+}
+
+final class InvitationImportMergePlanTests: XCTestCase {
+    private let older = Date(timeIntervalSince1970: 1_000)
+    private let newer = Date(timeIntervalSince1970: 2_000)
+
+    func testStalePendingDoesNotRollBackAcceptedInvitation() {
+        // Invitee accepted locally; a concurrent sync re-reads the still-pending server
+        // copy before the accept upload lands — must not flip the invite back to pending.
+        XCTAssertFalse(
+            InvitationImportMergePlan.shouldApplyIncoming(
+                existingStatus: .accepted, existingUpdatedAt: older,
+                incomingStatus: .pending, incomingUpdatedAt: newer
+            )
+        )
+    }
+
+    func testIncomingDecisionAppliesOverLocalPending() {
+        // The creator receiving the invitee's accept must land it over local pending,
+        // regardless of clock skew.
+        XCTAssertTrue(
+            InvitationImportMergePlan.shouldApplyIncoming(
+                existingStatus: .pending, existingUpdatedAt: newer,
+                incomingStatus: .accepted, incomingUpdatedAt: older
+            )
+        )
+    }
+
+    func testCanceledIsTerminalAndNotRolledBackByPending() {
+        XCTAssertFalse(
+            InvitationImportMergePlan.shouldApplyIncoming(
+                existingStatus: .canceled, existingUpdatedAt: older,
+                incomingStatus: .pending, incomingUpdatedAt: newer
+            )
+        )
+    }
+}
+
+final class AppIconBadgePlanTests: XCTestCase {
+    func testSumsUnreadActivityAndPendingActions() {
+        XCTAssertEqual(
+            AppIconBadgePlan.badgeCount(unreadActivityCount: 2, pendingInviteCount: 3), 5
+        )
+    }
+
+    func testZeroWhenNothingOutstandingClearsTheBadge() {
+        XCTAssertEqual(
+            AppIconBadgePlan.badgeCount(unreadActivityCount: 0, pendingInviteCount: 0), 0
+        )
+    }
+
+    func testNeverNegative() {
+        XCTAssertEqual(
+            AppIconBadgePlan.badgeCount(unreadActivityCount: -1, pendingInviteCount: 0), 0
+        )
+    }
+}
+
 final class BackgroundRefreshSchedulePlanTests: XCTestCase {
     func testSchedulesOnlyWhenCloudKitEnabledAndPairingActive() {
         // Unpaired install has nothing to fetch — don't spend background budget.

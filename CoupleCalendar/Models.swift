@@ -1529,8 +1529,11 @@ enum CalendarAccessRequestReuploadPlan {
             request.ownerMemberID == currentMemberID
                 && request.source == .privateOwnerZone
                 && request.status != .pending
-                // nil (missing on server) or a differing status both mean "behind".
-                && cloudStatusByID[request.id] != request.status
+                // Only when the server has recorded NO decision yet (still pending, or the
+                // record never landed). Never re-push over a terminal cloud copy. The
+                // owner is the sole terminal authority here, so a terminal cloud value is
+                // always our own already-uploaded decision — nothing to re-push.
+                && (cloudStatusByID[request.id] ?? .pending) == .pending
         }
     }
 }
@@ -1549,11 +1552,17 @@ enum InvitationReuploadPlan {
             // The invitee is "anyone who is not the creator": the stamped
             // `inviteeMemberID` is the partner's hashed CloudKit ID and never equals the
             // recipient's own member ID, so identity must key off the creator (see
-            // InvitationInteractionPlan.canRespond). A terminal status on an invitation
-            // I did NOT create is my accept/decline that the partner's zone may not have.
+            // InvitationInteractionPlan.canRespond).
+            //
+            // Re-push my accept/decline ONLY while the creator's zone copy is still
+            // `pending` (my upload never landed). If it already holds a terminal value
+            // we must NOT overwrite it — that could be the creator's own `canceled`
+            // (both parties set terminal status here); genuine terminal-vs-terminal
+            // conflicts are resolved by the import merge (last-writer-wins), not by
+            // re-pushing. A missing record means the creator deleted it — don't resurrect.
             invitation.creatorMemberID != currentMemberID
                 && invitation.status != .pending
-                && cloudStatusByID[invitation.id] != invitation.status
+                && cloudStatusByID[invitation.id] == .pending
         }
     }
 }

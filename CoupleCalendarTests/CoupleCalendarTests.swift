@@ -4778,6 +4778,19 @@ final class StatusReuploadPlanTests: XCTestCase {
         )
     }
 
+    func testDoesNotReuploadOverDifferentTerminalCloudDecision() {
+        // The creator legitimately canceled (terminal) while my local is accepted.
+        // Re-pushing accepted would clobber a real decision — the import merge resolves
+        // this conflict, not the reupload. Only a still-pending server copy may be healed.
+        let local = [invite(id: "i1", creator: partner, status: .accepted)]
+        let cloud = [invite(id: "i1", creator: partner, status: .canceled)]
+        XCTAssertTrue(
+            InvitationReuploadPlan.responsesNeedingReupload(
+                local: local, cloud: cloud, currentMemberID: me
+            ).isEmpty
+        )
+    }
+
     func testDoesNotReuploadWhenServerAgreesOrIAmTheCreator() {
         let local = [
             invite(id: "agreed", creator: partner, status: .accepted),

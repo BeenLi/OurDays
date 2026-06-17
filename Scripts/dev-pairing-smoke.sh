@@ -25,6 +25,13 @@ ACCEPT_TIMEOUT="${ACCEPT_TIMEOUT:-900}"           # accept a share (cross-region
 IMPORT_TIMEOUT="${IMPORT_TIMEOUT:-900}"           # import partner's mirror after accept
 PARTICIPANT_TIMEOUT="${PARTICIPANT_TIMEOUT:-900}" # see partner as accepted participant
 
+# Share acceptance is the cross-region-sensitive step. CloudKit can reject the accept
+# with a transient serverRejectedRequest (HTTP 502 ServerHTTPError, CKError code 15)
+# when the request has to hop between storage regions (China GCBD ↔ US/global). That
+# class is retryable, so re-issue the accept a few times before giving up.
+ACCEPT_MAX_ATTEMPTS="${ACCEPT_MAX_ATTEMPTS:-4}"   # total tries per accept (1 + retries)
+ACCEPT_RETRY_BACKOFF="${ACCEPT_RETRY_BACKOFF:-15}" # seconds to wait between attempts
+
 log() { printf '\n\033[1;36m[smoke]\033[0m %s\n' "$*"; }
 fail() { printf '\n\033[1;31m[smoke FAILED]\033[0m %s\n' "$*"; exit 1; }
 
@@ -62,6 +69,47 @@ wait_for_console() { # wait_for_console <console-log> <pattern> <timeout-seconds
   done
   echo "--- last console lines ($logfile) ---"; tail -5 "$logfile" 2>/dev/null
   fail "timed out waiting for: $description"
+}
+
+# Launches the accept-share diagnostic and waits for `acceptShare succeeded`, retrying
+# the whole launch on a transient CloudKit serverRejectedRequest / 502 ServerHTTPError.
+# A non-transient acceptShare failure (e.g. permissionFailure) fails immediately so we
+# never paper over a real bug. Leaves CONSOLE_LOG pointing at the winning attempt's log
+# so the caller's follow-up wait_for_console (import, participants) reads the right file.
+accept_share_with_retry() { # accept_share_with_retry <udid> <console-log-name> <share-url> <description>
+  local udid="$1" logname="$2" url="$3" description="$4"
+  # Markers that classify a failed accept as a retryable cross-region server hiccup.
+  local transient_re='http status code 5[0-9][0-9]|ServerHTTPError|rawValue: 15|15/2001'
+  local attempt=1
+  while [ "$attempt" -le "$ACCEPT_MAX_ATTEMPTS" ]; do
+    log "Accepting share (attempt $attempt/$ACCEPT_MAX_ATTEMPTS): $description"
+    launch_app "$udid" "$logname" -ShareCalAcceptShareURL "$url"
+    local logfile="$CONSOLE_LOG" elapsed=0
+    while [ "$elapsed" -lt "$ACCEPT_TIMEOUT" ]; do
+      if grep -qE "acceptShare succeeded" "$logfile" 2>/dev/null; then
+        grep -E "acceptShare succeeded" "$logfile" | tail -1
+        return 0
+      fi
+      if grep -qE "acceptShare failed" "$logfile" 2>/dev/null; then
+        local failline; failline="$(grep -E "acceptShare failed" "$logfile" | tail -1)"
+        if echo "$failline" | grep -qE "$transient_re"; then
+          echo "--- transient CloudKit error (will retry) ---"; echo "$failline"
+          break # break the poll loop → relaunch and retry
+        fi
+        echo "--- non-transient acceptShare failure ---"; echo "$failline"
+        fail "share acceptance failed with a non-retryable error: $description"
+      fi
+      sleep 5; elapsed=$((elapsed + 5))
+    done
+    if [ "$elapsed" -ge "$ACCEPT_TIMEOUT" ]; then
+      echo "--- attempt $attempt produced no success/failure marker in ${ACCEPT_TIMEOUT}s ---"
+      tail -5 "$logfile" 2>/dev/null
+    fi
+    attempt=$((attempt + 1))
+    [ "$attempt" -le "$ACCEPT_MAX_ATTEMPTS" ] && sleep "$ACCEPT_RETRY_BACKOFF"
+  done
+  echo "--- last console lines ($CONSOLE_LOG) ---"; tail -8 "$CONSOLE_LOG" 2>/dev/null
+  fail "share acceptance did not succeed after $ACCEPT_MAX_ATTEMPTS attempts: $description"
 }
 
 seed_defaults() { # skip first-run sheets that would otherwise block automation
@@ -132,8 +180,7 @@ wait_for_console "$CONSOLE_LOG" "foregroundSync finished" $SYNC_TIMEOUT "owner m
 
 # ---------- 2. Partner: accept share via URL (no system prompt) ----------
 log "Partner: accepting owner's share..."
-launch_app "$PARTNER_UDID" "partner-accept" -ShareCalAcceptShareURL "$SHARE_URL"
-wait_for_console "$CONSOLE_LOG" "acceptShare succeeded" $ACCEPT_TIMEOUT "partner share acceptance"
+accept_share_with_retry "$PARTNER_UDID" "partner-accept" "$SHARE_URL" "partner share acceptance"
 wait_for_console "$CONSOLE_LOG" "fetchSharedEventMirrors fetched records=[1-9]" $IMPORT_TIMEOUT \
   "partner importing owner's event mirror"
 
@@ -153,8 +200,7 @@ wait_for_console "$CONSOLE_LOG" "foregroundSync finished" $SYNC_TIMEOUT "partner
 
 # ---------- 4. Owner: accept reverse share, verify mutual pairing ----------
 log "Owner: accepting partner's share..."
-launch_app "$OWNER_UDID" "owner-accept" -ShareCalAcceptShareURL "$SHARE_URL2"
-wait_for_console "$CONSOLE_LOG" "acceptShare succeeded" $ACCEPT_TIMEOUT "owner share acceptance"
+accept_share_with_retry "$OWNER_UDID" "owner-accept" "$SHARE_URL2" "owner share acceptance"
 wait_for_console "$CONSOLE_LOG" "fetchSharedEventMirrors fetched records=[1-9]" $IMPORT_TIMEOUT \
   "owner importing partner's event mirror"
 wait_for_console "$CONSOLE_LOG" "fetchOutgoingShareParticipantIDs succeeded count=1" $PARTICIPANT_TIMEOUT \
@@ -179,4 +225,24 @@ echo "Partner memberID=$PARTNER_ID partner=$PARTNER_PARTNER"
 [ "$OWNER_PARTNER" = "$PARTNER_ID" ] || fail "owner's partner ID != partner's member ID"
 [ "$PARTNER_PARTNER" = "$OWNER_ID" ] || fail "partner's partner ID != owner's member ID"
 
-log "✅ PASS: mutual two-person pairing established and events synced both ways."
+# ---------- 7. Verify the partner's calendar UI renders the owner's event ----------
+# The checks above prove the pairing/sync STATE is correct (stored fields + log lines).
+# This step proves the SwiftUI calendar actually DRAWS the owner's synced event, i.e.
+# the background sync reaches the UI. It relaunches the partner app (install-over-install
+# preserves the paired SwiftData cache + UserDefaults) and runs a single XCUITest gated
+# by SHARECAL_SMOKE_UI so the ordinary UI suite stays green on an unpaired simulator.
+log "Partner: verifying calendar UI renders owner's synced event (XCUITest)..."
+UI_RESULT="$DERIVED/ui-verify.xcresult"
+rm -rf "$UI_RESULT"
+TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
+  -project "$ROOT_DIR/CoupleCalendar.xcodeproj" -scheme CoupleCalendar \
+  -configuration Debug -destination "platform=iOS Simulator,id=$PARTNER_UDID" \
+  -derivedDataPath "$DERIVED" \
+  -resultBundlePath "$UI_RESULT" \
+  -only-testing:CoupleCalendarUITests/CoupleCalendarUITests/testPairedPartnerCalendarShowsOwnerEvent \
+  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/CoupleCalendar.entitlements \
+  "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
+  -quiet || fail "partner calendar UI did not render the owner's synced event (see $UI_RESULT)"
+log "Partner calendar UI rendered the owner's synced event (screenshot in $UI_RESULT)."
+
+log "✅ PASS: mutual two-person pairing established, events synced both ways, and the partner UI renders the owner's event."

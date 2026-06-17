@@ -102,6 +102,16 @@ final class CalendarAccessService {
         if let existing = eventStore.events(matching: predicate).first(where: { event in
             event.title == draft.title
         }) {
+            // Refresh the matched event to the requested (now-relative) time. The system
+            // calendar survives app uninstall/reinstall, so a same-titled event from a
+            // prior day's smoke run sits within the ±24h search window; reusing it as-is
+            // would leave the smoke event stranded on an old date and absent from today's
+            // calendar view. Re-dating it keeps every run's event on "now".
+            if existing.startDate != draft.startDate || existing.endDate != draft.endDate {
+                existing.startDate = draft.startDate
+                existing.endDate = draft.endDate
+                try eventStore.save(existing, span: .thisEvent, commit: true)
+            }
             return existing.eventIdentifier ?? UUID().uuidString
         }
 

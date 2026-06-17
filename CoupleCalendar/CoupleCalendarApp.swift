@@ -247,6 +247,11 @@ struct CoupleCalendarApp: App {
             settings.currentDisplayName = profileName
             settings.hasCompletedInitialProfilePrompt = true
             settings.hasResolvedExistingICloudDataPrompt = true
+            // The post-pairing advisory sheets (partner note, reinstall safety) also
+            // cover the calendar; these flags are only reset on partner replacement, so
+            // seeding them true keeps automation on the calendar. (notifications 0003)
+            settings.hasPromptedPartnerNoteForCurrentPairing = true
+            settings.hasShownPairingSafetyNoticeForCurrentPairing = true
         }
         _settings = State(initialValue: settings)
         _services = State(initialValue: services)

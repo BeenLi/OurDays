@@ -1,7 +1,7 @@
 # Decision 0003 — build-22 上线后反馈修复（图标角标 + 访问请求审批回退）
 
 - **日期**：2026-06-16
-- **状态**：Accepted + **Code landed（2026-06-16）** —— 236 单测全过；剩两真机端到端验证。
+- **状态**：Accepted + **Code landed（2026-06-16）** —— 236 单测全过。**两机端到端验证已自动化并通过（2026-06-17，见末节）**。
 - **关系**：问题 1 是 [0002](0002-silent-push-and-background-sync.md) 移除 `shouldBadge` 的后续；问题 2 是访问请求同步正确性。
 
 ## 问题 1：App 图标红点「1」一直不消（已查看仍在）
@@ -41,3 +41,21 @@
 ## 验证
 - 单测：16 新（badge 3 + 访问请求 merge 4 含跨端时钟偏移回退 + 邀请 merge 3 + 重传对账 6），全套 236 过。
 - 两真机：owner 点同意一次即生效不回退；查看动态/处理邀请后主屏角标归零。
+
+## 两机端到端 UI 验证 + 冒烟夹具修复（2026-06-17）
+背景：把上面承诺的「两真机端到端验证」**自动化**。此前 `Scripts/dev-pairing-smoke.sh` 只断言存储字段（`partnerShareOwnerID`）与日志行——属**状态层**，从未验证 SwiftUI 日历**真的渲染**了对方事件。新增 **step 7**：配对成功后在 partner 机重启 app 跑一条门控 XCUITest（`testPairedPartnerCalendarShowsOwnerEvent`，仅当 runner 设 `TEST_RUNNER_SHARECAL_SMOKE_UI=1` 时跑，否则 `XCTSkip`，使常规 UI 套件在未配对机上仍绿），断言日历出现 owner 播种的事件。
+
+逐个根因（按调试顺序，每个都先取证再修）：
+1. **跨区 502 让 accept 偶发硬失败**：China↔US 账号的 CKShare accept 跨数据中心，偶返回 `serverRejectedRequest`（HTTP 502 / `ServerHTTPError` 2001 / CKError code 15）——瞬时基础设施错误，非 app bug、非死锁、非弹窗。修：`accept_share_with_retry`——侦测到 `acceptShare failed` 且匹配瞬时标记（`http status code 5xx`/`ServerHTTPError`/`code 15`）即重启重试（默认 4 次、15s 退避），并**短路**掉原本要等满 `ACCEPT_TIMEOUT` 才失败的慢失败；**非瞬时**失败立即硬失败，不掩盖真 bug。
+2. **配对后多个咨询性 sheet 盖住日历**：全新启动后**异步**叠出 ①系统通知授权弹窗（SpringBoard 持有，不在 app 元素树内）②「设置对方备注名」sheet ③「卸载或重装前请先解除配对」安全提示。原 `-ShareCalSeedProfileName` 只播种 `hasCompletedInitialProfilePrompt` / `hasResolvedExistingICloudDataPrompt`，未盖后两者的 flag；测里一次性 dismiss 又跑得太早。修（按 altitude，非在测里逐个敲按钮）：seed 路径补播 `hasPromptedPartnerNoteForCurrentPairing` + `hasShownPairingSafetyNoticeForCurrentPairing`——这两 flag **仅在换伴**（`confirmShareReplacement`）时重置，已建立配对的普通同步不动它，故启动播种后稳定。系统通知弹窗无 flag → 测内经 `springboard` 代理点掉（保留 Skip/继续 兜底）。
+3. **冒烟事件夹具陈旧（「对方」列恒 0 的真因）**：`ensureShareCalSmokeTestEvent` 按标题在 draft 日期 **±24h** 内找已有事件并**原样复用、不刷新日期**。系统日历在卸载/重装后**仍存活**，故昨日跑出的同名事件落在 ±24h 窗内被复用 ⇒ 冒烟事件停在旧日期、不在「今天」视图。直接查 partner SwiftData 实锤：最新 owner `ShareCal E2E Smoke Test` 停在 6/16（昨日），今日「对方」列=0；partner 自己的事件因时区（UTC+8）凑巧落在今日 00:14 才显示。修：命中已有事件时把 start/end 刷到本次 draft 的 now+15min，每跑必落「今天」。
+
+验证：完整两机跑 `✅ PASS`——accept 第 1 次撞 502、重试第 2 次过；双向同步；partner 日历 `对方=1`，UI 测 **8.4s** 内匹配到 owner 事件（截图存 `build/dev-smoke/ui-verify.xcresult`）。
+
+测内取舍：断言用 `.exists`（元素入 a11y 树即过），**不用** `.isHittable`——后者需先清所有弹窗、且耦合日历 ScrollView 的滚动位置（午夜/全天事件可能渲染了却滚出视口），会引入时序脆性，得不偿失。`.exists` + 表头「对方 1」已足证后台同步抵达渲染层。截图前清残留弹窗（仅产物美观，不改断言）。
+
+受影响文件（本次，**均为测试夹具 / 自动化**，对生产惰性、无 build 号变更）：
+- `Scripts/dev-pairing-smoke.sh`：`accept_share_with_retry`（502 重试，env 可调 `ACCEPT_MAX_ATTEMPTS`/`ACCEPT_RETRY_BACKOFF`）；step 7 XCUITest UI 验证。
+- `CoupleCalendarUITests/CoupleCalendarUITests.swift`：`testPairedPartnerCalendarShowsOwnerEvent`（`SHARECAL_SMOKE_UI` 门控、弹窗消解循环、截图前清弹窗）。
+- `CoupleCalendarApp.swift`：seed 路径补播两个配对后 sheet 的 flag（仅 `-ShareCalSeedProfileName` 在场时，正常启动惰性）。
+- `CalendarAccessService.swift`：`ensureShareCalSmokeTestEvent` 复用事件时刷新日期到 now+15min。

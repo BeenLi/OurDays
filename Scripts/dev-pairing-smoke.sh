@@ -237,6 +237,7 @@ rm -rf "$UI_RESULT"
 TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
   -project "$ROOT_DIR/CoupleCalendar.xcodeproj" -scheme CoupleCalendar \
   -configuration Debug -destination "platform=iOS Simulator,id=$PARTNER_UDID" \
+  -parallel-testing-enabled NO \
   -derivedDataPath "$DERIVED" \
   -resultBundlePath "$UI_RESULT" \
   -only-testing:CoupleCalendarUITests/CoupleCalendarUITests/testPairedPartnerCalendarShowsOwnerEvent \

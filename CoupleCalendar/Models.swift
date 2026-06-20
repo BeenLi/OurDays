@@ -912,6 +912,34 @@ enum DayTimelineLayoutPlan {
     }
 }
 
+struct DayTimelineNowIndicator: Equatable {
+    let y: CGFloat
+    let date: Date
+}
+
+/// Computes where (and whether) to draw the "now" line in the day timeline,
+/// mirroring `DayTimelineLayoutPlan`'s points-per-minute math. Returns nil unless
+/// `now` falls inside the displayed day `[dayStart, dayStart + 1 day)`, so the
+/// indicator only appears when the user is actually looking at today.
+enum DayTimelineNowIndicatorPlan {
+    static func indicator(
+        now: Date,
+        dayStart: Date,
+        hourHeight: CGFloat,
+        calendar: Calendar = .current
+    ) -> DayTimelineNowIndicator? {
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)
+            ?? dayStart.addingTimeInterval(24 * 60 * 60)
+        guard now >= dayStart, now < dayEnd else { return nil }
+
+        let pointsPerMinute = hourHeight / 60
+        let minutesFromStart = now.timeIntervalSince(dayStart) / 60
+        let rawY = CGFloat(minutesFromStart) * pointsPerMinute
+        let clampedY = min(max(rawY, 0), DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight))
+        return DayTimelineNowIndicator(y: clampedY, date: now)
+    }
+}
+
 enum EventVisibility: String, Codable, CaseIterable, Identifiable {
     case busyOnly
     case titleAndLocation
@@ -1319,6 +1347,41 @@ enum EventDetailInteractionPlan {
     }
 }
 
+/// Describes which comment thread a detail screen reads/writes and how to route its
+/// CloudKit writes, so the same comment UI serves both a regular `EventMirror` and a
+/// joint event (which has no mirror — see `JointScheduleEvent`). `key` is the value
+/// stored in `EventComment.eventMirrorID` (and the filter for the thread). `ownerMemberID`
+/// drives `CloudKitCommentWritePlan.destination` (== me → my private zone, else the
+/// accepted shared zone). `recordName` locates that shared zone.
+struct EventCommentAnchor: Equatable {
+    let key: String
+    let ownerMemberID: String
+    let recordName: String
+}
+
+enum EventCommentAnchorPlan {
+    static func anchor(forMirror mirror: EventMirror) -> EventCommentAnchor {
+        EventCommentAnchor(
+            key: mirror.id,
+            ownerMemberID: mirror.ownerMemberID,
+            recordName: mirror.cloudKitRecordName ?? mirror.mirrorKey
+        )
+    }
+
+    /// Joint events are anchored to the invitation, the only id BOTH partners share
+    /// (each side's own EventMirror has a different id). Routing keys off the invitation
+    /// creator: on the creator's device the comment lands in their private zone; on the
+    /// partner's it lands in the creator's shared zone. Both devices read both zones back
+    /// (`fetchEventComments` queries private + shared), so the thread is symmetric.
+    static func anchor(forInvitation invitation: EventInvitation) -> EventCommentAnchor {
+        EventCommentAnchor(
+            key: invitation.id,
+            ownerMemberID: invitation.creatorMemberID,
+            recordName: invitation.cloudKitRecordName ?? invitation.id
+        )
+    }
+}
+
 enum CalendarAccessRequestListPlan {
     private struct LogicalRequestKey: Hashable {
         let requesterMemberID: String
@@ -1565,6 +1628,22 @@ enum InvitationReuploadPlan {
                 && cloudStatusByID[invitation.id] == .pending
         }
     }
+
+    /// Companion for the CREATE side (req2 optimistic send). The creator's own
+    /// invitation lives in their PRIVATE zone, which `foregroundSync` never reads back,
+    /// so we can't diff against fetched cloud copies the way `responsesNeedingReupload`
+    /// does. Instead the local `needsCloudKitUpload` flag tracks "upload still owed":
+    /// set on optimistic create, cleared once the background upload succeeds. This
+    /// returns my creations still owing an upload so a later sync can re-push them.
+    /// Self-limiting: once the flag is cleared, nothing is returned.
+    static func creationsNeedingReupload(
+        local: [EventInvitation],
+        currentMemberID: String
+    ) -> [EventInvitation] {
+        local.filter { invitation in
+            invitation.creatorMemberID == currentMemberID && invitation.needsCloudKitUpload
+        }
+    }
 }
 
 /// The springboard app-icon badge number = unread activity + pending actions. Kept in
@@ -1618,6 +1697,7 @@ enum ActivityFeedPlan {
     static func items(
         comments: [EventComment],
         mirrors: [EventMirror],
+        invitations: [EventInvitation],
         currentMemberID: String,
         lastSeenActivityAt: Date?
     ) -> [ActivityFeedItem] {
@@ -1625,12 +1705,24 @@ enum ActivityFeedPlan {
             mirrors.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
+        let invitationsByID = Dictionary(
+            invitations.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let liveComments = comments.filter { $0.deletedAt == nil }
         let grouped = Dictionary(grouping: liveComments, by: { $0.eventMirrorID })
 
         var result: [ActivityFeedItem] = []
         for (eventMirrorID, group) in grouped {
-            guard let mirror = mirrorsByID[eventMirrorID] else { continue }
+            // Resolve the thread's title from a mirror OR, for joint-event comments
+            // (anchored to the invitation id, see EventCommentAnchorPlan), the invitation.
+            // Without the invitation fallback joint comments would silently vanish from the
+            // feed while still bumping the unread badge — surface them instead.
+            guard let title = threadTitle(
+                forAnchor: eventMirrorID,
+                mirrorsByID: mirrorsByID,
+                invitationsByID: invitationsByID
+            ) else { continue }
             let sorted = group.sorted { $0.createdAt < $1.createdAt }
             guard let latest = sorted.last else { continue }
             let unread = group.filter {
@@ -1639,7 +1731,7 @@ enum ActivityFeedPlan {
             result.append(
                 ActivityFeedItem(
                     eventMirrorID: eventMirrorID,
-                    eventTitle: mirror.title,
+                    eventTitle: title,
                     latestCommentAt: latest.createdAt,
                     latestCommentBody: latest.body,
                     latestCommentAuthorMemberID: latest.authorMemberID,
@@ -1651,14 +1743,31 @@ enum ActivityFeedPlan {
         return result.sorted { $0.latestCommentAt > $1.latestCommentAt }
     }
 
+    /// Unread badge count. Mirrors `items`' resolvability rule: only count comments the
+    /// feed can actually surface (backed by a mirror or a joint invitation), so the badge
+    /// never points at activity the Activity tab can't display.
     static func unreadCount(
         comments: [EventComment],
+        mirrors: [EventMirror],
+        invitations: [EventInvitation],
         currentMemberID: String,
         lastSeenActivityAt: Date?
     ) -> Int {
-        comments.filter {
-            isUnread($0, currentMemberID: currentMemberID, lastSeenActivityAt: lastSeenActivityAt)
+        let displayableAnchors = Set(mirrors.map(\.id)).union(invitations.map(\.id))
+        return comments.filter {
+            displayableAnchors.contains($0.eventMirrorID)
+                && isUnread($0, currentMemberID: currentMemberID, lastSeenActivityAt: lastSeenActivityAt)
         }.count
+    }
+
+    private static func threadTitle(
+        forAnchor anchor: String,
+        mirrorsByID: [String: EventMirror],
+        invitationsByID: [String: EventInvitation]
+    ) -> String? {
+        if let mirror = mirrorsByID[anchor] { return mirror.title }
+        if let invitation = invitationsByID[anchor] { return invitation.title }
+        return nil
     }
 
     private static func isUnread(
@@ -2557,6 +2666,12 @@ final class EventInvitation: Identifiable {
     var createdLocalEventID: String?
     var cloudKitRecordName: String?
     var archivedAt: Date?
+    /// Local-only (never mapped to CloudKit / deployed schema). Set true when this
+    /// device creates an invitation whose CloudKit upload is still in flight, so a
+    /// failed/optimistic send self-heals on a later `foregroundSync` instead of being
+    /// silently lost. Creator-only data lives in the creator's PRIVATE zone, which sync
+    /// never reads back, so a local flag — not a cloud diff — is what tracks "uploaded".
+    var needsCloudKitUpload: Bool = false
 
     var status: InvitationStatus {
         get { InvitationStatus(rawValue: statusRawValue) ?? .pending }
@@ -2581,9 +2696,11 @@ final class EventInvitation: Identifiable {
         updatedAt: Date = .now,
         createdLocalEventID: String? = nil,
         cloudKitRecordName: String? = nil,
-        archivedAt: Date? = nil
+        archivedAt: Date? = nil,
+        needsCloudKitUpload: Bool = false
     ) {
         self.id = id
+        self.needsCloudKitUpload = needsCloudKitUpload
         self.creatorMemberID = creatorMemberID
         self.inviteeMemberID = inviteeMemberID
         self.title = title

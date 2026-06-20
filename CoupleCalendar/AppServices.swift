@@ -721,6 +721,23 @@ struct SyncCoordinator {
                     try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
                 }
                 timing.mark("cloudInvitationResponsesReuploaded count=\(invitationsToReupload.count)")
+
+                // Self-heal optimistic creates (req2): a created invitation whose upload
+                // never landed keeps `needsCloudKitUpload` set; re-push it and clear the
+                // flag on success so it stops retrying. Creator data lives in our private
+                // zone (never read back), so this is flag-driven, not diff-driven.
+                let creationsToReupload = InvitationReuploadPlan.creationsNeedingReupload(
+                    local: localInvitationsForReupload,
+                    currentMemberID: settings.currentMemberID
+                )
+                for invitation in creationsToReupload {
+                    try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                    invitation.needsCloudKitUpload = false
+                }
+                if !creationsToReupload.isEmpty {
+                    try? modelContext.save()
+                }
+                timing.mark("cloudInvitationCreationsReuploaded count=\(creationsToReupload.count)")
             } else if !settings.iCloudSharingEnabled {
                 settings.partnerShareOwnerID = nil
                 settings.partnerSyncedDisplayName = nil

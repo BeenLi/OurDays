@@ -24,6 +24,7 @@ SYNC_TIMEOUT="${SYNC_TIMEOUT:-300}"               # a foreground sync to finish
 ACCEPT_TIMEOUT="${ACCEPT_TIMEOUT:-900}"           # accept a share (cross-region sensitive)
 IMPORT_TIMEOUT="${IMPORT_TIMEOUT:-900}"           # import partner's mirror after accept
 PARTICIPANT_TIMEOUT="${PARTICIPANT_TIMEOUT:-900}" # see partner as accepted participant
+DIAG_TIMEOUT="${DIAG_TIMEOUT:-900}"               # invitation/comment diagnostic round-trip
 
 # Share acceptance is the cross-region-sensitive step. CloudKit can reject the accept
 # with a transient serverRejectedRequest (HTTP 502 ServerHTTPError, CKError code 15)
@@ -246,4 +247,47 @@ TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
   -quiet || fail "partner calendar UI did not render the owner's synced event (see $UI_RESULT)"
 log "Partner calendar UI rendered the owner's synced event (screenshot in $UI_RESULT)."
 
-log "✅ PASS: mutual two-person pairing established, events synced both ways, and the partner UI renders the owner's event."
+# ---------- 8. Joint event: owner invites, partner accepts ----------
+# Exercises req2 (invitation sync) + sets up req1 (joint event). The owner seeds an
+# invitation matching its smoke event; the partner syncs, accepts (real EventKit event so
+# it isn't auto-canceled), and uploads the acceptance.
+log "Owner: seeding invitation for the smoke event..."
+launch_app "$OWNER_UDID" "owner-seed-invite" -ShareCalSeedInvitation
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag seedInvitation succeeded" $DIAG_TIMEOUT "owner seeds invitation"
+
+log "Partner: accepting the invitation (creates joint event)..."
+launch_app "$PARTNER_UDID" "partner-accept-invite" -ShareCalAcceptInvitation
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag acceptInvitation succeeded" $DIAG_TIMEOUT "partner accepts invitation"
+
+# ---------- 9. Joint comment symmetry: owner comments → partner sees → replies → owner sees ----------
+OWNER_COMMENT="owner-hello-$RANDOM"
+PARTNER_COMMENT="partner-reply-$RANDOM"
+
+log "Owner: commenting on the joint event ('$OWNER_COMMENT')..."
+launch_app "$OWNER_UDID" "owner-comment" -ShareCalAddJointComment "$OWNER_COMMENT"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag addJointComment succeeded" $DIAG_TIMEOUT "owner adds joint comment"
+
+log "Partner: probing joint comments (must see the owner's comment)..."
+launch_app "$PARTNER_UDID" "partner-probe1" -ShareCalProbeJointComments
+PARTNER_PROBE1=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag jointComments count=" $DIAG_TIMEOUT "partner probes joint comments")
+echo "$PARTNER_PROBE1" | grep -q "$OWNER_COMMENT" \
+  || fail "partner did NOT see the owner's joint comment ('$OWNER_COMMENT'). Probe: $PARTNER_PROBE1"
+log "Partner sees the owner's comment ✓"
+
+log "Partner: replying on the joint event ('$PARTNER_COMMENT')..."
+launch_app "$PARTNER_UDID" "partner-reply" -ShareCalAddJointComment "$PARTNER_COMMENT"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag addJointComment succeeded" $DIAG_TIMEOUT "partner adds joint reply"
+
+log "Owner: probing joint comments (must see BOTH comments = symmetric thread)..."
+launch_app "$OWNER_UDID" "owner-probe2" -ShareCalProbeJointComments
+OWNER_PROBE2=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag jointComments count=" $DIAG_TIMEOUT "owner probes joint comments")
+echo "$OWNER_PROBE2" | grep -q "$OWNER_COMMENT" \
+  || fail "owner lost its own joint comment ('$OWNER_COMMENT'). Probe: $OWNER_PROBE2"
+echo "$OWNER_PROBE2" | grep -q "$PARTNER_COMMENT" \
+  || fail "owner did NOT see the partner's reply ('$PARTNER_COMMENT') — thread is NOT symmetric. Probe: $OWNER_PROBE2"
+log "Owner sees BOTH comments ✓ (joint comment thread is symmetric)"
+
+xcrun simctl terminate "$OWNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
+xcrun simctl terminate "$PARTNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
+
+log "✅ PASS: mutual two-person pairing established, events synced both ways, the partner UI renders the owner's event, and a joint event's comment thread is shared symmetrically across both partners."

@@ -51,6 +51,7 @@ struct RootView: View {
     @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
     @Query(sort: \CalendarAccessRequest.createdAt) private var accessRequests: [CalendarAccessRequest]
     @Query(sort: \EventComment.createdAt) private var comments: [EventComment]
+    @Query(sort: \EventMirror.startDate) private var mirrors: [EventMirror]
 
     private var pairingStatus: PairingStatus {
         PairingSettingsPlan.status(
@@ -71,6 +72,8 @@ struct RootView: View {
     private var unreadActivityCount: Int {
         ActivityFeedPlan.unreadCount(
             comments: comments,
+            mirrors: mirrors,
+            invitations: invitations,
             currentMemberID: settings.currentMemberID,
             lastSeenActivityAt: settings.lastSeenActivityAt
         )
@@ -826,6 +829,7 @@ struct CalendarTabView: View {
     @State private var selectedDate = Date()
     @State private var mode: CalendarMode = .day
     @State private var selectedEvent: EventMirror?
+    @State private var selectedJointEvent: JointScheduleEvent?
     @State private var focusedJointEventID: String?
     @State private var activeCalendarSheet: CalendarSheet?
     @State private var localDisplayMirrors: [EventMirror] = []
@@ -1002,7 +1006,8 @@ struct CalendarTabView: View {
                                 ),
                                 partnerEvents: partnerEvents,
                                 availableWidth: proxy.size.width,
-                                onSelect: { selectedEvent = $0 }
+                                onSelect: { selectedEvent = $0 },
+                                onSelectJoint: { selectedJointEvent = $0 }
                             )
                         case .week:
                             WeekAgendaView(
@@ -1037,6 +1042,13 @@ struct CalendarTabView: View {
         }
         .sheet(item: $selectedEvent) { event in
             EventDetailView(event: event)
+        }
+        .sheet(item: $selectedJointEvent) { jointEvent in
+            // The joint event is derived from an invitation; look the invitation back up
+            // so the detail can anchor its comment thread to it (shared across partners).
+            if let invitation = invitations.first(where: { $0.id == jointEvent.id }) {
+                JointEventDetailView(event: jointEvent, invitation: invitation)
+            }
         }
         .onAppear {
             refreshAuthorizationState()
@@ -1725,6 +1737,7 @@ struct DayAlignedTimelineView: View {
     let partnerEvents: [EventMirror]
     let availableWidth: CGFloat
     let onSelect: (EventMirror) -> Void
+    let onSelectJoint: (JointScheduleEvent) -> Void
 
     private let hourHeight: CGFloat = 58
     private let railWidth: CGFloat = 46
@@ -1819,7 +1832,17 @@ struct DayAlignedTimelineView: View {
                                 y: eventY
                             )
                             .accessibilityLabel("\(event.title), \(timeText(for: event)), \(event.calendarTitle), \(settings.strings.jointScheduleLabel)")
+                            .contentShape(Rectangle())
+                            .onTapGesture { onSelectJoint(event) }
                         }
+
+                        DayTimelineNowIndicatorOverlay(
+                            dayStart: dayStart,
+                            hourHeight: hourHeight,
+                            railWidth: railWidth,
+                            railSpacing: railSpacing,
+                            contentWidth: contentWidth
+                        )
                     }
                     .frame(width: contentWidth, height: dayHeight, alignment: .topLeading)
                     .padding(.horizontal, horizontalPadding)
@@ -1985,6 +2008,52 @@ struct DayTimelineHourRail: View {
             }
         }
         .frame(width: width, height: DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight), alignment: .topTrailing)
+    }
+}
+
+/// The red "now" line + time label drawn over the day timeline, matching the
+/// iOS built-in calendar. `TimelineView(.everyMinute)` refreshes it cheaply while
+/// the view is visible; `DayTimelineNowIndicatorPlan` returns nil (hiding it)
+/// unless the displayed day is today. Non-interactive so it never blocks taps.
+struct DayTimelineNowIndicatorOverlay: View {
+    let dayStart: Date
+    let hourHeight: CGFloat
+    let railWidth: CGFloat
+    let railSpacing: CGFloat
+    let contentWidth: CGFloat
+
+    var body: some View {
+        let dayHeight = DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight)
+        let lineX = railWidth + railSpacing
+
+        TimelineView(.everyMinute) { context in
+            if let indicator = DayTimelineNowIndicatorPlan.indicator(
+                now: context.date,
+                dayStart: dayStart,
+                hourHeight: hourHeight
+            ) {
+                ZStack(alignment: .topLeading) {
+                    Text(indicator.date.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.red)
+                        .frame(width: railWidth, alignment: .trailing)
+                        .offset(y: indicator.y - 7)
+
+                    Rectangle()
+                        .fill(Color.red)
+                        .frame(width: max(0, contentWidth - lineX), height: 1.5)
+                        .offset(x: lineX, y: indicator.y - 0.75)
+
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 7, height: 7)
+                        .offset(x: lineX - 3.5, y: indicator.y - 3.5)
+                }
+                .frame(width: contentWidth, height: dayHeight, alignment: .topLeading)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
     }
 }
 
@@ -2799,25 +2868,119 @@ struct CreateInviteView: View {
     }
 }
 
+/// The comments list + input, reused by `EventDetailView` (regular events) and
+/// `JointEventDetailView` (joint events). Behavior is identical for both; only the
+/// `EventCommentAnchor` differs, which is what keys the thread and routes CloudKit writes.
+struct EventCommentsSection: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(SettingsStore.self) private var settings
+    @Environment(AppServices.self) private var services
+    @Query(sort: \EventComment.createdAt) private var comments: [EventComment]
+    @State private var commentBody = ""
+    @State private var commentError: String?
+    let anchor: EventCommentAnchor
+
+    private var threadComments: [EventComment] {
+        comments.filter { $0.eventMirrorID == anchor.key && $0.deletedAt == nil }
+    }
+
+    var body: some View {
+        let strings = settings.strings
+        Section(strings.commentsSection) {
+            ForEach(threadComments) { comment in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(authorDisplayName(comment.authorMemberID))
+                            .font(.caption.weight(.semibold))
+                        Spacer()
+                        Text(comment.createdAt, format: .dateTime.hour().minute())
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(comment.body)
+                }
+                .swipeActions {
+                    Button(role: .destructive) {
+                        services.commentService.delete(comment)
+                        try? modelContext.save()
+                    } label: {
+                        Label(strings.deleteButton, systemImage: "trash")
+                    }
+                }
+            }
+
+            HStack {
+                TextField(strings.addCommentPlaceholder, text: $commentBody, axis: .vertical)
+                Button {
+                    addComment()
+                } label: {
+                    Image(systemName: "paperplane.fill")
+                }
+                .disabled(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if let commentError {
+                Text(commentError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func authorDisplayName(_ authorMemberID: String) -> String {
+        MemberDisplayNamePlan.displayName(
+            forMemberID: authorMemberID,
+            currentMemberID: settings.currentMemberID,
+            currentDisplayName: settings.currentDisplayName,
+            selfFallback: settings.strings.meTitle,
+            partnerDisplayName: settings.partnerStatusDisplayName
+        )
+    }
+
+    private func addComment() {
+        let comment = services.commentService.createComment(
+            eventMirrorID: anchor.key,
+            authorMemberID: settings.currentMemberID,
+            body: commentBody
+        )
+        modelContext.insert(comment)
+        do {
+            try modelContext.save()
+            commentError = nil
+            let anchor = anchor
+            let currentMemberID = settings.currentMemberID
+            if let cloudKit = services.cloudKitIfAvailable {
+                Task {
+                    do {
+                        try await cloudKit.saveCommentForSync(
+                            comment,
+                            eventOwnerMemberID: anchor.ownerMemberID,
+                            currentMemberID: currentMemberID,
+                            eventRecordName: anchor.recordName
+                        )
+                    } catch {
+                        commentError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+                    }
+                }
+            }
+            commentBody = ""
+        } catch {
+            commentError = error.localizedDescription
+        }
+    }
+}
+
 struct EventDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(SettingsStore.self) private var settings
     @Environment(AppServices.self) private var services
-    @Query(sort: \EventComment.createdAt) private var comments: [EventComment]
     @Query(sort: \EventMirror.startDate) private var mirrors: [EventMirror]
-    @State private var commentBody = ""
     @State private var inviteError: String?
     @State private var inviteSuccessMessage: String?
-    @State private var isSendingInvite = false
     @State private var conflictMessage: String?
     @State private var isShowingInviteConflict = false
     let event: EventMirror
-
-    var eventComments: [EventComment] {
-        guard EventDetailInteractionPlan.canComment(on: event) else { return [] }
-        return comments.filter { $0.eventMirrorID == event.id && $0.deletedAt == nil }
-    }
 
     var body: some View {
         let strings = settings.strings
@@ -2843,16 +3006,11 @@ struct EventDetailView: View {
                     Button {
                         createInviteAfterConflictCheck()
                     } label: {
-                        Label(
-                            isSendingInvite ? strings.sendingInvitationButton : strings.invitePartnerButton,
-                            systemImage: isSendingInvite ? "clock.arrow.circlepath" : "person.badge.plus"
-                        )
+                        Label(strings.invitePartnerButton, systemImage: "person.badge.plus")
                     }
-                    .disabled(isSendingInvite)
-
-                    if isSendingInvite {
-                        ProgressView()
-                    }
+                    // Optimistic send shows success instantly; disable to prevent a
+                    // double-tap creating a duplicate invitation within this sheet.
+                    .disabled(inviteSuccessMessage != nil)
 
                     if let inviteSuccessMessage {
                         Text(inviteSuccessMessage)
@@ -2868,39 +3026,7 @@ struct EventDetailView: View {
                 }
 
                 if EventDetailInteractionPlan.canComment(on: event) {
-                    Section(strings.commentsSection) {
-                        ForEach(eventComments) { comment in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(commentAuthorDisplayName(comment.authorMemberID))
-                                        .font(.caption.weight(.semibold))
-                                    Spacer()
-                                    Text(comment.createdAt, format: .dateTime.hour().minute())
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text(comment.body)
-                            }
-                            .swipeActions {
-                                Button(role: .destructive) {
-                                    services.commentService.delete(comment)
-                                    try? modelContext.save()
-                                } label: {
-                                    Label(strings.deleteButton, systemImage: "trash")
-                                }
-                            }
-                        }
-
-                        HStack {
-                            TextField(strings.addCommentPlaceholder, text: $commentBody, axis: .vertical)
-                            Button {
-                                addComment()
-                            } label: {
-                                Image(systemName: "paperplane.fill")
-                            }
-                            .disabled(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
+                    EventCommentsSection(anchor: EventCommentAnchorPlan.anchor(forMirror: event))
                 }
             }
             .navigationTitle(strings.eventTitle)
@@ -2934,7 +3060,6 @@ struct EventDetailView: View {
     }
 
     private func createInviteAfterConflictCheck() {
-        guard !isSendingInvite else { return }
         inviteError = nil
         inviteSuccessMessage = nil
         let conflicts = InvitationConflictPlan.conflicts(
@@ -2956,10 +3081,9 @@ struct EventDetailView: View {
     }
 
     private func createInvite() {
-        guard !isSendingInvite else { return }
-        isSendingInvite = true
         inviteError = nil
         inviteSuccessMessage = nil
+        let cloudKit = services.cloudKitIfAvailable
         let invitation = EventInvitation(
             creatorMemberID: settings.currentMemberID,
             inviteeMemberID: settings.partnerOwnerIDForLocalData,
@@ -2969,28 +3093,35 @@ struct EventDetailView: View {
             isAllDay: event.isAllDay,
             location: event.location,
             notes: event.notes,
-            statusRawValue: InvitationStatus.pending.rawValue
+            statusRawValue: InvitationStatus.pending.rawValue,
+            // Mark "upload owed" so a failed/optimistic send self-heals on the next sync.
+            needsCloudKitUpload: cloudKit != nil
         )
         modelContext.insert(invitation)
         do {
             try modelContext.save()
-            if let cloudKit = services.cloudKitIfAvailable {
-                Task {
-                    do {
-                        try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
-                        inviteSuccessMessage = settings.strings.invitationSentMessage
-                    } catch {
-                        inviteError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
-                    }
-                    isSendingInvite = false
-                }
-            } else {
-                inviteSuccessMessage = settings.strings.invitationSentMessage
-                isSendingInvite = false
-            }
         } catch {
+            modelContext.delete(invitation)
             inviteError = error.localizedDescription
-            isSendingInvite = false
+            return
+        }
+
+        // Optimistic send (req2): the invitation is durably in the local store, so report
+        // success immediately rather than blocking on the CloudKit round-trip. The upload
+        // moves to the background; if it fails, `needsCloudKitUpload` keeps it queued for
+        // self-heal on the next foregroundSync (InvitationReuploadPlan.creationsNeedingReupload).
+        inviteSuccessMessage = settings.strings.invitationSentMessage
+
+        guard let cloudKit else { return }
+        Task {
+            do {
+                try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                invitation.needsCloudKitUpload = false
+                try? modelContext.save()
+            } catch {
+                // Leave the flag set; the next sync retries. Don't surface an error that
+                // would contradict the success already shown to the user.
+            }
         }
     }
 
@@ -2999,16 +3130,6 @@ struct EventDetailView: View {
             return settings.strings.allDay
         }
         return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
-    }
-
-    private func commentAuthorDisplayName(_ authorMemberID: String) -> String {
-        MemberDisplayNamePlan.displayName(
-            forMemberID: authorMemberID,
-            currentMemberID: settings.currentMemberID,
-            currentDisplayName: settings.currentDisplayName,
-            selfFallback: settings.strings.meTitle,
-            partnerDisplayName: settings.partnerStatusDisplayName
-        )
     }
 
     private func performSync() async {
@@ -3033,37 +3154,79 @@ struct EventDetailView: View {
         ) else { return }
         await performSync()
     }
+}
 
-    private func addComment() {
-        let comment = services.commentService.createComment(
-            eventMirrorID: event.id,
-            authorMemberID: settings.currentMemberID,
-            body: commentBody
-        )
-        modelContext.insert(comment)
-        do {
-            try modelContext.save()
-            let eventOwnerMemberID = event.ownerMemberID
-            let currentMemberID = settings.currentMemberID
-            let eventRecordName = event.cloudKitRecordName ?? event.mirrorKey
-            if let cloudKit = services.cloudKitIfAvailable {
-                Task {
-                    do {
-                        try await cloudKit.saveCommentForSync(
-                            comment,
-                            eventOwnerMemberID: eventOwnerMemberID,
-                            currentMemberID: currentMemberID,
-                            eventRecordName: eventRecordName
-                        )
-                    } catch {
-                        inviteError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+/// Detail screen for a joint (共同) event. A joint event has no `EventMirror` of its own
+/// (it's derived from an accepted `EventInvitation`), so it shows the invitation's fields
+/// and a comments thread anchored to the invitation — letting both partners comment on
+/// the same thread. No "invite partner" section: it's already a shared/accepted event.
+struct JointEventDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Environment(SettingsStore.self) private var settings
+    @Environment(AppServices.self) private var services
+    let event: JointScheduleEvent
+    let invitation: EventInvitation
+
+    var body: some View {
+        let strings = settings.strings
+
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent(strings.calendarLabel, value: event.calendarTitle)
+                    LabeledContent(strings.startsLabel, value: strings.abbreviatedDateTimeText(event.startDate))
+                    LabeledContent(strings.endsLabel, value: strings.abbreviatedDateTimeText(event.endDate))
+                    if let location = event.location {
+                        LabeledContent(strings.locationLabel, value: location)
+                    }
+                    if let notes = event.notes {
+                        Text(notes)
+                    }
+                    Label(strings.jointScheduleLabel, systemImage: "person.2.fill")
+                        .foregroundStyle(.green)
+                } header: {
+                    Text(event.title)
+                }
+
+                EventCommentsSection(anchor: EventCommentAnchorPlan.anchor(forInvitation: invitation))
+            }
+            .navigationTitle(strings.eventTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .task {
+                await syncOnOpenIfNeeded()
+            }
+            .refreshable {
+                await performSync()
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(strings.doneButton) {
+                        dismiss()
                     }
                 }
             }
-            commentBody = ""
-        } catch {
-            inviteError = error.localizedDescription
         }
+    }
+
+    private func performSync() async {
+        guard settings.syncPhase != .syncing else { return }
+        let coordinator = SyncCoordinator(
+            calendarAccess: services.calendarAccess,
+            eventMirrorService: services.eventMirrorService,
+            cloudKit: services.cloudKitIfAvailable
+        )
+        await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
+    }
+
+    private func syncOnOpenIfNeeded() async {
+        guard ForegroundSyncPlan.shouldRunAutomaticSync(
+            lastSyncAt: settings.lastSyncAt,
+            now: .now,
+            syncPhase: settings.syncPhase,
+            hasPendingAcceptedShare: false
+        ) else { return }
+        await performSync()
     }
 }
 
@@ -3071,13 +3234,16 @@ struct ActivityTabView: View {
     @Environment(SettingsStore.self) private var settings
     @Query(sort: \EventComment.createdAt) private var comments: [EventComment]
     @Query(sort: \EventMirror.startDate) private var mirrors: [EventMirror]
+    @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
     @State private var selectedEvent: EventMirror?
+    @State private var selectedJointEvent: JointScheduleEvent?
     @State private var seenSnapshot: Date?
 
     private var items: [ActivityFeedItem] {
         ActivityFeedPlan.items(
             comments: comments,
             mirrors: mirrors,
+            invitations: invitations,
             currentMemberID: settings.currentMemberID,
             lastSeenActivityAt: seenSnapshot
         )
@@ -3095,7 +3261,7 @@ struct ActivityTabView: View {
             } else {
                 List(items) { item in
                     Button {
-                        selectedEvent = mirror(for: item.eventMirrorID)
+                        open(item)
                     } label: {
                         ActivityFeedRow(item: item, authorName: authorName(for: item))
                     }
@@ -3108,7 +3274,30 @@ struct ActivityTabView: View {
         .sheet(item: $selectedEvent) { event in
             EventDetailView(event: event)
         }
+        .sheet(item: $selectedJointEvent) { jointEvent in
+            if let invitation = invitations.first(where: { $0.id == jointEvent.id }) {
+                JointEventDetailView(event: jointEvent, invitation: invitation)
+            }
+        }
         .onAppear(perform: markActivitySeen)
+    }
+
+    /// A feed row maps to either a regular event (mirror) or a joint event (invitation);
+    /// open the matching detail. Mirrors the anchor resolution in `ActivityFeedPlan`.
+    private func open(_ item: ActivityFeedItem) {
+        if let mirror = mirror(for: item.eventMirrorID) {
+            selectedEvent = mirror
+        } else if let invitation = invitations.first(where: { $0.id == item.eventMirrorID }) {
+            selectedJointEvent = JointScheduleEvent(
+                id: invitation.id,
+                title: invitation.title,
+                startDate: invitation.startDate,
+                endDate: invitation.endDate,
+                isAllDay: invitation.isAllDay,
+                location: invitation.location,
+                notes: invitation.notes
+            )
+        }
     }
 
     /// Snapshot the previous last-seen time (so this visit still highlights what was

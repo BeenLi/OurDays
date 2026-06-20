@@ -1851,6 +1851,80 @@ final class DayTimelineLayoutPlanTests: XCTestCase {
     }
 }
 
+final class DayTimelineNowIndicatorPlanTests: XCTestCase {
+    private let calendar = Calendar(identifier: .gregorian)
+
+    func testPositionsLineByMinutesSinceStartOfDayWhenViewingToday() throws {
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 20)))
+        let now = try XCTUnwrap(calendar.date(bySettingHour: 9, minute: 30, second: 0, of: dayStart))
+
+        let indicator = try XCTUnwrap(
+            DayTimelineNowIndicatorPlan.indicator(now: now, dayStart: dayStart, hourHeight: 48, calendar: calendar)
+        )
+
+        XCTAssertEqual(indicator.y, 9.5 * 48, accuracy: 0.001)
+        XCTAssertEqual(indicator.date, now)
+    }
+
+    func testHidesWhenViewingADifferentDay() throws {
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 20)))
+        let nowYesterday = dayStart.addingTimeInterval(-60)
+        let nowTomorrow = dayStart.addingTimeInterval(24 * 60 * 60 + 60)
+
+        XCTAssertNil(DayTimelineNowIndicatorPlan.indicator(now: nowYesterday, dayStart: dayStart, hourHeight: 58, calendar: calendar))
+        XCTAssertNil(DayTimelineNowIndicatorPlan.indicator(now: nowTomorrow, dayStart: dayStart, hourHeight: 58, calendar: calendar))
+    }
+
+    func testKeepsLineWithinTheDayAtBoundaries() throws {
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 20)))
+        let dayHeight = DayTimelineLayoutPlan.dayHeight(hourHeight: 58)
+
+        let atMidnight = try XCTUnwrap(
+            DayTimelineNowIndicatorPlan.indicator(now: dayStart, dayStart: dayStart, hourHeight: 58, calendar: calendar)
+        )
+        XCTAssertEqual(atMidnight.y, 0, accuracy: 0.001)
+
+        let lastMinute = dayStart.addingTimeInterval(24 * 60 * 60 - 60)
+        let nearEnd = try XCTUnwrap(
+            DayTimelineNowIndicatorPlan.indicator(now: lastMinute, dayStart: dayStart, hourHeight: 58, calendar: calendar)
+        )
+        XCTAssertLessThanOrEqual(nearEnd.y, dayHeight)
+        XCTAssertGreaterThan(nearEnd.y, 0)
+    }
+}
+
+final class EventCommentAnchorPlanTests: XCTestCase {
+    func testInvitationAnchorUsesInvitationIdAndCreatorForSymmetricRouting() {
+        let invitation = EventInvitation(
+            id: "invite-1",
+            creatorMemberID: "_creator",
+            inviteeMemberID: "hashed-invitee",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date(timeIntervalSince1970: 60),
+            location: nil,
+            notes: nil
+        )
+
+        let anchor = EventCommentAnchorPlan.anchor(forInvitation: invitation)
+        // Both partners key the thread off the shared invitation id.
+        XCTAssertEqual(anchor.key, "invite-1")
+        XCTAssertEqual(anchor.recordName, "invite-1")
+        XCTAssertEqual(anchor.ownerMemberID, "_creator")
+
+        // The creator's comment lands in their private zone; the partner's lands in the
+        // creator's shared zone. Both devices read both zones back, so the thread is shared.
+        XCTAssertEqual(
+            CloudKitCommentWritePlan.destination(eventOwnerMemberID: anchor.ownerMemberID, currentMemberID: "_creator"),
+            .privateOwnerZone
+        )
+        XCTAssertEqual(
+            CloudKitCommentWritePlan.destination(eventOwnerMemberID: anchor.ownerMemberID, currentMemberID: "_partner"),
+            .acceptedSharedZone
+        )
+    }
+}
+
 final class JointSchedulePlanTests: XCTestCase {
     func testAcceptedInvitationCreatesJointEventForBothMembers() {
         let invitation = EventInvitation(
@@ -4229,6 +4303,7 @@ final class ActivityFeedPlanTests: XCTestCase {
         let items = ActivityFeedPlan.items(
             comments: comments,
             mirrors: mirrors,
+            invitations: [],
             currentMemberID: me,
             lastSeenActivityAt: nil
         )
@@ -4250,6 +4325,8 @@ final class ActivityFeedPlanTests: XCTestCase {
 
         let count = ActivityFeedPlan.unreadCount(
             comments: comments,
+            mirrors: [mirror(id: "A", title: "Dinner")],
+            invitations: [],
             currentMemberID: me,
             lastSeenActivityAt: Date(timeIntervalSince1970: 150)
         )
@@ -4266,6 +4343,8 @@ final class ActivityFeedPlanTests: XCTestCase {
 
         let count = ActivityFeedPlan.unreadCount(
             comments: comments,
+            mirrors: [mirror(id: "A", title: "Dinner")],
+            invitations: [],
             currentMemberID: me,
             lastSeenActivityAt: nil
         )
@@ -4281,6 +4360,8 @@ final class ActivityFeedPlanTests: XCTestCase {
 
         let count = ActivityFeedPlan.unreadCount(
             comments: comments,
+            mirrors: [mirror(id: "A", title: "Dinner")],
+            invitations: [],
             currentMemberID: me,
             lastSeenActivityAt: nil
         )
@@ -4298,6 +4379,7 @@ final class ActivityFeedPlanTests: XCTestCase {
         let items = ActivityFeedPlan.items(
             comments: comments,
             mirrors: mirrors,
+            invitations: [],
             currentMemberID: me,
             lastSeenActivityAt: nil
         )
@@ -4308,7 +4390,7 @@ final class ActivityFeedPlanTests: XCTestCase {
         XCTAssertEqual(items[0].unreadCount, 1)
     }
 
-    func testSkipsCommentsWithoutMatchingMirror() {
+    func testSkipsCommentsWithoutMatchingMirrorOrInvitation() {
         let mirrors = [mirror(id: "A", title: "Dinner")]
         let comments = [
             comment(event: "A", author: partner, body: "real", at: 100),
@@ -4318,11 +4400,72 @@ final class ActivityFeedPlanTests: XCTestCase {
         let items = ActivityFeedPlan.items(
             comments: comments,
             mirrors: mirrors,
+            invitations: [],
             currentMemberID: me,
             lastSeenActivityAt: nil
         )
 
         XCTAssertEqual(items.map(\.eventMirrorID), ["A"])
+    }
+
+    func testSurfacesJointEventCommentsViaInvitationAndCountsThemUnread() {
+        // Joint-event comments are anchored to the invitation id (EventCommentAnchorPlan),
+        // which has no EventMirror. They must still show in the feed (titled by the
+        // invitation) AND count toward unread — otherwise the badge points at an invisible row.
+        let invitations = [invitation(id: "inv-1", title: "Joint Dinner")]
+        let comments = [
+            comment(event: "inv-1", author: partner, body: "see you at the joint event", at: 500),
+        ]
+
+        let items = ActivityFeedPlan.items(
+            comments: comments,
+            mirrors: [],
+            invitations: invitations,
+            currentMemberID: me,
+            lastSeenActivityAt: nil
+        )
+        XCTAssertEqual(items.map(\.eventMirrorID), ["inv-1"])
+        XCTAssertEqual(items[0].eventTitle, "Joint Dinner")
+        XCTAssertEqual(items[0].unreadCount, 1)
+
+        let count = ActivityFeedPlan.unreadCount(
+            comments: comments,
+            mirrors: [],
+            invitations: invitations,
+            currentMemberID: me,
+            lastSeenActivityAt: nil
+        )
+        XCTAssertEqual(count, 1)
+    }
+
+    func testUnreadCountIgnoresUndisplayableOrphanComments() {
+        // A comment whose anchor resolves to neither a mirror nor an invitation can't be
+        // shown, so it must not inflate the badge (the bug this guards against).
+        let comments = [comment(event: "ghost", author: partner, body: "orphan", at: 100)]
+
+        let count = ActivityFeedPlan.unreadCount(
+            comments: comments,
+            mirrors: [],
+            invitations: [],
+            currentMemberID: me,
+            lastSeenActivityAt: nil
+        )
+
+        XCTAssertEqual(count, 0)
+    }
+
+    private func invitation(id: String, title: String) -> EventInvitation {
+        EventInvitation(
+            id: id,
+            creatorMemberID: me,
+            inviteeMemberID: partner,
+            title: title,
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date(timeIntervalSince1970: 3600),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.accepted.rawValue
+        )
     }
 
     private func comment(
@@ -4805,6 +4948,43 @@ final class StatusReuploadPlanTests: XCTestCase {
             InvitationReuploadPlan.responsesNeedingReupload(
                 local: local, cloud: cloud, currentMemberID: me
             ).isEmpty
+        )
+    }
+
+    func testReuploadsMyCreationStillOwingAnUpload() {
+        // req2 optimistic send: I created an invitation whose background upload never
+        // landed (needsCloudKitUpload still set). It lives in my private zone, never read
+        // back, so the flag — not a cloud diff — is what queues it for self-heal.
+        let local = [
+            creation(id: "owed", creator: me, needsUpload: true),
+            creation(id: "done", creator: me, needsUpload: false),
+            creation(id: "partners", creator: partner, needsUpload: true), // not mine
+        ]
+        XCTAssertEqual(
+            InvitationReuploadPlan.creationsNeedingReupload(local: local, currentMemberID: me).map(\.id),
+            ["owed"]
+        )
+    }
+
+    func testNoCreationReuploadWhenNothingOwesAnUpload() {
+        let local = [creation(id: "done", creator: me, needsUpload: false)]
+        XCTAssertTrue(
+            InvitationReuploadPlan.creationsNeedingReupload(local: local, currentMemberID: me).isEmpty
+        )
+    }
+
+    private func creation(id: String, creator: String, needsUpload: Bool) -> EventInvitation {
+        EventInvitation(
+            id: id,
+            creatorMemberID: creator,
+            inviteeMemberID: "hashed-invitee-id",
+            title: "Event",
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date(timeIntervalSince1970: 60),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.pending.rawValue,
+            needsCloudKitUpload: needsUpload
         )
     }
 

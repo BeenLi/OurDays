@@ -384,6 +384,17 @@ enum ShareCalLaunchDiagnosticPlan {
     /// Marker for scripts that grep the unified log for the share invitation URL.
     static let pairingShareURLLogPrefix = "ShareCalPairingShareURL:"
 
+    // Joint-event / comment smoke diagnostics (drive an invitation → accept → joint
+    // event → cross-device comment thread). All log a `ShareCalDiag ...` marker the
+    // smoke script greps. Inert without their argument.
+    static let seedInvitationArgument = "-ShareCalSeedInvitation"
+    static let seedInvitationTitleArgument = "-ShareCalSeedInvitationTitle"
+    static let acceptInvitationArgument = "-ShareCalAcceptInvitation"
+    static let addJointCommentArgument = "-ShareCalAddJointComment"
+    static let probeJointCommentsArgument = "-ShareCalProbeJointComments"
+    /// Common prefix for the new diagnostics' log markers.
+    static let diagnosticLogPrefix = "ShareCalDiag"
+
     static func shouldRunCloudKitWriteProbe(arguments: [String]) -> Bool {
         arguments.contains(cloudKitWriteProbeArgument)
     }
@@ -406,6 +417,26 @@ enum ShareCalLaunchDiagnosticPlan {
 
     static func shouldForceSync(arguments: [String]) -> Bool {
         arguments.contains(forceSyncArgument)
+    }
+
+    static func shouldSeedInvitation(arguments: [String]) -> Bool {
+        arguments.contains(seedInvitationArgument)
+    }
+
+    static func seedInvitationTitle(arguments: [String]) -> String? {
+        value(after: seedInvitationTitleArgument, arguments: arguments)
+    }
+
+    static func shouldAcceptInvitation(arguments: [String]) -> Bool {
+        arguments.contains(acceptInvitationArgument)
+    }
+
+    static func jointCommentBody(arguments: [String]) -> String? {
+        value(after: addJointCommentArgument, arguments: arguments)
+    }
+
+    static func shouldProbeJointComments(arguments: [String]) -> Bool {
+        arguments.contains(probeJointCommentsArgument)
     }
 
     static func seedProfileName(arguments: [String] = ProcessInfo.processInfo.arguments) -> String? {

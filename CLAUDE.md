@@ -25,7 +25,7 @@ There is one scheme (`CoupleCalendar`) and all unit tests live in a single file,
 
 ## What this app is
 
-"ShareCal" — a strictly **two-person** couples calendar. Each partner mirrors selected EventKit calendar events into CloudKit; partners see each other's events via one CKShare. Multi-person sharing is intentionally unsupported and must not be reintroduced.
+"OurDays" — a strictly **two-person** couples calendar. (The app was renamed from "ShareCal"; many internal code identifiers, launch arguments, type names like `ShareCalStrings`, and the local EventKit calendar name still use the `ShareCal` prefix for backward compatibility — do not rename those.) Each partner mirrors selected EventKit calendar events into CloudKit; partners see each other's events via one CKShare. Multi-person sharing is intentionally unsupported and must not be reintroduced.
 
 ## Architecture
 

@@ -1,12 +1,18 @@
 import XCTest
 
 final class CoupleCalendarUITests: XCTestCase {
+    /// Generous wait for an element that appears after an async UI state transition
+    /// (e.g. sheet dismiss → root-flow re-evaluation → card render). On a loaded CI
+    /// runner, `app.launch()` wait-for-idle alone has been seen to take ~45s, so a
+    /// 3s wait straddling such a transition expires mid-render on a healthy app.
+    private static let transitionTimeout: TimeInterval = 30
+
     func testLaunches() {
         let app = XCUIApplication()
         app.launch()
         dismissInitialProfilePromptIfNeeded(in: app)
 
-        XCTAssertTrue(app.buttons["compact-date-picker-button"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["compact-date-picker-button"].waitForExistence(timeout: Self.transitionTimeout))
         XCTAssertTrue(app.buttons["compact-create-invite-button"].exists)
         XCTAssertFalse(app.buttons["compact-sync-button"].exists)
     }
@@ -17,7 +23,7 @@ final class CoupleCalendarUITests: XCTestCase {
         dismissInitialProfilePromptIfNeeded(in: app)
 
         let datePickerButton = app.buttons["compact-date-picker-button"]
-        XCTAssertTrue(datePickerButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(datePickerButton.waitForExistence(timeout: Self.transitionTimeout))
         let initialTitle = datePickerButton.value as? String
 
         app.swipeLeft()
@@ -35,10 +41,10 @@ final class CoupleCalendarUITests: XCTestCase {
         XCTAssertFalse(app.buttons["加载示例日程"].exists)
 
         let guidanceButton = app.buttons["calendar-setup-guidance-button"]
-        XCTAssertTrue(guidanceButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(guidanceButton.waitForExistence(timeout: Self.transitionTimeout))
         guidanceButton.tap()
 
-        XCTAssertTrue(app.buttons["settings-calendar-access-button"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["settings-calendar-access-button"].waitForExistence(timeout: Self.transitionTimeout))
         XCTAssertTrue(app.staticTexts["Calendar Access"].exists || app.staticTexts["日历访问"].exists)
     }
 

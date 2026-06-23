@@ -63,9 +63,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          # UI tests drive a simulator on a shared CI runner; when the runner is
+          # overloaded, app.launch() wait-for-idle can balloon (~45s observed) and
+          # short XCUIElement waits expire mid-render, failing a healthy build.
+          # Retry only the tests that fail so a transient slowdown can't sink the run;
+          # a genuinely broken test still fails after exhausting its iterations.
           xcodebuild test \
             -project CoupleCalendar.xcodeproj \
             -scheme CoupleCalendar \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
             -derivedDataPath "${RUNNER_TEMP}/CoupleCalendarDerivedData" \
+            -retry-tests-on-failure \
+            -test-iterations 3 \
             CODE_SIGNING_ALLOWED=NO

@@ -43,6 +43,19 @@ enum AppLanguagePreference {
     }
 }
 
+enum AppLegalInfo {
+    /// MIIT (信管〔2023〕105号) requires the APP filing number to be shown in a prominent
+    /// place in-app with a link to the filing system below it. `nil` hides the row.
+    static let icpFilingNumber: String? = "沪ICP备2026030016号-1A"
+    static let icpFilingSystemURL = URL(string: "https://beian.miit.gov.cn")!
+
+    static var versionText: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        return "\(short) (\(build))"
+    }
+}
+
 struct ShareCalStrings {
     let language: AppLanguage
 
@@ -332,6 +345,9 @@ struct ShareCalStrings {
     var syncSection: String { text("Sync", "同步") }
     var lastSyncLabel: String { text("Last sync", "上次同步") }
     var never: String { text("Never", "从未") }
+    var aboutSection: String { text("About", "关于") }
+    var versionLabel: String { text("Version", "版本") }
+    var icpFilingLabel: String { text("ICP Filing (China)", "APP 备案号") }
     var calendarAccessAlreadyEnabled: String { text("Calendar access is already enabled.", "日历访问权限已启用。") }
     var calendarAccessMustBeChanged: String {
         text("Calendar access must be changed in iPhone Settings.", "需要在 iPhone 设置中更改日历访问权限。")

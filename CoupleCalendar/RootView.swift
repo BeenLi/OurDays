@@ -4238,6 +4238,19 @@ struct SettingsTabView: View {
                         .foregroundStyle(.red)
                 }
             }
+            Section(strings.aboutSection) {
+                LabeledContent(strings.versionLabel, value: AppLegalInfo.versionText)
+                if let icpNumber = AppLegalInfo.icpFilingNumber {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(strings.icpFilingLabel)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Text(icpNumber)
+                        Link("beian.miit.gov.cn", destination: AppLegalInfo.icpFilingSystemURL)
+                            .font(.footnote)
+                    }
+                }
+            }
         }
         .navigationTitle(strings.settingsTitle)
         .task {

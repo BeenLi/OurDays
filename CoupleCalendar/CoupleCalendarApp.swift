@@ -236,6 +236,9 @@ enum ShareCalLaunchDiagnostics {
         if ShareCalLaunchDiagnosticPlan.shouldProbeJointComments(arguments: arguments) {
             await probeJointComments(services: services, settings: settings, modelContext: modelContext)
         }
+        if let body = ShareCalLaunchDiagnosticPlan.ordinaryCommentBody(arguments: arguments) {
+            await seedOrdinaryComment(body: body, services: services, settings: settings, modelContext: modelContext)
+        }
     }
 
     private static let diag = ShareCalLaunchDiagnosticPlan.diagnosticLogPrefix
@@ -375,6 +378,54 @@ enum ShareCalLaunchDiagnostics {
             .sorted { $0.createdAt < $1.createdAt }
         let bodies = comments.map(\.body).joined(separator: "|")
         NSLog("%@ jointComments count=%d bodies=[%@]", diag, comments.count, bodies)
+    }
+
+    /// V1b visual check title — a fresh ORDINARY event of my own (no matching invitation, so it
+    /// is NOT reclassified as a joint event and stays on the regular EventDetailView path).
+    static let ordinaryCommentEventTitle = "V1B Ordinary Event"
+
+    /// V1b: simulate "partner commented on MY ordinary event". Ensure the ordinary event, sync so
+    /// my `EventMirror` twin is persisted, then add a partner-authored comment anchored to that
+    /// mirror's real id and upload it (survives later syncs). A single simulator can then show the
+    /// red dot on my own event and the comment thread + reply box in its detail — exactly req1+req2.
+    private static func seedOrdinaryComment(
+        body: String, services: AppServices, settings: SettingsStore, modelContext: ModelContext
+    ) async {
+        _ = try? services.calendarAccess.ensureShareCalSmokeTestEvent(title: ordinaryCommentEventTitle)
+        await runForegroundSync(services: services, settings: settings, modelContext: modelContext)
+        let mirrors = (try? modelContext.fetch(FetchDescriptor<EventMirror>())) ?? []
+        guard let mine = mirrors.first(where: {
+            $0.deletedAt == nil
+                && $0.ownerMemberID == settings.currentMemberID
+                && $0.title == ordinaryCommentEventTitle
+                && !$0.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix)
+        }) else {
+            NSLog("%@ seedOrdinaryComment failed: no persisted mirror titled %@", diag, ordinaryCommentEventTitle)
+            return
+        }
+        let anchor = EventCommentAnchorPlan.anchor(forMirror: mine)
+        // Author as the partner (any non-self id renders as "Partner") so it reads as
+        // "partner commented on my event".
+        let comment = services.commentService.createComment(
+            eventMirrorID: anchor.key,
+            authorMemberID: "_smoke_partner",
+            body: body
+        )
+        modelContext.insert(comment)
+        do {
+            try modelContext.save()
+            if let cloudKit = services.cloudKitIfAvailable {
+                try await cloudKit.saveCommentForSync(
+                    comment,
+                    eventOwnerMemberID: anchor.ownerMemberID,
+                    currentMemberID: settings.currentMemberID,
+                    eventRecordName: anchor.recordName
+                )
+            }
+            NSLog("%@ seedOrdinaryComment succeeded mirror=%@ anchor=%@ body=%@", diag, mine.id, anchor.key, body)
+        } catch {
+            NSLog("%@ seedOrdinaryComment failed: %@", diag, String(describing: error))
+        }
     }
 }
 

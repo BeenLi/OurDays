@@ -43,6 +43,19 @@ enum AppLanguagePreference {
     }
 }
 
+enum AppLegalInfo {
+    /// MIIT (信管〔2023〕105号) requires the APP filing number to be shown in a prominent
+    /// place in-app with a link to the filing system below it. `nil` hides the row.
+    static let icpFilingNumber: String? = "沪ICP备2026030016号-1A"
+    static let icpFilingSystemURL = URL(string: "https://beian.miit.gov.cn")!
+
+    static var versionText: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        return "\(short) (\(build))"
+    }
+}
+
 struct ShareCalStrings {
     let language: AppLanguage
 
@@ -332,6 +345,9 @@ struct ShareCalStrings {
     var syncSection: String { text("Sync", "同步") }
     var lastSyncLabel: String { text("Last sync", "上次同步") }
     var never: String { text("Never", "从未") }
+    var aboutSection: String { text("About", "关于") }
+    var versionLabel: String { text("Version", "版本") }
+    var icpFilingLabel: String { text("ICP Filing (China)", "APP 备案号") }
     var calendarAccessAlreadyEnabled: String { text("Calendar access is already enabled.", "日历访问权限已启用。") }
     var calendarAccessMustBeChanged: String {
         text("Calendar access must be changed in iPhone Settings.", "需要在 iPhone 设置中更改日历访问权限。")
@@ -1341,9 +1357,19 @@ enum CalendarDisplayMirrorPlan {
     }
 }
 
-enum EventDetailInteractionPlan {
-    static func canComment(on event: EventMirror) -> Bool {
-        !event.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix)
+enum EventDetailMirrorResolutionPlan {
+    /// Resolves a possibly-transient display mirror (my own events render as `display:` mirrors,
+    /// see `CalendarDisplayMirrorPlan`) to its persisted twin, matched by the shared `mirrorKey`,
+    /// so the detail's comment thread anchors to the real record id and routes writes correctly.
+    /// A real mirror resolves to itself; a display mirror with no synced twin yet resolves to nil
+    /// (nothing to comment on — and the partner couldn't have commented on an unsynced event).
+    static func persistedTwin(for event: EventMirror, in mirrors: [EventMirror]) -> EventMirror? {
+        guard event.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) else {
+            return event
+        }
+        return mirrors.first {
+            !$0.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) && $0.mirrorKey == event.mirrorKey
+        }
     }
 }
 
@@ -1379,6 +1405,48 @@ enum EventCommentAnchorPlan {
             ownerMemberID: invitation.creatorMemberID,
             recordName: invitation.cloudKitRecordName ?? invitation.id
         )
+    }
+}
+
+/// Decides which calendar events show a "has comments" indicator (the red dot). A displayed
+/// event may be a transient `display:` mirror — my own events render straight from EventKit
+/// (see `CalendarDisplayMirrorPlan`) and their id is NOT the value comments are keyed by; the
+/// persisted twin sharing its `mirrorKey` carries the real id. Callers pass a lightweight
+/// `mirrorKey -> real id` map so this stays a pure, SwiftData-free plan (one place owns the
+/// display→real resolution, matching `EventDetailView`'s own resolution).
+enum EventCommentIndicatorPlan {
+    /// Anchor keys (`EventComment.eventMirrorID`) that currently have at least one live comment.
+    static func commentedAnchorKeys(_ comments: [EventComment]) -> Set<String> {
+        Set(comments.lazy.filter { $0.deletedAt == nil }.map(\.eventMirrorID))
+    }
+
+    static func hasComments(
+        mirror: EventMirror,
+        commentedKeys: Set<String>,
+        persistedIDByMirrorKey: [String: String]
+    ) -> Bool {
+        guard let key = resolvedAnchorKey(for: mirror, persistedIDByMirrorKey: persistedIDByMirrorKey) else {
+            return false
+        }
+        return commentedKeys.contains(key)
+    }
+
+    /// Joint events anchor their shared thread to the invitation id (== `JointScheduleEvent.id`).
+    static func hasComments(jointEvent: JointScheduleEvent, commentedKeys: Set<String>) -> Bool {
+        commentedKeys.contains(jointEvent.id)
+    }
+
+    /// The value a mirror's comment thread is keyed by. A transient display mirror resolves to
+    /// its persisted twin's id via the shared `mirrorKey`; returns nil when no twin exists yet
+    /// (an unsynced own event can't have comments).
+    private static func resolvedAnchorKey(
+        for mirror: EventMirror,
+        persistedIDByMirrorKey: [String: String]
+    ) -> String? {
+        if mirror.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) {
+            return persistedIDByMirrorKey[mirror.mirrorKey]
+        }
+        return mirror.id
     }
 }
 

@@ -340,7 +340,8 @@ final class CalendarDisplayMirrorPlanTests: XCTestCase {
         XCTAssertEqual(mirrors[0].sourceCalendarID, "personal-calendar")
         XCTAssertEqual(mirrors[0].title, "Older local event")
         XCTAssertNil(mirrors[0].cloudKitRecordName)
-        XCTAssertFalse(EventDetailInteractionPlan.canComment(on: mirrors[0]))
+        // A lone transient display mirror has no persisted twin, so it can't be commented on.
+        XCTAssertNil(EventDetailMirrorResolutionPlan.persistedTwin(for: mirrors[0], in: []))
     }
 }
 
@@ -1921,6 +1922,174 @@ final class EventCommentAnchorPlanTests: XCTestCase {
         XCTAssertEqual(
             CloudKitCommentWritePlan.destination(eventOwnerMemberID: anchor.ownerMemberID, currentMemberID: "_partner"),
             .acceptedSharedZone
+        )
+    }
+}
+
+final class EventCommentIndicatorPlanTests: XCTestCase {
+    func testCommentedAnchorKeysCollectsLiveCommentKeysIgnoringDeleted() {
+        let comments = [
+            comment(event: "real-1", at: 1),
+            comment(event: "real-1", at: 2),
+            comment(event: "invite-9", at: 3),
+            comment(event: "gone", at: 4, deletedAt: 5),
+        ]
+
+        let keys = EventCommentIndicatorPlan.commentedAnchorKeys(comments)
+
+        XCTAssertEqual(keys, ["real-1", "invite-9"])
+    }
+
+    func testPartnerRealMirrorWithCommentsShowsIndicator() {
+        let partnerMirror = mirror(id: "real-1", mirrorKey: "key-1")
+
+        XCTAssertTrue(
+            EventCommentIndicatorPlan.hasComments(
+                mirror: partnerMirror,
+                commentedKeys: ["real-1"],
+                persistedIDByMirrorKey: ["key-1": "real-1"]
+            )
+        )
+    }
+
+    func testMyDisplayMirrorResolvesToPersistedTwinForIndicator() {
+        // My own calendar event is a transient "display:" mirror; the partner's comment is
+        // keyed to the persisted twin's real id. Resolve via the shared mirrorKey.
+        let displayMirror = mirror(id: "display:key-1", mirrorKey: "key-1", recordName: nil)
+
+        XCTAssertTrue(
+            EventCommentIndicatorPlan.hasComments(
+                mirror: displayMirror,
+                commentedKeys: ["real-1"],
+                persistedIDByMirrorKey: ["key-1": "real-1"]
+            )
+        )
+    }
+
+    func testDisplayMirrorWithoutPersistedTwinHasNoIndicator() {
+        let displayMirror = mirror(id: "display:key-2", mirrorKey: "key-2", recordName: nil)
+
+        XCTAssertFalse(
+            EventCommentIndicatorPlan.hasComments(
+                mirror: displayMirror,
+                commentedKeys: ["real-1"],
+                persistedIDByMirrorKey: ["key-1": "real-1"]
+            )
+        )
+    }
+
+    func testMirrorWithoutCommentsHasNoIndicator() {
+        let partnerMirror = mirror(id: "real-3", mirrorKey: "key-3")
+
+        XCTAssertFalse(
+            EventCommentIndicatorPlan.hasComments(
+                mirror: partnerMirror,
+                commentedKeys: ["real-1"],
+                persistedIDByMirrorKey: ["key-3": "real-3"]
+            )
+        )
+    }
+
+    func testJointEventIndicatorKeysOffInvitationId() {
+        let jointEvent = JointScheduleEvent(
+            id: "invite-9",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date(timeIntervalSince1970: 60),
+            isAllDay: false,
+            location: nil,
+            notes: nil
+        )
+
+        XCTAssertTrue(EventCommentIndicatorPlan.hasComments(jointEvent: jointEvent, commentedKeys: ["invite-9"]))
+        XCTAssertFalse(EventCommentIndicatorPlan.hasComments(jointEvent: jointEvent, commentedKeys: ["other"]))
+    }
+
+    private func comment(event: String, at seconds: TimeInterval, deletedAt: TimeInterval? = nil) -> EventComment {
+        EventComment(
+            eventMirrorID: event,
+            authorMemberID: "author",
+            body: "body",
+            createdAt: Date(timeIntervalSince1970: seconds),
+            deletedAt: deletedAt.map { Date(timeIntervalSince1970: $0) }
+        )
+    }
+
+    private func mirror(
+        id: String,
+        mirrorKey: String,
+        ownerMemberID: String = "owner",
+        recordName: String? = nil
+    ) -> EventMirror {
+        EventMirror(
+            id: id,
+            ownerMemberID: ownerMemberID,
+            mirrorKey: mirrorKey,
+            sourceCalendarID: "sharecal",
+            sourceCalendarTitle: "ShareCal",
+            occurrenceStartDate: Date(timeIntervalSince1970: 0),
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date(timeIntervalSince1970: 60),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: "Event",
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#FF2D55",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: recordName
+        )
+    }
+}
+
+final class EventDetailMirrorResolutionPlanTests: XCTestCase {
+    func testRealMirrorResolvesToItself() {
+        let real = mirror(id: "real-1", mirrorKey: "key-1", recordName: "real-1")
+
+        let twin = EventDetailMirrorResolutionPlan.persistedTwin(for: real, in: [real])
+
+        XCTAssertEqual(twin?.id, "real-1")
+    }
+
+    func testDisplayMirrorResolvesToPersistedTwinByMirrorKey() {
+        // My own event opens as a "display:" mirror; resolve to the synced twin so the comment
+        // thread anchors to the real id (where the partner's comment on my event landed).
+        let display = mirror(id: "display:key-1", mirrorKey: "key-1", recordName: nil)
+        let persisted = mirror(id: "real-1", mirrorKey: "key-1", recordName: "real-1")
+
+        let twin = EventDetailMirrorResolutionPlan.persistedTwin(for: display, in: [persisted])
+
+        XCTAssertEqual(twin?.id, "real-1")
+    }
+
+    func testDisplayMirrorWithoutTwinResolvesToNil() {
+        let display = mirror(id: "display:key-2", mirrorKey: "key-2", recordName: nil)
+
+        XCTAssertNil(EventDetailMirrorResolutionPlan.persistedTwin(for: display, in: []))
+    }
+
+    private func mirror(id: String, mirrorKey: String, recordName: String?) -> EventMirror {
+        EventMirror(
+            id: id,
+            ownerMemberID: "me",
+            mirrorKey: mirrorKey,
+            sourceCalendarID: "sharecal",
+            sourceCalendarTitle: "ShareCal",
+            occurrenceStartDate: Date(timeIntervalSince1970: 0),
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date(timeIntervalSince1970: 60),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: "Event",
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#FF2D55",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: recordName
         )
     }
 }

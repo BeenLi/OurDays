@@ -826,6 +826,7 @@ struct CalendarTabView: View {
     let onOpenSettings: (SettingsFocusTarget) -> Void
     @Query(sort: \EventMirror.startDate) private var mirrors: [EventMirror]
     @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
+    @Query(sort: \EventComment.createdAt) private var comments: [EventComment]
     @State private var selectedDate = Date()
     @State private var mode: CalendarMode = .day
     @State private var selectedEvent: EventMirror?
@@ -843,6 +844,23 @@ struct CalendarTabView: View {
             }
             return true
         }
+    }
+
+    // Anchor keys that currently have at least one live comment. Leaf calendar views compare
+    // an event's resolved anchor against this set to show the "has comments" red dot.
+    var commentedAnchorKeys: Set<String> {
+        EventCommentIndicatorPlan.commentedAnchorKeys(comments)
+    }
+
+    // My own events render as transient "display:" mirrors whose id is not what comments are
+    // keyed by; this maps their shared mirrorKey to the persisted twin's real id so the dot
+    // (and its resolution) also fires for "partner commented on my event".
+    var persistedMirrorIDByKey: [String: String] {
+        var map: [String: String] = [:]
+        for mirror in mirrors where !mirror.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) {
+            map[mirror.mirrorKey] = mirror.id
+        }
+        return map
     }
 
     var isPaired: Bool {
@@ -1007,7 +1025,9 @@ struct CalendarTabView: View {
                                 partnerEvents: partnerEvents,
                                 availableWidth: proxy.size.width,
                                 onSelect: { selectedEvent = $0 },
-                                onSelectJoint: { selectedJointEvent = $0 }
+                                onSelectJoint: { selectedJointEvent = $0 },
+                                commentedAnchorKeys: commentedAnchorKeys,
+                                persistedMirrorIDByKey: persistedMirrorIDByKey
                             )
                         case .week:
                             WeekAgendaView(
@@ -1016,7 +1036,9 @@ struct CalendarTabView: View {
                                 onSelect: { selectedEvent = $0 },
                                 onSelectJoint: { item in
                                     selectedJointEvent = visibleJointEvents.first { $0.id == item.id }
-                                }
+                                },
+                                commentedAnchorKeys: commentedAnchorKeys,
+                                persistedMirrorIDByKey: persistedMirrorIDByKey
                             )
                         }
                     }
@@ -1697,6 +1719,8 @@ struct DayAlignedTimelineView: View {
     let availableWidth: CGFloat
     let onSelect: (EventMirror) -> Void
     let onSelectJoint: (JointScheduleEvent) -> Void
+    let commentedAnchorKeys: Set<String>
+    let persistedMirrorIDByKey: [String: String]
 
     private let hourHeight: CGFloat = 58
     private let railWidth: CGFloat = 46
@@ -1753,7 +1777,9 @@ struct DayAlignedTimelineView: View {
                                     dayStart: dayStart,
                                     hourHeight: hourHeight,
                                     width: laneWidth,
-                                    onSelect: onSelect
+                                    onSelect: onSelect,
+                                    commentedAnchorKeys: commentedAnchorKeys,
+                                    persistedMirrorIDByKey: persistedMirrorIDByKey
                                 )
 
                                 DayTimelineLane(
@@ -1762,7 +1788,9 @@ struct DayAlignedTimelineView: View {
                                     dayStart: dayStart,
                                     hourHeight: hourHeight,
                                     width: laneWidth,
-                                    onSelect: onSelect
+                                    onSelect: onSelect,
+                                    commentedAnchorKeys: commentedAnchorKeys,
+                                    persistedMirrorIDByKey: persistedMirrorIDByKey
                                 )
                             }
                         }
@@ -1790,7 +1818,11 @@ struct DayAlignedTimelineView: View {
                             } label: {
                                 DayTimelineJointEventBlock(
                                     event: event,
-                                    isFocused: event.id == focusedJointEventID
+                                    isFocused: event.id == focusedJointEventID,
+                                    hasComments: EventCommentIndicatorPlan.hasComments(
+                                        jointEvent: event,
+                                        commentedKeys: commentedAnchorKeys
+                                    )
                                 )
                             }
                             .buttonStyle(.plain)
@@ -2050,6 +2082,8 @@ struct DayTimelineLane: View {
     let hourHeight: CGFloat
     let width: CGFloat
     let onSelect: (EventMirror) -> Void
+    let commentedAnchorKeys: Set<String>
+    let persistedMirrorIDByKey: [String: String]
 
     var dayHeight: CGFloat {
         DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight)
@@ -2068,7 +2102,15 @@ struct DayTimelineLane: View {
                 Button {
                     onSelect(event)
                 } label: {
-                    DayTimelineEventBlock(event: event, tint: tint)
+                    DayTimelineEventBlock(
+                        event: event,
+                        tint: tint,
+                        hasComments: EventCommentIndicatorPlan.hasComments(
+                            mirror: event,
+                            commentedKeys: commentedAnchorKeys,
+                            persistedIDByMirrorKey: persistedMirrorIDByKey
+                        )
+                    )
                 }
                 .buttonStyle(.plain)
                 .frame(width: max(44, width - 8), height: eventHeight, alignment: .top)
@@ -2105,10 +2147,28 @@ struct DayTimelineLane: View {
     }
 }
 
+/// Small red dot marking a calendar event that has at least one comment. Decorative
+/// (`accessibilityHidden`) so it doesn't disturb the buttons' existing accessibility labels;
+/// the visibility decision comes from `EventCommentIndicatorPlan`.
+struct CommentIndicatorDot: View {
+    let isVisible: Bool
+
+    var body: some View {
+        if isVisible {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+                .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1))
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 struct DayTimelineEventBlock: View {
     @Environment(SettingsStore.self) private var settings
     let event: EventMirror
     let tint: Color
+    var hasComments: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -2137,6 +2197,9 @@ struct DayTimelineEventBlock: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+        .overlay(alignment: .topTrailing) {
+            CommentIndicatorDot(isVisible: hasComments).padding(4)
+        }
     }
 
     var timeText: String {
@@ -2151,6 +2214,7 @@ struct DayTimelineJointEventBlock: View {
     @Environment(SettingsStore.self) private var settings
     let event: JointScheduleEvent
     let isFocused: Bool
+    var hasComments: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -2188,6 +2252,9 @@ struct DayTimelineJointEventBlock: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .shadow(color: Color.green.opacity(isFocused ? 0.22 : 0.04), radius: isFocused ? 5 : 2, x: 0, y: 1)
+        .overlay(alignment: .topTrailing) {
+            CommentIndicatorDot(isVisible: hasComments).padding(4)
+        }
     }
 
     var timeText: String {
@@ -2203,6 +2270,8 @@ struct WeekAgendaView: View {
     let mirrorByID: [String: EventMirror]
     let onSelect: (EventMirror) -> Void
     let onSelectJoint: (WeekAgendaItem) -> Void
+    let commentedAnchorKeys: Set<String>
+    let persistedMirrorIDByKey: [String: String]
 
     var body: some View {
         ScrollView {
@@ -2212,7 +2281,9 @@ struct WeekAgendaView: View {
                         day: day,
                         mirrorByID: mirrorByID,
                         onSelect: onSelect,
-                        onSelectJoint: onSelectJoint
+                        onSelectJoint: onSelectJoint,
+                        commentedAnchorKeys: commentedAnchorKeys,
+                        persistedMirrorIDByKey: persistedMirrorIDByKey
                     )
                 }
             }
@@ -2228,6 +2299,8 @@ struct WeekAgendaDaySection: View {
     let mirrorByID: [String: EventMirror]
     let onSelect: (EventMirror) -> Void
     let onSelectJoint: (WeekAgendaItem) -> Void
+    let commentedAnchorKeys: Set<String>
+    let persistedMirrorIDByKey: [String: String]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2262,7 +2335,7 @@ struct WeekAgendaDaySection: View {
                             Button {
                                 onSelect(mirror)
                             } label: {
-                                WeekAgendaItemCard(item: item)
+                                WeekAgendaItemCard(item: item, hasComments: itemHasComments(item))
                             }
                             .buttonStyle(.plain)
                         } else if item.kind == .joint {
@@ -2271,11 +2344,11 @@ struct WeekAgendaDaySection: View {
                             Button {
                                 onSelectJoint(item)
                             } label: {
-                                WeekAgendaItemCard(item: item)
+                                WeekAgendaItemCard(item: item, hasComments: itemHasComments(item))
                             }
                             .buttonStyle(.plain)
                         } else {
-                            WeekAgendaItemCard(item: item)
+                            WeekAgendaItemCard(item: item, hasComments: itemHasComments(item))
                         }
                     }
                 }
@@ -2286,11 +2359,27 @@ struct WeekAgendaDaySection: View {
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
+
+    private func itemHasComments(_ item: WeekAgendaItem) -> Bool {
+        if let mirrorID = item.mirrorID, let mirror = mirrorByID[mirrorID] {
+            return EventCommentIndicatorPlan.hasComments(
+                mirror: mirror,
+                commentedKeys: commentedAnchorKeys,
+                persistedIDByMirrorKey: persistedMirrorIDByKey
+            )
+        }
+        if item.kind == .joint {
+            // Joint items carry no mirror; their id is the shared invitation id (the anchor).
+            return commentedAnchorKeys.contains(item.id)
+        }
+        return false
+    }
 }
 
 struct WeekAgendaItemCard: View {
     @Environment(SettingsStore.self) private var settings
     let item: WeekAgendaItem
+    var hasComments: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -2329,6 +2418,9 @@ struct WeekAgendaItemCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(alignment: .topTrailing) {
+            CommentIndicatorDot(isVisible: hasComments).padding(7)
+        }
     }
 
     private var tint: Color {
@@ -2833,8 +2925,12 @@ struct EventDetailView: View {
                     }
                 }
 
-                if EventDetailInteractionPlan.canComment(on: event) {
-                    EventCommentsSection(anchor: EventCommentAnchorPlan.anchor(forMirror: event))
+                // `event` may be my own transient "display:" mirror; resolve to the persisted
+                // twin so the thread anchors to the real record id (where the partner's comment
+                // on my event landed) and writes route to the right zone. No twin yet (unsynced
+                // own event) ⇒ no comment section, matching the prior transient-mirror behavior.
+                if let commentMirror = EventDetailMirrorResolutionPlan.persistedTwin(for: event, in: mirrors) {
+                    EventCommentsSection(anchor: EventCommentAnchorPlan.anchor(forMirror: commentMirror))
                 }
             }
             .navigationTitle(strings.eventTitle)
@@ -4236,6 +4332,19 @@ struct SettingsTabView: View {
                 if let errorMessage {
                     Text(errorMessage)
                         .foregroundStyle(.red)
+                }
+            }
+            Section(strings.aboutSection) {
+                LabeledContent(strings.versionLabel, value: AppLegalInfo.versionText)
+                if let icpNumber = AppLegalInfo.icpFilingNumber {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(strings.icpFilingLabel)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Text(icpNumber)
+                        Link("beian.miit.gov.cn", destination: AppLegalInfo.icpFilingSystemURL)
+                            .font(.footnote)
+                    }
                 }
             }
         }

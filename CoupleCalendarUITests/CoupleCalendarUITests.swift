@@ -180,6 +180,67 @@ final class CoupleCalendarUITests: XCTestCase {
         XCTAssertTrue(opened, "Tapping the joint event must open its comment thread (a comment input field).")
     }
 
+    /// V1b: opening MY OWN ordinary event must show the partner's comment thread and a reply
+    /// field — not just the "invite partner" action. Before the fix, my events opened as
+    /// transient "display:" mirrors whose comment section was suppressed. Relies on a prior
+    /// `-ShareCalSeedOrdinaryComment` launch having seeded+uploaded a partner comment on my
+    /// fresh ordinary event "V1B Ordinary Event". Self-skips unless SHARECAL_SMOKE_UI is set.
+    func testOwnOrdinaryEventShowsPartnerCommentAndReply() throws {
+        guard ProcessInfo.processInfo.environment["SHARECAL_SMOKE_UI"] != nil else {
+            throw XCTSkip("Runs only in the V1b ordinary-comment verification after the comment is seeded.")
+        }
+
+        let app = XCUIApplication()
+        app.launchArguments = ["-ShareCalSeedProfileName", "SmokeOwner", "-ShareCalForceSync"]
+        app.launch()
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+
+        // Duplicated literals: app sources aren't compiled into the UI-test target. The event is
+        // created ~15 min from now (today), so the default day view shows it as a tappable button
+        // whose accessibility label contains the title.
+        let eventTitle = "V1B Ordinary Event"
+        let commentBody = "V1B partner comment"
+        let eventPredicate = NSPredicate(format: "label CONTAINS %@", eventTitle)
+        let eventButton = app.buttons.matching(eventPredicate).firstMatch
+
+        let deadline = Date(timeIntervalSinceNow: 180)
+        var appeared = eventButton.waitForExistence(timeout: 5)
+        while !appeared && Date() < deadline {
+            dismissBlockingModal(app: app, springboard: springboard)
+            appeared = eventButton.waitForExistence(timeout: 5)
+        }
+        if appeared { for _ in 0..<4 { dismissBlockingModal(app: app, springboard: springboard) } }
+
+        XCTAssertTrue(appeared, "My seeded ordinary event '\(eventTitle)' must render on the calendar.")
+
+        // The event is ~15 min from "now", near the bottom of the day timeline; scroll it into
+        // view so the screenshot clearly shows the red dot on my own event block (req1).
+        app.swipeUp()
+        app.swipeUp()
+
+        let calendarShot = XCTAttachment(screenshot: app.screenshot())
+        calendarShot.name = "own-event-red-dot"
+        calendarShot.lifetime = .keepAlways
+        add(calendarShot)
+
+        eventButton.tap()
+
+        let comment = app.staticTexts[commentBody]
+        let commentAppeared = comment.waitForExistence(timeout: 30)
+        // The reply composer is the same EventCommentsSection input the joint detail uses.
+        let replyField = app.textFields.firstMatch
+        let replyAppeared = replyField.waitForExistence(timeout: 5)
+
+        let detailShot = XCTAttachment(screenshot: app.screenshot())
+        detailShot.name = "own-event-comment-thread"
+        detailShot.lifetime = .keepAlways
+        add(detailShot)
+
+        XCTAssertTrue(commentAppeared, "Opening my own event must show the partner's comment ('\(commentBody)').")
+        XCTAssertTrue(replyAppeared, "Opening my own event must offer a reply field.")
+    }
+
     /// Dismisses one blocking modal if present. The seed-profile launch args suppress
     /// the in-app advisory sheets, so in practice this only clears the SpringBoard-owned
     /// notification-permission alert (which has no settings flag). The in-app dismiss

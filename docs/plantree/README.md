@@ -25,6 +25,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | [notifications](plans/notifications/) | ✅ v3 Code landed | landed | 2026-06-16, 236 tests pass（v3） | 两真机端到端验证（事件改动不弹、评论/邀请弹、审批+邀请不回退且失败上传自愈、角标自清） |
 | [public-launch](plans/public-launch/) | 🚧 In Progress | Track B/C 已上线；Track A v1.3 build 27 提交外测 | 2026-06-20：v1.3 (build 27) 上传 VALID + 加入外测组 `friends` + 提交 Beta Review（WAITING_FOR_REVIEW）。含 calendar-ux-fixes 三特性 | build 27 审核通过 → 公开链接自动服务 |
 | [calendar-ux-fixes](plans/calendar-ux-fixes/) | ✅ 已发布 | 3 phase 落地 + 两真机 e2e 跑通；已随 v1.3 build 27 提交公开外测 | 2026-06-20：commit `aadd4bb`，推 origin/main，archive+upload，build 27 VALID 提交 Beta Review | （可选）周视图 joint 点击 Deferred；离线乐观自愈分支单独验 |
+| [comment-visibility](plans/comment-visibility/) | ✅ 代码落地 + 回归门绿 | req1 评论红点 + req2 我的事件可看/回评论，3 phase 全落地 | 2026-07-04：全量 `CoupleCalendarTests` TEST SUCCEEDED（+333/−16）+ 两真机 smoke run3 PASS（配对/同步/joint 同串/2 XCUITest） | （可选）V1b 直接验新路径：本地种子普通评论 + 截图（见 open-questions） |
 
 顺序：先 activity-feed，后 notifications（用户决定，2026-06-14）。v2（上线后反馈修复）见 [decision 0002](plans/notifications/decisions/0002-silent-push-and-background-sync.md)（2026-06-16）。
 

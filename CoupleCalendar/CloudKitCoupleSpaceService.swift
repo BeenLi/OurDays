@@ -392,6 +392,10 @@ enum ShareCalLaunchDiagnosticPlan {
     static let acceptInvitationArgument = "-ShareCalAcceptInvitation"
     static let addJointCommentArgument = "-ShareCalAddJointComment"
     static let probeJointCommentsArgument = "-ShareCalProbeJointComments"
+    /// V1b visual check: seed a partner-authored comment on a fresh ORDINARY (non-joint) event
+    /// of my own, so a single simulator can show the red dot on my event + the comment thread in
+    /// its `EventDetailView` (the path that joint events bypass). Inert without the argument.
+    static let seedOrdinaryCommentArgument = "-ShareCalSeedOrdinaryComment"
     /// Common prefix for the new diagnostics' log markers.
     static let diagnosticLogPrefix = "ShareCalDiag"
 
@@ -433,6 +437,10 @@ enum ShareCalLaunchDiagnosticPlan {
 
     static func jointCommentBody(arguments: [String]) -> String? {
         value(after: addJointCommentArgument, arguments: arguments)
+    }
+
+    static func ordinaryCommentBody(arguments: [String]) -> String? {
+        value(after: seedOrdinaryCommentArgument, arguments: arguments)
     }
 
     static func shouldProbeJointComments(arguments: [String]) -> Bool {

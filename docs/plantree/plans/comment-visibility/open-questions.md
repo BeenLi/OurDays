@@ -7,6 +7,7 @@
   - **req1 红点**：截图确认 "V1B Ordinary Event"（我的普通事件，有对方评论）右上角红点亮；joint 事件（有评论）也亮；对方无评论事件不亮（阴性对照正确）。
   - **req2 详情**：XCUITest 断言通过——点开我的普通事件详情同时显示「邀请对方」+ 对方评论 "V1B partner comment"（作者 SmokePartner）+「添加评论」回复框。截图佐证。
   - 关键点：必须用**没有 invitation 的新普通事件**验，否则会被 `JointSchedulePlan.ordinaryMirrors` 当 joint 处理、走 `JointEventDetailView`，绕开本次改的 `EventDetailView` 路径。
+  - 证据截图：[req1 红点](screenshots/req1-red-dot-on-my-event.png) · [req2 详情评论区](screenshots/req2-own-event-comment-thread.png)。
 
 ## 已解决
 - **Q1 — 红点视觉规格** → 落地为 topTrailing 8pt 红色圆点（`CommentIndicatorDot`，描边同背景色以在彩色块上清晰）。装饰性、`accessibilityHidden`（VoiceOver 语义见 roadmap Deferred）。

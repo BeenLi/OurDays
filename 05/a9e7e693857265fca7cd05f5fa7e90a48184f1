@@ -1,0 +1,29 @@
+docs/site/deploy/README.md
+  s_ed5f40d2f7d282::t_65c81cfb840a27 1-60
+docs/site/deploy/ourdays.conf
+  s_ed5f40d2f7d282::t_647ed239b7b60b 1-38
+docs/site/privacy.html
+  s_ed5f40d2f7d282::t_4a039b4f09ba72 1-70
+docs/site/support.html
+  s_ed5f40d2f7d282::t_5c0a8a2ea87cf1 1-73
+docs/site/index.html
+  s_ed5f40d2f7d282::t_2e4ef583fb58b9 1-272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "05a9e7e693857265fca7cd05f5fa7e90a48184f1",
+  "prompts": {},
+  "sessions": {
+    "s_ed5f40d2f7d282": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a0c2b476-218c-4230-9da7-29fce68a9463",
+        "model": "unknown"
+      },
+      "human_author": "wildlee <wanli.99@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OurDays · 两人日历 | 只属于你们俩的私密共享日历</title>
+<meta name="description" content="OurDays 是一款只为两个人设计的私密共享日历:双栏并排看彼此日程,发起事件邀请,在日程下评论。数据只通过 Apple iCloud 在两人之间私密同步,无自建服务器、无广告、无追踪。">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --card: #fff;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --faint: #86868b;
+    --accent: #0071e3;
+    --me: #0a84ff;
+    --you: #ff5a8a;
+    --hairline: #e6e6ea;
+    --shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.7; color: var(--text); background: var(--bg);
+  }
+  .en { color: var(--muted); font-weight: 400; }
+  a { color: var(--accent); }
+
+  /* ---------- Device frame ---------- */
+  .device {
+    width: 100%; background: #0b0b0d; border-radius: 42px; padding: 9px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.12);
+  }
+  .device img { width: 100%; height: auto; display: block; border-radius: 34px; aspect-ratio: 1206 / 2622; object-fit: cover; }
+
+  /* ---------- Hero ---------- */
+  .hero { position: relative; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(60% 50% at 15% 0%, rgba(10,132,255,.10), transparent 70%),
+      radial-gradient(60% 55% at 90% 10%, rgba(255,90,138,.10), transparent 70%);
+    pointer-events: none;
+  }
+  .hero-inner {
+    position: relative;
+    max-width: 1000px; margin: 0 auto;
+    padding: 64px 24px 44px;
+    display: flex; align-items: center; gap: 52px; flex-wrap: wrap;
+  }
+  .hero-copy { flex: 1 1 320px; min-width: 280px; }
+  .appicon {
+    width: 84px; height: 84px; border-radius: 20px; display: block;
+    box-shadow: 0 6px 20px rgba(0,0,0,.14); margin-bottom: 20px;
+  }
+  h1 { font-size: 2.7rem; letter-spacing: -.02em; margin: 0 0 4px; }
+  .slogan { color: var(--faint); margin: 0 0 20px; font-size: 1.05rem; }
+  .lead { font-size: 1.35rem; line-height: 1.5; margin: 0 0 28px; font-weight: 600; letter-spacing: -.01em; }
+  .lead .en { display: block; font-size: .98rem; font-weight: 400; margin-top: 6px; }
+  .hero-art { flex: 1 1 300px; display: flex; justify-content: center; }
+  .hero-art .device { max-width: 290px; }
+
+  .appstore-btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: #000; color: #fff; text-decoration: none;
+    padding: 12px 20px 12px 18px; border-radius: 14px;
+    transition: transform .12s ease, opacity .12s ease;
+  }
+  .appstore-btn:hover { transform: translateY(-1px); opacity: .92; }
+  .appstore-btn svg { width: 26px; height: 26px; fill: #fff; }
+  .appstore-btn .l1 { font-size: .68rem; opacity: .85; line-height: 1; display: block; margin-bottom: 2px; }
+  .appstore-btn .l2 { font-size: 1.12rem; font-weight: 600; line-height: 1; letter-spacing: .01em; }
+  .req { color: var(--faint); font-size: .85rem; margin: 12px 0 0; }
+
+  /* ---------- Sections ---------- */
+  section { max-width: 1000px; margin: 0 auto; padding: 44px 24px; }
+  .section-title { text-align: center; font-size: 1.9rem; letter-spacing: -.01em; margin: 8px 0 6px; }
+  .section-sub { text-align: center; color: var(--faint); margin: 0 0 32px; }
+
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .feature {
+    background: var(--card); border-radius: 18px; padding: 22px 22px 24px;
+    box-shadow: var(--shadow);
+  }
+  .feature .ico { font-size: 1.7rem; line-height: 1; margin-bottom: 12px; }
+  .feature h3 { margin: 0 0 8px; font-size: 1.12rem; }
+  .feature p { margin: 0; color: var(--muted); font-size: .96rem; }
+  .feature p.en { font-size: .86rem; margin-top: 8px; }
+
+  /* ---------- Screenshot gallery ---------- */
+  .shots { display: flex; gap: 28px; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+  .shot { width: 216px; text-align: center; }
+  .shot .device { max-width: 216px; }
+  .shot .cap { margin-top: 16px; font-weight: 600; font-size: 1rem; }
+  .shot .cap .en { display: block; font-weight: 400; font-size: .82rem; margin-top: 2px; }
+
+  /* ---------- Privacy band ---------- */
+  .privacy-card {
+    background: var(--card); border-radius: 22px; padding: 36px 28px; text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .privacy-card .lock { font-size: 2rem; }
+  .privacy-card h2 { font-size: 1.5rem; margin: 8px 0 12px; letter-spacing: -.01em; }
+  .privacy-card p { max-width: 640px; margin: 0 auto; color: var(--muted); }
+  .privacy-card p.en { font-size: .9rem; margin-top: 10px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 22px; }
+  .badge {
+    background: var(--bg); border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 8px 16px; font-size: .88rem; color: var(--text);
+  }
+
+  /* ---------- Bottom CTA ---------- */
+  .cta { text-align: center; }
+  .cta h2 { font-size: 1.7rem; margin: 0 0 6px; letter-spacing: -.01em; }
+  .cta p { color: var(--faint); margin: 0 0 22px; }
+
+  /* ---------- Footer ---------- */
+  footer { border-top: 1px solid var(--hairline); margin-top: 24px; }
+  .foot-inner { max-width: 1000px; margin: 0 auto; padding: 28px 24px 44px; text-align: center; color: var(--faint); font-size: .85rem; line-height: 2; }
+  .foot-nav { display: flex; gap: 22px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .foot-nav a { color: var(--muted); text-decoration: none; }
+  .foot-nav a:hover { color: var(--accent); }
+  .beian a { color: var(--faint); text-decoration: none; }
+  .beian a:hover { text-decoration: underline; }
+
+  @media (max-width: 720px) {
+    h1 { font-size: 2.3rem; }
+    .hero-inner { padding-top: 44px; gap: 32px; }
+    .lead { font-size: 1.2rem; }
+    .hero-art { order: 2; }
+    .hero-art .device { max-width: 250px; }
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000; --card: #1c1c1e; --text: #f5f5f7;
+      --muted: #a1a1a6; --faint: #8e8e93; --hairline: #2c2c2e; --shadow: none;
+    }
+    .badge { background: #000; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- ===== Hero ===== -->
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <img class="appicon" src="/assets/appicon.jpg" alt="OurDays 应用图标" width="84" height="84">
+        <h1>OurDays</h1>
+        <p class="slogan">两人日历 · Calendar for Two</p>
+        <p class="lead">
+          只属于你们俩的私密共享日历。
+          <span class="en">A private shared calendar built for just the two of you.</span>
+        </p>
+        <a class="appstore-btn" href="https://apps.apple.com/cn/app/id6772868166" aria-label="在 App Store 下载 OurDays">
+          <svg viewBox="0 0 384 512" aria-hidden="true"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+          <span><span class="l1">Download on the</span><span class="l2">App Store</span></span>
+        </a>
+        <p class="req">iOS 18 或更高版本 · 需要 iCloud　·　Free</p>
+      </div>
+
+      <div class="hero-art">
+        <div class="device">
+          <img src="/assets/calendar.png" alt="OurDays 双栏并排日程界面:我 与 对方(小雨)的当天安排并排显示" width="1206" height="2622" loading="eager">
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== Features ===== -->
+  <section>
+    <h2 class="section-title">为两个人打造</h2>
+    <p class="section-sub en">Built for two — not a group calendar</p>
+    <div class="features">
+      <div class="feature">
+        <div class="ico">🗓️</div>
+        <h3>双栏并排日程</h3>
+        <p>把你和对方的当天 / 当周安排并排显示,一眼看清彼此何时有空、何时冲突。</p>
+        <p class="en">See your day and your partner's in two columns — instantly spot free time and conflicts.</p>
+      </div>
+      <div class="feature">
+        <div class="ico">🔒</div>
+        <h3>选择性镜像</h3>
+        <p>你自己决定共享哪些本机日历,未选择的私人日程绝不外露。</p>
+        <p class="en">You decide which local calendars to share; unselected private events are never exposed.</p>
+      </div>
+      <div class="feature">
+        <div class="ico">💌</div>
+        <h3>事件邀请</h3>
+        <p>直接在 App 内向对方发起日程邀请,对方可以接受或婉拒。</p>
+        <p class="en">Send a schedule invite to your partner in-app; they can accept or decline.</p>
+      </div>
+      <div class="feature">
+        <div class="ico">💬</div>
+        <h3>事件评论</h3>
+        <p>在具体某个日程下留言讨论,沟通就发生在安排旁边,不必再切到聊天软件。</p>
+        <p class="en">Discuss a specific event right under it — no need to switch to a chat app.</p>
+      </div>
+      <div class="feature">
+        <div class="ico">☁️</div>
+        <h3>私密同步</h3>
+        <p>数据保存在本机,并通过你和伴侣之间的 iCloud / CloudKit 私密共享同步。</p>
+        <p class="en">Data stays on your device and syncs only through the private iCloud share between you two.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Screenshot gallery ===== -->
+  <section>
+    <h2 class="section-title">看看它长什么样</h2>
+    <p class="section-sub en">A look inside</p>
+    <div class="shots">
+      <div class="shot">
+        <div class="device"><img src="/assets/calendar.png" alt="双栏并排日历" width="1206" height="2622" loading="lazy"></div>
+        <div class="cap">并排日程<span class="en">Side-by-side</span></div>
+      </div>
+      <div class="shot">
+        <div class="device"><img src="/assets/activity.png" alt="事件评论动态" width="1206" height="2622" loading="lazy"></div>
+        <div class="cap">事件评论<span class="en">Comments</span></div>
+      </div>
+      <div class="shot">
+        <div class="device"><img src="/assets/invites.png" alt="事件邀请" width="1206" height="2622" loading="lazy"></div>
+        <div class="cap">事件邀请<span class="en">Invitations</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Privacy ===== -->
+  <section>
+    <div class="privacy-card">
+      <div class="lock">🔐</div>
+      <h2>隐私,是默认设置</h2>
+      <p>OurDays 没有自建服务器,数据只在你和伴侣之间通过 Apple iCloud 私密同步。不含广告 SDK、第三方分析或跨应用追踪,也绝不出售个人数据。</p>
+      <p class="en">OurDays runs no server of its own, and contains no ad SDKs, third-party analytics, or tracking. Your data is never sold.</p>
+      <div class="badges">
+        <span class="badge">🚫 无自建服务器</span>
+        <span class="badge">🚫 无广告 SDK</span>
+        <span class="badge">🚫 无第三方分析</span>
+        <span class="badge">🚫 无跨应用追踪</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Bottom CTA ===== -->
+  <section class="cta">
+    <h2>开始你们的共享日历</h2>
+    <p class="en">Start your shared calendar today</p>
+    <a class="appstore-btn" href="https://apps.apple.com/cn/app/id6772868166" aria-label="在 App Store 下载 OurDays">
+      <svg viewBox="0 0 384 512" aria-hidden="true"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+      <span><span class="l1">Download on the</span><span class="l2">App Store</span></span>
+    </a>
+  </section>
+
+  <!-- ===== Footer ===== -->
+  <footer>
+    <div class="foot-inner">
+      <nav class="foot-nav">
+        <a href="/privacy.html">隐私政策 Privacy</a>
+        <a href="/support.html">支持 Support</a>
+        <a href="https://apps.apple.com/cn/app/id6772868166">App Store</a>
+      </nav>
+      <p class="beian"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">沪ICP备2026030016号-2</a></p>
+      <div>© 2026 OurDays</div>
+    </div>
+  </footer>
+
+</body>
+</html>

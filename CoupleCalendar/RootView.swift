@@ -3151,6 +3151,8 @@ struct EventCommentsSection: View {
 
 /// One comment as a chat bubble: the partner on the left in a white bubble, me on the
 /// right in my identity color — the same left/right reading as any messaging app.
+/// Both sides carry the author's avatar outside the bubble, so my side is not just a
+/// coloured block: the teal ring on the right mirrors the coral ring on the left.
 struct EventCommentBubble: View {
     let comment: EventComment
     let isMine: Bool
@@ -3187,7 +3189,9 @@ struct EventCommentBubble: View {
                     .padding(.horizontal, 6)
             }
 
-            if !isMine {
+            if isMine {
+                MemberAvatarForID(memberID: comment.authorMemberID, size: 28)
+            } else {
                 Spacer(minLength: 48)
             }
         }

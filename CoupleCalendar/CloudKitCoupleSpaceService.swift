@@ -540,6 +540,7 @@ struct CloudKitMemberProfile: Equatable {
     let ownerMemberID: String
     let displayName: String
     let updatedAt: Date
+    var avatar: MemberAvatar? = nil
 }
 
 enum MemberProfileRecordMapper {
@@ -549,6 +550,10 @@ enum MemberProfileRecordMapper {
         static let ownerMemberID = "ownerMemberID"
         static let displayName = "displayName"
         static let updatedAt = "updatedAt"
+        static let avatarImage = "avatarImage"
+        static let avatarText = "avatarText"
+        static let avatarBackground = "avatarBackground"
+        static let avatarKeys = [avatarImage, avatarText, avatarBackground]
     }
 
     static func recordName(ownerMemberID: String) -> String {
@@ -570,7 +575,38 @@ enum MemberProfileRecordMapper {
         record[Key.ownerMemberID] = normalizedRequired(profile.ownerMemberID) as CKRecordValue
         record[Key.displayName] = normalizedDisplayName(profile.displayName) as CKRecordValue
         record[Key.updatedAt] = profile.updatedAt as CKRecordValue
+        applyAvatar(profile.avatar, to: record)
         return record
+    }
+
+    /// Writes only the avatar keys whose value actually changed. The profile is re-saved on
+    /// every paired sync, so this keeps the photo bytes from being re-uploaded each time, and
+    /// a member without a custom avatar never sends the avatar fields at all (so an
+    /// environment whose schema predates them keeps syncing names).
+    static func applyAvatar(_ avatar: MemberAvatar?, to record: CKRecord) {
+        let avatar = MemberAvatarPlan.normalized(avatar)
+        let imageData = avatar?.imageData
+        if (record[Key.avatarImage] as? Data) != imageData {
+            record[Key.avatarImage] = imageData.map { $0 as NSData }
+        }
+        let text = avatar?.text
+        if (record[Key.avatarText] as? String) != text {
+            record[Key.avatarText] = text.map { $0 as NSString }
+        }
+        let background = avatar?.background?.rawValue
+        if (record[Key.avatarBackground] as? String) != background {
+            record[Key.avatarBackground] = background.map { $0 as NSString }
+        }
+    }
+
+    static func avatar(from record: CKRecord) -> MemberAvatar? {
+        MemberAvatarPlan.normalized(
+            MemberAvatar(
+                text: record[Key.avatarText] as? String,
+                background: (record[Key.avatarBackground] as? String).flatMap(AvatarBackground.init(rawValue:)),
+                imageData: record[Key.avatarImage] as? Data
+            )
+        )
     }
 
     static func memberProfile(from record: CKRecord) throws -> CloudKitMemberProfile {
@@ -586,7 +622,8 @@ enum MemberProfileRecordMapper {
         return CloudKitMemberProfile(
             ownerMemberID: normalizedRequired(ownerMemberID),
             displayName: normalizedDisplayName(displayName),
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            avatar: avatar(from: record)
         )
     }
 
@@ -622,10 +659,38 @@ enum MemberProfileDisplayPlan {
             .map { $0.displayName.trimmingCharacters(in: .whitespacesAndNewlines) }
     }
 
+    /// The partner's own avatar from their newest profile record; nil when they never set one.
+    static func partnerSyncedAvatar(
+        from profiles: [CloudKitMemberProfile],
+        partnerID: String?
+    ) -> MemberAvatar? {
+        guard let partnerID = normalizedID(partnerID) else { return nil }
+        return profiles
+            .filter { normalizedID($0.ownerMemberID) == partnerID }
+            .max { $0.updatedAt < $1.updatedAt }
+            .flatMap { MemberAvatarPlan.normalized($0.avatar) }
+    }
+
     private static func normalizedID(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedValue.isEmpty ? nil : trimmedValue
+    }
+}
+
+enum MemberProfileAvatarSchemaFallbackPlan {
+    /// CloudKit rejects a write that introduces a field the Production schema doesn't have
+    /// with `invalidArguments` (possibly wrapped in a `partialFailure`).
+    static func shouldRetryWithoutAvatar(error: Error, profile: CloudKitMemberProfile) -> Bool {
+        guard MemberAvatarPlan.normalized(profile.avatar) != nil else { return false }
+        guard let ckError = error as? CKError else { return false }
+        if ckError.code == .invalidArguments { return true }
+        if ckError.code == .partialFailure {
+            return ckError.partialErrorsByItemID?.values.contains {
+                ($0 as? CKError)?.code == .invalidArguments
+            } ?? false
+        }
+        return false
     }
 }
 
@@ -735,7 +800,7 @@ enum CloudKitForegroundQueryPlan {
                 MemberProfileRecordMapper.Key.ownerMemberID,
                 MemberProfileRecordMapper.Key.displayName,
                 MemberProfileRecordMapper.Key.updatedAt
-            ]
+            ] + MemberProfileRecordMapper.Key.avatarKeys
         default:
             nil
         }
@@ -2138,6 +2203,7 @@ final class CloudKitCoupleSpaceService {
     func saveMemberProfileForSync(
         ownerMemberID: String,
         displayName: String,
+        avatar: MemberAvatar? = nil,
         updatedAt: Date = .now
     ) async throws {
         try await ensureZone()
@@ -2145,9 +2211,19 @@ final class CloudKitCoupleSpaceService {
         let profile = CloudKitMemberProfile(
             ownerMemberID: ownerMemberID,
             displayName: displayName,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            avatar: avatar
         )
-        try await saveMemberProfilesForSync([profile], in: zoneID, database: privateDatabase)
+        do {
+            try await saveMemberProfilesForSync([profile], in: zoneID, database: privateDatabase)
+        } catch where MemberProfileAvatarSchemaFallbackPlan.shouldRetryWithoutAvatar(error: error, profile: profile) {
+            // The environment's schema doesn't have the avatar fields yet (Production not
+            // deployed): keep the nickname syncing and drop the avatar for this save.
+            cloudKitSharingInfo("saveMemberProfileForSync retrying without avatar error=\(error)")
+            var profileWithoutAvatar = profile
+            profileWithoutAvatar.avatar = nil
+            try await saveMemberProfilesForSync([profileWithoutAvatar], in: zoneID, database: privateDatabase)
+        }
     }
 
     func queueInvitationsForSync(_ invitations: [EventInvitation]) {

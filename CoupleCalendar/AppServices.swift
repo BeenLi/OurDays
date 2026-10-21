@@ -64,6 +64,19 @@ final class SettingsStore {
     var partnerSyncedDisplayName: String? {
         didSet { saveOptionalString(partnerSyncedDisplayName, forKey: Key.partnerSyncedDisplayName) }
     }
+    /// My own avatar; synced to the partner inside my MemberProfile record.
+    var currentAvatar: MemberAvatar? {
+        didSet { saveAvatar(currentAvatar, forKey: Key.currentAvatar) }
+    }
+    /// The partner's avatar as they set it, imported from their MemberProfile record.
+    var partnerSyncedAvatar: MemberAvatar? {
+        didSet { saveAvatar(partnerSyncedAvatar, forKey: Key.partnerSyncedAvatar) }
+    }
+    /// A local-only avatar I picked for the partner; wins over `partnerSyncedAvatar`,
+    /// like `partnerNoteName` wins over `partnerSyncedDisplayName`.
+    var partnerAvatarOverride: MemberAvatar? {
+        didSet { saveAvatar(partnerAvatarOverride, forKey: Key.partnerAvatarOverride) }
+    }
     var hasCompletedInitialProfilePrompt: Bool {
         didSet { defaults.set(hasCompletedInitialProfilePrompt, forKey: Key.hasCompletedInitialProfilePrompt) }
     }
@@ -128,6 +141,9 @@ final class SettingsStore {
         partnerNoteName = Self.normalizedString(defaults.string(forKey: Key.partnerNoteName)) ?? ""
         partnerShareOwnerID = defaults.string(forKey: Key.partnerShareOwnerID)
         partnerSyncedDisplayName = Self.normalizedString(defaults.string(forKey: Key.partnerSyncedDisplayName))
+        currentAvatar = Self.storedAvatar(defaults: defaults, forKey: Key.currentAvatar)
+        partnerSyncedAvatar = Self.storedAvatar(defaults: defaults, forKey: Key.partnerSyncedAvatar)
+        partnerAvatarOverride = Self.storedAvatar(defaults: defaults, forKey: Key.partnerAvatarOverride)
         let storedHasCompletedInitialProfilePrompt = defaults.object(forKey: Key.hasCompletedInitialProfilePrompt) as? Bool ?? false
         if storedHasCompletedInitialProfilePrompt,
            Self.normalizedString(resolvedCurrentDisplayName) == nil {
@@ -170,6 +186,8 @@ final class SettingsStore {
             Key.partnerShareOwnerID,
             Key.partnerSyncedDisplayName,
             Key.partnerNoteName,
+            Key.partnerSyncedAvatar,
+            Key.partnerAvatarOverride,
             Key.outgoingShareParticipantIDs,
             Key.hasStartedPairing,
             Key.pairingDate,
@@ -217,6 +235,24 @@ final class SettingsStore {
         }
     }
 
+    /// Forgets everything about the partner's avatar; called wherever pairing is torn down.
+    func clearPartnerAvatars() {
+        partnerSyncedAvatar = nil
+        partnerAvatarOverride = nil
+    }
+
+    private func saveAvatar(_ avatar: MemberAvatar?, forKey key: String) {
+        if let avatar = MemberAvatarPlan.normalized(avatar), let data = try? JSONEncoder().encode(avatar) {
+            defaults.set(data, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    private static func storedAvatar(defaults: UserDefaults, forKey key: String) -> MemberAvatar? {
+        defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(MemberAvatar.self, from: $0) }
+    }
+
     func markPairingDateIfNeeded(at date: Date = .now, calendar: Calendar = .current) {
         guard pairingDate == nil else { return }
         pairingDate = PairingDatePlan.normalizedPairingDate(date, calendar: calendar)
@@ -261,6 +297,9 @@ final class SettingsStore {
         static let partnerNoteName = "partnerNoteName"
         static let partnerShareOwnerID = "partnerShareOwnerID"
         static let partnerSyncedDisplayName = "partnerSyncedDisplayName"
+        static let currentAvatar = "currentAvatar"
+        static let partnerSyncedAvatar = "partnerSyncedAvatar"
+        static let partnerAvatarOverride = "partnerAvatarOverride"
         static let hasCompletedInitialProfilePrompt = "hasCompletedInitialProfilePrompt"
         static let hasPromptedPartnerNoteForCurrentPairing = "hasPromptedPartnerNoteForCurrentPairing"
         static let hasShownPairingSafetyNoticeForCurrentPairing = "hasShownPairingSafetyNoticeForCurrentPairing"
@@ -314,6 +353,10 @@ extension SettingsStore {
 
     var partnerOwnerIDForLocalData: String {
         partnerShareOwnerID ?? Self.unknownPartnerID
+    }
+
+    var partnerAvatar: MemberAvatar? {
+        MemberAvatarPlan.resolvedPartnerAvatar(override: partnerAvatarOverride, synced: partnerSyncedAvatar)
     }
 }
 
@@ -672,6 +715,13 @@ struct SyncCoordinator {
                     from: memberProfiles,
                     partnerID: partnerShareOwnerID
                 )
+                let partnerSyncedAvatar = MemberProfileDisplayPlan.partnerSyncedAvatar(
+                    from: memberProfiles,
+                    partnerID: partnerShareOwnerID
+                )
+                if settings.partnerSyncedAvatar != partnerSyncedAvatar {
+                    settings.partnerSyncedAvatar = partnerSyncedAvatar
+                }
                 let sharedMirrors = try await sharedMirrorsTask
                 let importableSharedMirrors = CloudKitSharedDatabaseImportPlan.importableMirrors(
                     sharedMirrors,
@@ -741,6 +791,7 @@ struct SyncCoordinator {
             } else if !settings.iCloudSharingEnabled {
                 settings.partnerShareOwnerID = nil
                 settings.partnerSyncedDisplayName = nil
+                settings.partnerSyncedAvatar = nil
                 settings.outgoingShareParticipantIDs = []
                 settings.pairingConflict = nil
                 settings.hasStartedPairing = false
@@ -814,7 +865,8 @@ struct SyncCoordinator {
         }
         try await cloudKit.saveMemberProfileForSync(
             ownerMemberID: settings.currentMemberID,
-            displayName: displayName
+            displayName: displayName,
+            avatar: settings.currentAvatar
         )
     }
 

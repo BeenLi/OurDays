@@ -1563,6 +1563,16 @@ final class PairingDatePlanTests: XCTestCase {
         XCTAssertEqual(PairingDatePlan.dayCount(since: pairingDate, now: laterDate, calendar: calendar), 3)
     }
 
+    func testPairingOrdinalDayNumberStartsAtOneOnThePairingDay() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let pairingDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8, hour: 19)))
+        let sameDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8, hour: 23)))
+        let nextMorning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 9, hour: 0, minute: 5)))
+
+        XCTAssertEqual(PairingDatePlan.ordinalDayNumber(since: pairingDate, now: sameDay, calendar: calendar), 1)
+        XCTAssertEqual(PairingDatePlan.ordinalDayNumber(since: pairingDate, now: nextMorning, calendar: calendar), 2)
+    }
+
     func testDefaultHistoryRequestRangeEndsBeforePairingDate() throws {
         let calendar = Calendar(identifier: .gregorian)
         let pairingDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8)))
@@ -3922,6 +3932,117 @@ final class DayTimelineScrollTargetPlanTests: XCTestCase {
         )
 
         XCTAssertEqual(targetY, 870, accuracy: 0.001)
+    }
+
+    func testOpensAtCurrentTimeWithLeadWhenViewingToday() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
+        let now = dayStart.addingTimeInterval(20 * 60 * 60 + 15 * 60) // 20:15
+
+        let targetY = DayTimelineScrollTargetPlan.initialTargetY(
+            now: now,
+            dayStart: dayStart,
+            eventStartDates: [dayStart.addingTimeInterval(9 * 60 * 60)],
+            hourHeight: 60,
+            calendar: calendar
+        )
+
+        // 20:15 minus the 30-minute lead = 19:45 → 19.75 h × 60 pt.
+        XCTAssertEqual(targetY, 1185, accuracy: 0.001)
+    }
+
+    func testOpensAtFirstEventWhenViewingAnotherDay() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
+        let otherDay = dayStart.addingTimeInterval(3 * 24 * 60 * 60)
+
+        let targetY = DayTimelineScrollTargetPlan.initialTargetY(
+            now: otherDay,
+            dayStart: dayStart,
+            eventStartDates: [
+                dayStart.addingTimeInterval(15 * 60 * 60),
+                dayStart.addingTimeInterval(13 * 60 * 60),
+            ],
+            hourHeight: 60,
+            calendar: calendar
+        )
+
+        // 13:00 minus the 30-minute lead = 12:30.
+        XCTAssertEqual(targetY, 750, accuracy: 0.001)
+    }
+
+    func testClampsEarlyMorningTargetToTopAndFallsBackToDefaultWithoutEvents() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
+        let otherDay = dayStart.addingTimeInterval(3 * 24 * 60 * 60)
+
+        XCTAssertEqual(
+            DayTimelineScrollTargetPlan.initialTargetY(
+                now: otherDay,
+                dayStart: dayStart,
+                eventStartDates: [dayStart.addingTimeInterval(10 * 60)],
+                hourHeight: 60,
+                calendar: calendar
+            ),
+            0,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DayTimelineScrollTargetPlan.initialTargetY(
+                now: otherDay,
+                dayStart: dayStart,
+                eventStartDates: [],
+                hourHeight: 60,
+                calendar: calendar
+            ),
+            480,
+            accuracy: 0.001
+        )
+    }
+}
+
+final class DayTimelineOverlapPlanTests: XCTestCase {
+    private func span(_ id: String, _ start: TimeInterval, _ end: TimeInterval) -> DayTimelineTimedSpan {
+        DayTimelineTimedSpan(
+            id: id,
+            startDate: Date(timeIntervalSince1970: start),
+            endDate: Date(timeIntervalSince1970: end)
+        )
+    }
+
+    func testJointBlockYieldsOnlyTheLaneWithAnOverlappingEvent() {
+        let dinner = span("dinner", 19_000, 21_000)
+        let partnerCall = span("call", 19_500, 20_000)
+        let myMorning = span("gym", 8_000, 9_000)
+
+        let spans = DayTimelineOverlapPlan.jointSpans(
+            jointEvents: [dinner],
+            myEvents: [myMorning],
+            partnerEvents: [partnerCall]
+        )
+
+        XCTAssertEqual(spans["dinner"], DayTimelineJointSpan(yieldsMyLane: false, yieldsPartnerLane: true))
+    }
+
+    func testJointBlockKeepsFullWidthWhenLaneEventsOnlyTouchItsEdges() {
+        let dinner = span("dinner", 19_000, 21_000)
+
+        let spans = DayTimelineOverlapPlan.jointSpans(
+            jointEvents: [dinner],
+            myEvents: [span("before", 18_000, 19_000)],
+            partnerEvents: [span("after", 21_000, 22_000)]
+        )
+
+        XCTAssertEqual(spans["dinner"], .full)
+    }
+
+    func testOnlyLaneEventsOverlappingAJointBlockAreNarrowed() {
+        let narrowed = DayTimelineOverlapPlan.narrowedLaneEventIDs(
+            laneEvents: [span("call", 19_500, 20_000), span("gym", 8_000, 9_000)],
+            jointEvents: [span("dinner", 19_000, 21_000)]
+        )
+
+        XCTAssertEqual(narrowed, ["call"])
     }
 }
 

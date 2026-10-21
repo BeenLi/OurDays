@@ -958,9 +958,10 @@ struct CalendarTabView: View {
         )
     }
 
+    /// "配对第 N 天": the pairing day is day 1.
     var pairingDayCount: Int? {
         guard isPaired, let pairingDate = settings.pairingDate else { return nil }
-        return PairingDatePlan.dayCount(since: pairingDate)
+        return PairingDatePlan.ordinalDayNumber(since: pairingDate)
     }
 
     var myEvents: [EventMirror] {
@@ -1825,17 +1826,37 @@ struct DayAlignedTimelineView: View {
     private let laneSpacing: CGFloat = 6
     private let horizontalPadding: CGFloat = 12
 
-    /// First hour drawn; the hours before it fold into the "both free" band.
-    func startHour(isExpanded: Bool) -> Int {
-        let timedStarts = myEvents.filter { !$0.isAllDay }.map(\.startDate)
+    private var timedEventStartDates: [Date] {
+        myEvents.filter { !$0.isAllDay }.map(\.startDate)
             + partnerEvents.filter { !$0.isAllDay }.map(\.startDate)
             + jointEvents.filter { !$0.isAllDay }.map(\.startDate)
-        return DayTimelineCollapsePlan.visibleStartHour(
-            eventStartDates: timedStarts,
+    }
+
+    /// First hour drawn; the hours before it fold into the "both free" band.
+    func startHour(isExpanded: Bool) -> Int {
+        DayTimelineCollapsePlan.visibleStartHour(
+            eventStartDates: timedEventStartDates,
             dayStart: dayStart,
             now: .now,
             isExpanded: isExpanded
         )
+    }
+
+    // All-day blocks are drawn as a one-hour band at the top of the day, so
+    // for overlap purposes they occupy that same band.
+    private func timedSpan(id: String, startDate: Date, endDate: Date, isAllDay: Bool) -> DayTimelineTimedSpan {
+        if isAllDay {
+            return DayTimelineTimedSpan(id: id, startDate: dayStart, endDate: dayStart.addingTimeInterval(60 * 60))
+        }
+        return DayTimelineTimedSpan(id: id, startDate: startDate, endDate: endDate)
+    }
+
+    private func timedSpans(_ events: [EventMirror]) -> [DayTimelineTimedSpan] {
+        events.map { timedSpan(id: $0.id, startDate: $0.startDate, endDate: $0.endDate, isAllDay: $0.isAllDay) }
+    }
+
+    private var jointTimedSpans: [DayTimelineTimedSpan] {
+        jointEvents.map { timedSpan(id: $0.id, startDate: $0.startDate, endDate: $0.endDate, isAllDay: $0.isAllDay) }
     }
 
     var visibleStartHour: Int { startHour(isExpanded: isNightExpanded) }
@@ -1880,6 +1901,21 @@ struct DayAlignedTimelineView: View {
 
                         ZStack(alignment: .topLeading) {
                             let jointPlacements = DayTimelineJointLayoutPlan.placements(for: jointEvents)
+                            let mySpans = timedSpans(myEvents)
+                            let partnerSpans = timedSpans(partnerEvents)
+                            let jointSpans = DayTimelineOverlapPlan.jointSpans(
+                                jointEvents: jointTimedSpans,
+                                myEvents: mySpans,
+                                partnerEvents: partnerSpans
+                            )
+                            let narrowedMyEventIDs = DayTimelineOverlapPlan.narrowedLaneEventIDs(
+                                laneEvents: mySpans,
+                                jointEvents: jointTimedSpans
+                            )
+                            let narrowedPartnerEventIDs = DayTimelineOverlapPlan.narrowedLaneEventIDs(
+                                laneEvents: partnerSpans,
+                                jointEvents: jointTimedSpans
+                            )
 
                             // Paper-white lane sheets sit under the hour lines; events sit on top.
                             HStack(spacing: laneSpacing) {
@@ -1911,6 +1947,7 @@ struct DayAlignedTimelineView: View {
                                         hourHeight: hourHeight,
                                         startHour: visibleStartHour,
                                         width: laneWidth,
+                                        narrowedEventIDs: narrowedMyEventIDs,
                                         onSelect: onSelect,
                                         commentedAnchorKeys: commentedAnchorKeys,
                                         persistedMirrorIDByKey: persistedMirrorIDByKey
@@ -1923,6 +1960,7 @@ struct DayAlignedTimelineView: View {
                                         hourHeight: hourHeight,
                                         startHour: visibleStartHour,
                                         width: laneWidth,
+                                        narrowedEventIDs: narrowedPartnerEventIDs,
                                         onSelect: onSelect,
                                         commentedAnchorKeys: commentedAnchorKeys,
                                         persistedMirrorIDByKey: persistedMirrorIDByKey
@@ -1940,7 +1978,13 @@ struct DayAlignedTimelineView: View {
                                 let frame = frame(for: event)
                                 let eventHeight = min(max(frame.height, 44), dayHeight)
                                 let eventY = min(frame.y, max(0, dayHeight - eventHeight))
-                                let jointWidth = (laneWidth * 2) + laneSpacing
+                                // A joint block bridges both lanes, but yields the outer half of
+                                // a lane whose own event runs at the same time, so that event
+                                // stays visible beside it instead of underneath it.
+                                let span = jointSpans[event.id] ?? .full
+                                let leadingInset = span.yieldsMyLane ? laneWidth / 2 : 0
+                                let trailingInset = span.yieldsPartnerLane ? laneWidth / 2 : 0
+                                let jointWidth = (laneWidth * 2) + laneSpacing - leadingInset - trailingInset
                                 let placement = jointPlacements[event.id] ?? DayTimelineJointPlacement(columnIndex: 0, columnCount: 1)
                                 let slotWidth = max(44, (jointWidth - 8) / CGFloat(placement.columnCount))
 
@@ -1961,7 +2005,7 @@ struct DayAlignedTimelineView: View {
                                 .buttonStyle(.plain)
                                 .frame(width: max(44, slotWidth - 4), height: eventHeight, alignment: .top)
                                 .offset(
-                                    x: railWidth + railSpacing + 4 + (CGFloat(placement.columnIndex) * slotWidth),
+                                    x: railWidth + railSpacing + leadingInset + 4 + (CGFloat(placement.columnIndex) * slotWidth),
                                     y: eventY
                                 )
                                 .accessibilityLabel("\(event.title), \(timeText(for: event)), \(event.calendarTitle), \(settings.strings.jointScheduleLabel)")
@@ -2049,7 +2093,7 @@ struct DayAlignedTimelineView: View {
     }
 
     private var defaultScrollID: String {
-        "timeline-default-start-\(DayTimelineScrollTargetPlan.defaultStartHour)"
+        "timeline-initial-target"
     }
 
     private func scrollToInitialTimelinePosition(with proxy: ScrollViewProxy) {
@@ -2064,8 +2108,15 @@ struct DayAlignedTimelineView: View {
         }
     }
 
+    /// Marks where the timeline opens: the current time on today, otherwise
+    /// the day's first event, otherwise 08:00 (`DayTimelineScrollTargetPlan`).
     private func defaultScrollMarker() -> some View {
-        let targetY = DayTimelineScrollTargetPlan.defaultTargetY(hourHeight: hourHeight) - offsetY
+        let targetY = DayTimelineScrollTargetPlan.initialTargetY(
+            now: .now,
+            dayStart: dayStart,
+            eventStartDates: timedEventStartDates,
+            hourHeight: hourHeight
+        ) - offsetY
 
         return VStack(spacing: 0) {
             Color.clear
@@ -2259,11 +2310,23 @@ struct DayTimelineLane: View {
     let hourHeight: CGFloat
     let startHour: Int
     let width: CGFloat
+    /// Events that share their time with a joint block and therefore keep only
+    /// the outer half of the lane (left half for me, right half for the partner).
+    var narrowedEventIDs: Set<String> = []
     let onSelect: (EventMirror) -> Void
     let commentedAnchorKeys: Set<String>
     let persistedMirrorIDByKey: [String: String]
 
     var offsetY: CGFloat { CGFloat(startHour) * hourHeight }
+
+    private func blockX(isNarrowed: Bool) -> CGFloat {
+        guard isNarrowed, identity == .partner else { return 4 }
+        return (width / 2) + 4
+    }
+
+    private func blockWidth(isNarrowed: Bool) -> CGFloat {
+        max(44, (isNarrowed ? width / 2 : width) - 8)
+    }
 
     var dayHeight: CGFloat {
         DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight) - offsetY
@@ -2277,6 +2340,7 @@ struct DayTimelineLane: View {
                 let frame = frame(for: event)
                 let eventHeight = min(max(frame.height, 44), dayHeight)
                 let eventY = min(frame.y, max(0, dayHeight - eventHeight))
+                let isNarrowed = narrowedEventIDs.contains(event.id)
 
                 Button {
                     onSelect(event)
@@ -2292,8 +2356,8 @@ struct DayTimelineLane: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .frame(width: max(44, width - 8), height: eventHeight, alignment: .top)
-                .offset(x: 4, y: eventY)
+                .frame(width: blockWidth(isNarrowed: isNarrowed), height: eventHeight, alignment: .top)
+                .offset(x: blockX(isNarrowed: isNarrowed), y: eventY)
                 .accessibilityLabel("\(event.title), \(timeText(for: event))")
             }
         }
@@ -4300,7 +4364,7 @@ struct PairingStatusCard: View {
 
             if status == .paired {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(strings.pairingDayHeadline(pairingDate.map { PairingDatePlan.dayCount(since: $0) } ?? 0))
+                    Text(strings.pairingDayHeadline(pairingDate.map { PairingDatePlan.ordinalDayNumber(since: $0) } ?? 1))
                         .font(OurDaysTheme.displayFont(32))
                         .foregroundStyle(OurDaysTheme.ink)
                         .lineLimit(1)

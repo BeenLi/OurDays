@@ -1150,11 +1150,99 @@ enum DayTimelineJointLayoutPlan {
     }
 }
 
+/// A timed block on the day timeline, reduced to what overlap decisions need.
+struct DayTimelineTimedSpan: Equatable {
+    let id: String
+    let startDate: Date
+    let endDate: Date
+}
+
+/// How a joint block shares the width of the two lanes with the lane events
+/// it overlaps in time. A joint event normally bridges both lanes; when one
+/// lane has its own event at the same time, the joint block yields the outer
+/// half of that lane so the lane event stays visible beside it.
+struct DayTimelineJointSpan: Equatable {
+    let yieldsMyLane: Bool
+    let yieldsPartnerLane: Bool
+
+    static let full = DayTimelineJointSpan(yieldsMyLane: false, yieldsPartnerLane: false)
+}
+
+enum DayTimelineOverlapPlan {
+    static func jointSpans(
+        jointEvents: [DayTimelineTimedSpan],
+        myEvents: [DayTimelineTimedSpan],
+        partnerEvents: [DayTimelineTimedSpan]
+    ) -> [String: DayTimelineJointSpan] {
+        var spans: [String: DayTimelineJointSpan] = [:]
+        for joint in jointEvents {
+            spans[joint.id] = DayTimelineJointSpan(
+                yieldsMyLane: myEvents.contains { overlaps($0, joint) },
+                yieldsPartnerLane: partnerEvents.contains { overlaps($0, joint) }
+            )
+        }
+        return spans
+    }
+
+    /// Lane events that must shrink to the outer half of their lane because a
+    /// joint block occupies the inner half at the same time.
+    static func narrowedLaneEventIDs(
+        laneEvents: [DayTimelineTimedSpan],
+        jointEvents: [DayTimelineTimedSpan]
+    ) -> Set<String> {
+        Set(
+            laneEvents
+                .filter { lane in jointEvents.contains { overlaps(lane, $0) } }
+                .map(\.id)
+        )
+    }
+
+    private static func overlaps(_ lhs: DayTimelineTimedSpan, _ rhs: DayTimelineTimedSpan) -> Bool {
+        lhs.startDate < rhs.endDate && rhs.startDate < lhs.endDate
+    }
+}
+
 enum DayTimelineScrollTargetPlan {
     static let defaultStartHour = 8
+    /// Minutes of context kept visible above the current time / first event
+    /// so the target line does not sit flush against the top edge.
+    static let leadMinutes = 30
 
     static func defaultTargetY(hourHeight: CGFloat, startHour: Int = defaultStartHour) -> CGFloat {
         CGFloat(startHour) * hourHeight
+    }
+
+    /// Where the day timeline opens when no joint event is focused: at the
+    /// current time when the displayed day is today, otherwise at the first
+    /// timed event of that day, otherwise at the default morning hour. The
+    /// result is in full-day coordinates (0 = 00:00); callers subtract the
+    /// folded-night offset themselves.
+    static func initialTargetY(
+        now: Date,
+        dayStart: Date,
+        eventStartDates: [Date],
+        hourHeight: CGFloat,
+        calendar: Calendar = .current
+    ) -> CGFloat {
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 60 * 60)
+        let pointsPerMinute = hourHeight / 60
+        let lead = CGFloat(leadMinutes) * pointsPerMinute
+        let dayHeight = DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight)
+
+        if now >= dayStart, now < dayEnd {
+            let minutesFromStart = now.timeIntervalSince(dayStart) / 60
+            return min(max(CGFloat(minutesFromStart) * pointsPerMinute - lead, 0), dayHeight)
+        }
+
+        let firstStart = eventStartDates
+            .filter { $0 < dayEnd }
+            .min()
+        if let firstStart {
+            let minutesFromStart = max(firstStart.timeIntervalSince(dayStart) / 60, 0)
+            return min(max(CGFloat(minutesFromStart) * pointsPerMinute - lead, 0), dayHeight)
+        }
+
+        return defaultTargetY(hourHeight: hourHeight)
     }
 
     static func targetY(
@@ -1289,10 +1377,19 @@ enum PairingDatePlan {
         calendar.startOfDay(for: date)
     }
 
+    /// Whole calendar days elapsed since pairing (0 on the pairing day). Used
+    /// for the "D+N" style of counting.
     static func dayCount(since pairingDate: Date, now: Date = .now, calendar: Calendar = .current) -> Int {
         let start = calendar.startOfDay(for: pairingDate)
         let end = calendar.startOfDay(for: now)
         return max(0, calendar.dateComponents([.day], from: start, to: end).day ?? 0)
+    }
+
+    /// The ordinal day of the pairing: the pairing day itself is day 1, the
+    /// next day is day 2. Used for the "配对第 N 天 / Day N paired" headline,
+    /// where day 0 reads as "not yet together".
+    static func ordinalDayNumber(since pairingDate: Date, now: Date = .now, calendar: Calendar = .current) -> Int {
+        dayCount(since: pairingDate, now: now, calendar: calendar) + 1
     }
 
     static func defaultHistoryRequestRange(

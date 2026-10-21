@@ -1,4 +1,5 @@
 import CloudKit
+import PhotosUI
 import SwiftData
 import SwiftUI
 import UserNotifications
@@ -132,10 +133,11 @@ struct RootView: View {
                 SettingsTabView(focus: $settingsFocus)
             }
             .tabItem {
-                Label(settings.strings.settingsTab, systemImage: "gearshape")
+                Label(settings.strings.usTab, systemImage: "person.2")
             }
             .tag(ShareCalTab.settings)
         }
+        .tint(OurDaysTheme.ink)
         .task {
             await Task.yield()
             await reevaluateRootSheetFlow()
@@ -332,6 +334,7 @@ struct RootView: View {
             )
             settings.partnerShareOwnerID = nil
             settings.partnerSyncedDisplayName = nil
+            settings.clearPartnerAvatars()
             settings.partnerNoteName = ""
             settings.hasPromptedPartnerNoteForCurrentPairing = false
             settings.hasShownPairingSafetyNoticeForCurrentPairing = false
@@ -583,6 +586,7 @@ struct RootView: View {
         settings.hasPromptedPartnerNoteForCurrentPairing = false
         settings.hasShownPairingSafetyNoticeForCurrentPairing = false
         settings.partnerSyncedDisplayName = nil
+        settings.clearPartnerAvatars()
         settings.outgoingShareParticipantIDs = []
         settings.pairingConflict = nil
         settings.clearPairingDate()
@@ -833,8 +837,11 @@ struct CalendarTabView: View {
     @State private var selectedJointEvent: JointScheduleEvent?
     @State private var focusedJointEventID: String?
     @State private var activeCalendarSheet: CalendarSheet?
+    /// My own events for the whole selected week (the week strip needs all seven days);
+    /// `visibleLocalDisplayMirrors` narrows it to what the current mode shows.
     @State private var localDisplayMirrors: [EventMirror] = []
     @State private var authorizationState: CalendarAuthorizationState = .unknown
+    @State private var isNightExpanded = false
 
     var activeMirrors: [EventMirror] {
         mirrors.filter { mirror in
@@ -897,9 +904,45 @@ struct CalendarTabView: View {
 
     var visibleOrdinaryMirrors: [EventMirror] {
         JointSchedulePlan.ordinaryMirrors(
-            localDisplayMirrors + visiblePartnerMirrors,
+            visibleLocalDisplayMirrors + visiblePartnerMirrors,
             excluding: visibleJointEvents
         )
+    }
+
+    var visibleLocalDisplayMirrors: [EventMirror] {
+        localDisplayMirrors.filter { mirror in
+            WeekStripPlan.overlaps(
+                DateInterval(start: mirror.startDate, end: max(mirror.endDate, mirror.startDate)),
+                visibleInterval
+            )
+        }
+    }
+
+    var weekInterval: DateInterval {
+        Calendar.current.dateInterval(of: .weekOfYear, for: selectedDate)
+            ?? DateInterval(start: selectedDate, duration: 7 * 24 * 60 * 60)
+    }
+
+    var weekStripDays: [WeekStripDay] {
+        func interval(_ start: Date, _ end: Date) -> DateInterval {
+            DateInterval(start: start, end: max(end, start))
+        }
+        let partnerWeekMirrors = CalendarMirrorVisibilityPlan.memberMirrors(
+            activeMirrors,
+            currentMemberID: settings.currentMemberID,
+            partnerShareOwnerID: settings.partnerShareOwnerID
+        ).filter { $0.ownerMemberID == settings.partnerShareOwnerID }
+        return WeekStripPlan.days(
+            containing: selectedDate,
+            mine: localDisplayMirrors.map { interval($0.startDate, $0.endDate) },
+            partner: partnerWeekMirrors.map { interval($0.startDate, $0.endDate) },
+            joint: acceptedJointEvents.map { interval($0.startDate, $0.endDate) }
+        )
+    }
+
+    var pairingDayCount: Int? {
+        guard isPaired, let pairingDate = settings.pairingDate else { return nil }
+        return PairingDatePlan.dayCount(since: pairingDate)
     }
 
     var myEvents: [EventMirror] {
@@ -946,7 +989,7 @@ struct CalendarTabView: View {
     }
 
     var localDisplayRefreshKey: String {
-        "\(mode.rawValue):\(Int(visibleInterval.start.timeIntervalSince1970)):\(Int(visibleInterval.end.timeIntervalSince1970)):\(settings.currentMemberID)"
+        "\(Int(weekInterval.start.timeIntervalSince1970)):\(Int(weekInterval.end.timeIntervalSince1970)):\(settings.currentMemberID)"
     }
 
     var setupGuidanceStep: CalendarSetupGuidanceStep? {
@@ -966,11 +1009,15 @@ struct CalendarTabView: View {
     var body: some View {
         let strings = settings.strings
 
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             CompactCalendarTopBar(
                 selectedDate: $selectedDate,
                 mode: $mode,
                 title: CalendarDateNavigationPlan.compactTitle(for: selectedDate, mode: mode, locale: settings.appLanguage.locale),
+                subtitle: strings.calendarHeaderSubtitle(
+                    weekdayText: selectedDate.formatted(.dateTime.weekday(.wide).locale(settings.appLanguage.locale)),
+                    pairingDayCount: pairingDayCount
+                ),
                 onOpenPicker: {
                     activeCalendarSheet = .datePicker
                 },
@@ -981,10 +1028,8 @@ struct CalendarTabView: View {
             .padding(.horizontal)
             .padding(.top, 8)
 
-            if isPaired, let pairingDate = settings.pairingDate {
-                CalendarPairingStatusLine(pairingDate: pairingDate)
-                    .padding(.horizontal)
-            }
+            WeekStrip(days: weekStripDays, selectedDate: $selectedDate)
+                .padding(.horizontal, 12)
 
             if settings.syncPhase == .failed, let lastSyncError = settings.lastSyncError {
                 CompactSyncErrorBanner(message: lastSyncError)
@@ -998,7 +1043,7 @@ struct CalendarTabView: View {
                     }
                     .padding(.horizontal)
                     .frame(maxHeight: .infinity, alignment: .center)
-                } else if localDisplayMirrors.isEmpty && visiblePartnerMirrors.isEmpty && visibleJointEvents.isEmpty {
+                } else if visibleLocalDisplayMirrors.isEmpty && visiblePartnerMirrors.isEmpty && visibleJointEvents.isEmpty {
                     ScrollView {
                         ShareCalEmptyState()
                             .padding(.horizontal)
@@ -1011,18 +1056,13 @@ struct CalendarTabView: View {
                         case .day:
                             DayAlignedTimelineView(
                                 dayStart: selectedDayStart,
-                                myTitle: strings.memberColumnTitle(
-                                    baseTitle: strings.meTitle,
-                                    nickname: settings.currentDisplayName
-                                ),
+                                myTitle: strings.meTitle,
                                 myEvents: myEvents,
                                 jointEvents: visibleJointEvents,
                                 focusedJointEventID: focusedJointEventID,
-                                partnerTitle: strings.memberColumnTitle(
-                                    baseTitle: strings.partnerTitle,
-                                    nickname: settings.partnerDisplayName
-                                ),
+                                partnerTitle: settings.partnerDisplayName,
                                 partnerEvents: partnerEvents,
+                                isNightExpanded: $isNightExpanded,
                                 availableWidth: proxy.size.width,
                                 onSelect: { selectedEvent = $0 },
                                 onSelectJoint: { selectedJointEvent = $0 },
@@ -1056,6 +1096,7 @@ struct CalendarTabView: View {
                 moveSelectedDate(.next)
             }
         }
+        .background(OurDaysTheme.paper)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $activeCalendarSheet) { sheet in
             switch sheet {
@@ -1149,8 +1190,8 @@ struct CalendarTabView: View {
 
     private func refreshLocalDisplayMirrors() {
         let sourceEvents = services.calendarAccess.authorizedEvents(
-            from: visibleInterval.start,
-            to: visibleInterval.end
+            from: weekInterval.start,
+            to: weekInterval.end
         )
         let selectedCalendarIDs = settings.selectedCalendarIDs
         localDisplayMirrors = CalendarDisplayMirrorPlan.displayMirrors(
@@ -1165,57 +1206,66 @@ struct CompactCalendarTopBar: View {
     @Binding var selectedDate: Date
     @Binding var mode: CalendarMode
     let title: String
+    let subtitle: String
     let onOpenPicker: () -> Void
     let onCreateInvite: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
-            CompactModeToggle(mode: $mode)
-                .frame(width: 72)
-
-            HStack(spacing: 4) {
-                Button {
-                    onOpenPicker()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar")
-                            .font(.caption.weight(.semibold))
+        HStack(alignment: .bottom, spacing: 8) {
+            Button {
+                onOpenPicker()
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(subtitle)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .accessibilityIdentifier("calendar-pairing-status-line")
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text(title)
-                            .font(.caption.weight(.semibold))
+                            .font(OurDaysTheme.displayFont(30))
+                            .foregroundStyle(OurDaysTheme.ink)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                            .minimumScaleFactor(0.6)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 34)
-                    .padding(.horizontal, 8)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(settings.strings.selectDateAccessibilityLabel)
-                .accessibilityValue(title)
-                .accessibilityIdentifier("compact-date-picker-button")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(settings.strings.selectDateAccessibilityLabel)
+            .accessibilityValue(title)
+            .accessibilityIdentifier("compact-date-picker-button")
 
+            if !Calendar.current.isDateInToday(selectedDate) {
                 Button(settings.strings.todayButton) {
                     selectedDate = Calendar.current.startOfDay(for: Date())
                 }
-                .font(.caption2.weight(.semibold))
-                .frame(width: 46, height: 34)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .disabled(Calendar.current.isDateInToday(selectedDate))
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(OurDaysTheme.ink)
+                .frame(minWidth: 44, minHeight: 44)
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("compact-today-button")
             }
-            .layoutPriority(1)
 
-            CompactIconButton(
-                systemName: "plus",
-                accessibilityLabel: settings.strings.createInviteAccessibilityLabel,
-                accessibilityIdentifier: "compact-create-invite-button",
-                action: onCreateInvite
-            )
+            CompactModeToggle(mode: $mode)
+                .frame(width: 96)
+
+            Button(action: onCreateInvite) {
+                Image(systemName: "plus")
+                    .font(.headline)
+                    .foregroundStyle(OurDaysTheme.onInkFill)
+                    .frame(width: 44, height: 44)
+                    .background(OurDaysTheme.inkFill, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(settings.strings.createInviteAccessibilityLabel)
+            .accessibilityIdentifier("compact-create-invite-button")
         }
-        .frame(height: 38)
     }
 }
 
@@ -1232,41 +1282,89 @@ struct CompactModeToggle: View {
                     }
                 } label: {
                     Text(settings.strings.modeLabel(for: item.rawValue))
-                        .font(.caption2.weight(.semibold))
+                        .font(.subheadline.weight(mode == item ? .bold : .medium))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
-                        .frame(maxWidth: .infinity, minHeight: 30)
-                        .foregroundStyle(mode == item ? Color.primary : Color.secondary)
-                        .background(mode == item ? Color(.systemBackground) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .frame(maxWidth: .infinity, minHeight: 38)
+                        .foregroundStyle(mode == item ? OurDaysTheme.ink : OurDaysTheme.secondaryInk)
+                        .background {
+                            if mode == item {
+                                Capsule()
+                                    .fill(OurDaysTheme.surface)
+                                    .shadow(color: .black.opacity(0.08), radius: 1, x: 0, y: 1)
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("compact-mode-\(item.rawValue.lowercased())-button")
+                .accessibilityAddTraits(mode == item ? .isSelected : [])
             }
         }
-        .padding(2)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(3)
+        .background(OurDaysTheme.sunken, in: Capsule())
     }
 }
 
-struct CompactIconButton: View {
-    let systemName: String
-    let accessibilityLabel: String
-    var accessibilityIdentifier: String? = nil
-    let action: () -> Void
+/// The selected week as seven tappable days. Under each day, a teal dot means I have
+/// something, a coral dot means the partner does, and an ink bar means a joint event —
+/// so "who is busy when" reads at a glance without opening each day.
+struct WeekStrip: View {
+    @Environment(SettingsStore.self) private var settings
+    let days: [WeekStripDay]
+    @Binding var selectedDate: Date
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.subheadline.weight(.semibold))
-                .frame(width: 34, height: 34)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+        HStack(spacing: 2) {
+            ForEach(days) { day in
+                let isSelected = Calendar.current.isDate(day.date, inSameDayAs: selectedDate)
+                let isToday = Calendar.current.isDateInToday(day.date)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        selectedDate = day.date
+                    }
+                } label: {
+                    VStack(spacing: 4) {
+                        Text(day.date.formatted(.dateTime.weekday(.narrow).locale(settings.appLanguage.locale)))
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(isSelected ? OurDaysTheme.onInkFill.opacity(0.75) : OurDaysTheme.secondaryInk)
+                        Text(day.date.formatted(.dateTime.day()))
+                            .font(OurDaysTheme.displayFont(17, weight: isSelected || isToday ? .bold : .semibold))
+                            .foregroundStyle(isSelected ? OurDaysTheme.onInkFill : OurDaysTheme.ink)
+                        dots(for: day, isSelected: isSelected)
+                            .frame(height: 5)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 62)
+                    .background {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(OurDaysTheme.inkFill)
+                        } else if isToday {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(OurDaysTheme.border, lineWidth: 1)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(day.date.formatted(.dateTime.month().day().weekday(.wide).locale(settings.appLanguage.locale)))
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityIdentifier(accessibilityIdentifier ?? accessibilityLabel)
+    }
+
+    private func dots(for day: WeekStripDay, isSelected: Bool) -> some View {
+        HStack(spacing: 3) {
+            if day.hasJoint {
+                Capsule()
+                    .fill(isSelected ? OurDaysTheme.onInkFill : OurDaysTheme.joint)
+                    .frame(width: 10, height: 5)
+            }
+            if day.hasMine {
+                Circle().fill(OurDaysIdentity.me.color).frame(width: 5, height: 5)
+            }
+            if day.hasPartner {
+                Circle().fill(OurDaysIdentity.partner.color).frame(width: 5, height: 5)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -1274,42 +1372,19 @@ struct CompactSyncErrorBanner: View {
     let message: String
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.caption2.weight(.semibold))
+                .font(.footnote.weight(.semibold))
             Text(message)
-                .font(.caption2)
+                .font(.footnote)
                 .lineLimit(2)
             Spacer(minLength: 0)
         }
-        .foregroundStyle(.red)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .foregroundStyle(OurDaysTheme.destructive)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-}
-
-struct CalendarPairingStatusLine: View {
-    @Environment(SettingsStore.self) private var settings
-    let pairingDate: Date
-
-    var body: some View {
-        let strings = settings.strings
-        let dayCount = PairingDatePlan.dayCount(since: pairingDate)
-        let dateText = strings.pairingDateText(for: pairingDate)
-
-        Label(
-            strings.calendarPairingStatusLine(dayCount: dayCount, dateText: dateText),
-            systemImage: "heart.circle.fill"
-        )
-        .font(.caption2.weight(.semibold))
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.78)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("calendar-pairing-status-line")
+        .background(OurDaysIdentity.partner.tint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -1333,16 +1408,18 @@ struct CalendarSetupGuidanceCard: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: iconName)
-                .font(.system(size: 42, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 40, weight: .semibold))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(OurDaysIdentity.me.color, OurDaysIdentity.partner.color)
 
             VStack(spacing: 6) {
                 Text(title)
-                    .font(.title2.weight(.bold))
+                    .font(OurDaysTheme.displayFont(24))
+                    .foregroundStyle(OurDaysTheme.ink)
                     .multilineTextAlignment(.center)
                 Text(message)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1350,11 +1427,12 @@ struct CalendarSetupGuidanceCard: View {
             Button(action: onPrimaryAction) {
                 Label(buttonTitle, systemImage: buttonIconName)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(OurDaysPrimaryButtonStyle())
             .accessibilityIdentifier("calendar-setup-guidance-button")
         }
-        .padding(.vertical, 24)
+        .padding(24)
         .frame(maxWidth: 420)
+        .background(OurDaysTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var title: String {
@@ -1716,20 +1794,38 @@ struct DayAlignedTimelineView: View {
     let focusedJointEventID: String?
     let partnerTitle: String
     let partnerEvents: [EventMirror]
+    @Binding var isNightExpanded: Bool
     let availableWidth: CGFloat
     let onSelect: (EventMirror) -> Void
     let onSelectJoint: (JointScheduleEvent) -> Void
     let commentedAnchorKeys: Set<String>
     let persistedMirrorIDByKey: [String: String]
 
-    private let hourHeight: CGFloat = 58
-    private let railWidth: CGFloat = 46
-    private let railSpacing: CGFloat = 8
-    private let laneSpacing: CGFloat = 10
-    private let horizontalPadding: CGFloat = 16
+    private let hourHeight: CGFloat = 60
+    private let railWidth: CGFloat = 40
+    private let railSpacing: CGFloat = 6
+    private let laneSpacing: CGFloat = 6
+    private let horizontalPadding: CGFloat = 12
+
+    /// First hour drawn; the hours before it fold into the "both free" band.
+    func startHour(isExpanded: Bool) -> Int {
+        let timedStarts = myEvents.filter { !$0.isAllDay }.map(\.startDate)
+            + partnerEvents.filter { !$0.isAllDay }.map(\.startDate)
+            + jointEvents.filter { !$0.isAllDay }.map(\.startDate)
+        return DayTimelineCollapsePlan.visibleStartHour(
+            eventStartDates: timedStarts,
+            dayStart: dayStart,
+            now: .now,
+            isExpanded: isExpanded
+        )
+    }
+
+    var visibleStartHour: Int { startHour(isExpanded: isNightExpanded) }
+
+    var offsetY: CGFloat { CGFloat(visibleStartHour) * hourHeight }
 
     var dayHeight: CGFloat {
-        DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight)
+        DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight) - offsetY
     }
 
     var laneWidth: CGFloat {
@@ -1742,6 +1838,8 @@ struct DayAlignedTimelineView: View {
     }
 
     var body: some View {
+        let collapsedStartHour = startHour(isExpanded: false)
+
         VStack(spacing: 8) {
             DayTimelineHeader(
                 railWidth: railWidth,
@@ -1757,92 +1855,112 @@ struct DayAlignedTimelineView: View {
 
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
-                    ZStack(alignment: .topLeading) {
-                        let jointPlacements = DayTimelineJointLayoutPlan.placements(for: jointEvents)
-
-                        DayTimelineHourGrid(
-                            hourHeight: hourHeight,
-                            railWidth: railWidth,
-                            railSpacing: railSpacing,
-                            contentWidth: contentWidth
-                        )
-
-                        HStack(alignment: .top, spacing: railSpacing) {
-                            DayTimelineHourRail(hourHeight: hourHeight, width: railWidth)
-
-                            HStack(alignment: .top, spacing: laneSpacing) {
-                                DayTimelineLane(
-                                    events: myEvents,
-                                    tint: .blue,
-                                    dayStart: dayStart,
-                                    hourHeight: hourHeight,
-                                    width: laneWidth,
-                                    onSelect: onSelect,
-                                    commentedAnchorKeys: commentedAnchorKeys,
-                                    persistedMirrorIDByKey: persistedMirrorIDByKey
-                                )
-
-                                DayTimelineLane(
-                                    events: partnerEvents,
-                                    tint: .pink,
-                                    dayStart: dayStart,
-                                    hourHeight: hourHeight,
-                                    width: laneWidth,
-                                    onSelect: onSelect,
-                                    commentedAnchorKeys: commentedAnchorKeys,
-                                    persistedMirrorIDByKey: persistedMirrorIDByKey
-                                )
-                            }
+                    VStack(spacing: 8) {
+                        if collapsedStartHour > 0 {
+                            nightBand(collapsedStartHour: collapsedStartHour)
                         }
 
-                        defaultScrollMarker()
+                        ZStack(alignment: .topLeading) {
+                            let jointPlacements = DayTimelineJointLayoutPlan.placements(for: jointEvents)
 
-                        ForEach(jointEvents) { event in
-                            jointScrollMarker(for: event)
-                        }
-
-                        ForEach(jointEvents) { event in
-                            let frame = frame(for: event)
-                            let eventHeight = min(max(frame.height, 44), dayHeight)
-                            let eventY = min(frame.y, max(0, dayHeight - eventHeight))
-                            let jointWidth = (laneWidth * 2) + laneSpacing
-                            let placement = jointPlacements[event.id] ?? DayTimelineJointPlacement(columnIndex: 0, columnCount: 1)
-                            let slotWidth = max(44, (jointWidth - 8) / CGFloat(placement.columnCount))
-
-                            // Use a Button (not .onTapGesture) so the green joint block
-                            // hit-tests as reliably as the regular lane events in
-                            // DayTimelineLane — an offset .onTapGesture view did not
-                            // dependably open the comment detail.
-                            Button {
-                                onSelectJoint(event)
-                            } label: {
-                                DayTimelineJointEventBlock(
-                                    event: event,
-                                    isFocused: event.id == focusedJointEventID,
-                                    hasComments: EventCommentIndicatorPlan.hasComments(
-                                        jointEvent: event,
-                                        commentedKeys: commentedAnchorKeys
-                                    )
-                                )
+                            // Paper-white lane sheets sit under the hour lines; events sit on top.
+                            HStack(spacing: laneSpacing) {
+                                ForEach(0..<2, id: \.self) { _ in
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .fill(OurDaysTheme.surface)
+                                        .frame(width: laneWidth, height: dayHeight)
+                                }
                             }
-                            .buttonStyle(.plain)
-                            .frame(width: max(44, slotWidth - 4), height: eventHeight, alignment: .top)
-                            .offset(
-                                x: railWidth + railSpacing + 4 + (CGFloat(placement.columnIndex) * slotWidth),
-                                y: eventY
+                            .offset(x: railWidth + railSpacing)
+
+                            DayTimelineHourGrid(
+                                hourHeight: hourHeight,
+                                startHour: visibleStartHour,
+                                railWidth: railWidth,
+                                railSpacing: railSpacing,
+                                contentWidth: contentWidth
                             )
-                            .accessibilityLabel("\(event.title), \(timeText(for: event)), \(event.calendarTitle), \(settings.strings.jointScheduleLabel)")
-                        }
+                            .allowsHitTesting(false)
 
-                        DayTimelineNowIndicatorOverlay(
-                            dayStart: dayStart,
-                            hourHeight: hourHeight,
-                            railWidth: railWidth,
-                            railSpacing: railSpacing,
-                            contentWidth: contentWidth
-                        )
+                            HStack(alignment: .top, spacing: railSpacing) {
+                                DayTimelineHourRail(hourHeight: hourHeight, startHour: visibleStartHour, width: railWidth)
+
+                                HStack(alignment: .top, spacing: laneSpacing) {
+                                    DayTimelineLane(
+                                        events: myEvents,
+                                        identity: .me,
+                                        dayStart: dayStart,
+                                        hourHeight: hourHeight,
+                                        startHour: visibleStartHour,
+                                        width: laneWidth,
+                                        onSelect: onSelect,
+                                        commentedAnchorKeys: commentedAnchorKeys,
+                                        persistedMirrorIDByKey: persistedMirrorIDByKey
+                                    )
+
+                                    DayTimelineLane(
+                                        events: partnerEvents,
+                                        identity: .partner,
+                                        dayStart: dayStart,
+                                        hourHeight: hourHeight,
+                                        startHour: visibleStartHour,
+                                        width: laneWidth,
+                                        onSelect: onSelect,
+                                        commentedAnchorKeys: commentedAnchorKeys,
+                                        persistedMirrorIDByKey: persistedMirrorIDByKey
+                                    )
+                                }
+                            }
+
+                            defaultScrollMarker()
+
+                            ForEach(jointEvents) { event in
+                                jointScrollMarker(for: event)
+                            }
+
+                            ForEach(jointEvents) { event in
+                                let frame = frame(for: event)
+                                let eventHeight = min(max(frame.height, 44), dayHeight)
+                                let eventY = min(frame.y, max(0, dayHeight - eventHeight))
+                                let jointWidth = (laneWidth * 2) + laneSpacing
+                                let placement = jointPlacements[event.id] ?? DayTimelineJointPlacement(columnIndex: 0, columnCount: 1)
+                                let slotWidth = max(44, (jointWidth - 8) / CGFloat(placement.columnCount))
+
+                                // A Button (not .onTapGesture) so the joint block hit-tests as
+                                // reliably as the regular lane events in DayTimelineLane.
+                                Button {
+                                    onSelectJoint(event)
+                                } label: {
+                                    DayTimelineJointEventBlock(
+                                        event: event,
+                                        isFocused: event.id == focusedJointEventID,
+                                        hasComments: EventCommentIndicatorPlan.hasComments(
+                                            jointEvent: event,
+                                            commentedKeys: commentedAnchorKeys
+                                        )
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .frame(width: max(44, slotWidth - 4), height: eventHeight, alignment: .top)
+                                .offset(
+                                    x: railWidth + railSpacing + 4 + (CGFloat(placement.columnIndex) * slotWidth),
+                                    y: eventY
+                                )
+                                .accessibilityLabel("\(event.title), \(timeText(for: event)), \(event.calendarTitle), \(settings.strings.jointScheduleLabel)")
+                            }
+
+                            DayTimelineNowIndicatorOverlay(
+                                dayStart: dayStart,
+                                hourHeight: hourHeight,
+                                offsetY: offsetY,
+                                visibleHeight: dayHeight,
+                                railWidth: railWidth,
+                                railSpacing: railSpacing,
+                                contentWidth: contentWidth
+                            )
+                        }
+                        .frame(width: contentWidth, height: dayHeight, alignment: .topLeading)
                     }
-                    .frame(width: contentWidth, height: dayHeight, alignment: .topLeading)
                     .padding(.horizontal, horizontalPadding)
                     .padding(.bottom, 24)
                 }
@@ -1859,17 +1977,45 @@ struct DayAlignedTimelineView: View {
         }
     }
 
+    /// The folded night hours. Tapping it unfolds 00:00 onward (and folds it back).
+    private func nightBand(collapsedStartHour: Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isNightExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isNightExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption2.weight(.bold))
+                Text(settings.strings.nightCollapsedLabel(untilHour: collapsedStartHour))
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundStyle(OurDaysTheme.secondaryInk)
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(OurDaysTheme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, railWidth + railSpacing)
+        .frame(width: contentWidth)
+        .accessibilityIdentifier("timeline-night-band")
+    }
+
     private func frame(for event: JointScheduleEvent) -> DayTimelineEventFrame {
         if event.isAllDay {
             return DayTimelineEventFrame(y: 0, height: hourHeight)
         }
 
-        return DayTimelineLayoutPlan.eventFrame(
+        let frame = DayTimelineLayoutPlan.eventFrame(
             startDate: event.startDate,
             endDate: event.endDate,
             dayStart: dayStart,
             hourHeight: hourHeight
         )
+        return DayTimelineEventFrame(y: max(0, frame.y - offsetY), height: frame.height)
     }
 
     private func timeText(for event: JointScheduleEvent) -> String {
@@ -1901,7 +2047,7 @@ struct DayAlignedTimelineView: View {
     }
 
     private func defaultScrollMarker() -> some View {
-        let targetY = DayTimelineScrollTargetPlan.defaultTargetY(hourHeight: hourHeight)
+        let targetY = DayTimelineScrollTargetPlan.defaultTargetY(hourHeight: hourHeight) - offsetY
 
         return VStack(spacing: 0) {
             Color.clear
@@ -1920,7 +2066,7 @@ struct DayAlignedTimelineView: View {
             for: event,
             dayStart: dayStart,
             hourHeight: hourHeight
-        )
+        ) - offsetY
 
         return VStack(spacing: 0) {
             Color.clear
@@ -1936,6 +2082,7 @@ struct DayAlignedTimelineView: View {
 }
 
 struct DayTimelineHeader: View {
+    @Environment(SettingsStore.self) private var settings
     let railWidth: CGFloat
     let railSpacing: CGFloat
     let laneSpacing: CGFloat
@@ -1946,22 +2093,22 @@ struct DayTimelineHeader: View {
     let partnerCount: Int
 
     var body: some View {
-        HStack(alignment: .top, spacing: railSpacing) {
+        HStack(alignment: .center, spacing: railSpacing) {
             Color.clear
                 .frame(width: railWidth, height: 1)
 
-            HStack(alignment: .top, spacing: laneSpacing) {
+            HStack(alignment: .center, spacing: laneSpacing) {
                 DayTimelineColumnHeader(
                     title: myTitle,
                     count: myCount,
-                    tint: .blue,
+                    identity: .me,
                     width: laneWidth
                 )
 
                 DayTimelineColumnHeader(
                     title: partnerTitle,
                     count: partnerCount,
-                    tint: .pink,
+                    identity: .partner,
                     width: laneWidth
                 )
             }
@@ -1970,58 +2117,68 @@ struct DayTimelineHeader: View {
 }
 
 struct DayTimelineColumnHeader: View {
+    @Environment(SettingsStore.self) private var settings
     let title: String
     let count: Int
-    let tint: Color
+    let identity: OurDaysIdentity
     let width: CGFloat
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+        HStack(spacing: 8) {
+            switch identity {
+            case .me:
+                MemberAvatarView(avatar: settings.currentAvatar, fallbackText: settings.myAvatarFallbackText, identity: .me, size: 28)
+            case .partner:
+                MemberAvatarView(avatar: settings.partnerAvatar, fallbackText: settings.partnerAvatarFallbackText, identity: .partner, size: 28)
             }
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(OurDaysTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
             Spacer(minLength: 4)
-            Text("\(count)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
+            Text(settings.strings.laneEventCountText(count))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(identity.onTint)
         }
+        .padding(.horizontal, 4)
         .frame(width: width, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
 struct DayTimelineHourRail: View {
     let hourHeight: CGFloat
+    let startHour: Int
     let width: CGFloat
 
     var body: some View {
+        let offsetY = CGFloat(startHour) * hourHeight
         ZStack(alignment: .topTrailing) {
-            ForEach(DayTimelineLayoutPlan.hourMarks(hourHeight: hourHeight), id: \.hour) { mark in
+            ForEach(DayTimelineLayoutPlan.hourMarks(hourHeight: hourHeight).filter { $0.hour >= startHour }, id: \.hour) { mark in
                 Text(String(format: "%02d:00", mark.hour))
                     .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .offset(y: max(0, mark.y - 7))
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                    .offset(y: max(0, mark.y - offsetY - 7))
             }
         }
-        .frame(width: width, height: DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight), alignment: .topTrailing)
+        .frame(width: width, height: DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight) - offsetY, alignment: .topTrailing)
     }
 }
 
-/// The red "now" line + time label drawn over the day timeline, matching the
-/// iOS built-in calendar. `TimelineView(.everyMinute)` refreshes it cheaply while
-/// the view is visible; `DayTimelineNowIndicatorPlan` returns nil (hiding it)
-/// unless the displayed day is today. Non-interactive so it never blocks taps.
+/// The "now" line + time chip drawn over the day timeline. `TimelineView(.everyMinute)`
+/// refreshes it cheaply while visible; `DayTimelineNowIndicatorPlan` returns nil (hiding
+/// it) unless the displayed day is today. Non-interactive so it never blocks taps.
 struct DayTimelineNowIndicatorOverlay: View {
     let dayStart: Date
     let hourHeight: CGFloat
+    let offsetY: CGFloat
+    let visibleHeight: CGFloat
     let railWidth: CGFloat
     let railSpacing: CGFloat
     let contentWidth: CGFloat
 
     var body: some View {
-        let dayHeight = DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight)
         let lineX = railWidth + railSpacing
 
         TimelineView(.everyMinute) { context in
@@ -2029,25 +2186,25 @@ struct DayTimelineNowIndicatorOverlay: View {
                 now: context.date,
                 dayStart: dayStart,
                 hourHeight: hourHeight
-            ) {
+            ), indicator.y >= offsetY {
+                let y = indicator.y - offsetY
                 ZStack(alignment: .topLeading) {
-                    Text(indicator.date.formatted(date: .omitted, time: .shortened))
-                        .font(.caption2.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.red)
-                        .frame(width: railWidth, alignment: .trailing)
-                        .offset(y: indicator.y - 7)
-
                     Rectangle()
-                        .fill(Color.red)
-                        .frame(width: max(0, contentWidth - lineX), height: 1.5)
-                        .offset(x: lineX, y: indicator.y - 0.75)
+                        .fill(OurDaysTheme.ink)
+                        .frame(width: max(0, contentWidth - lineX + 4), height: 2)
+                        .offset(x: lineX - 4, y: y - 1)
 
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: 7, height: 7)
-                        .offset(x: lineX - 3.5, y: indicator.y - 3.5)
+                    Text(indicator.date.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2.monospacedDigit().weight(.bold))
+                        .foregroundStyle(OurDaysTheme.onInkFill)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .padding(.horizontal, 4)
+                        .frame(width: railWidth + 2, height: 18)
+                        .background(OurDaysTheme.inkFill, in: Capsule())
+                        .offset(x: -2, y: y - 9)
                 }
-                .frame(width: contentWidth, height: dayHeight, alignment: .topLeading)
+                .frame(width: contentWidth, height: visibleHeight, alignment: .topLeading)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             }
@@ -2057,42 +2214,46 @@ struct DayTimelineNowIndicatorOverlay: View {
 
 struct DayTimelineHourGrid: View {
     let hourHeight: CGFloat
+    let startHour: Int
     let railWidth: CGFloat
     let railSpacing: CGFloat
     let contentWidth: CGFloat
 
     var body: some View {
+        let offsetY = CGFloat(startHour) * hourHeight
         ZStack(alignment: .topLeading) {
-            ForEach(DayTimelineLayoutPlan.hourMarks(hourHeight: hourHeight), id: \.hour) { mark in
+            ForEach(DayTimelineLayoutPlan.hourMarks(hourHeight: hourHeight).filter { $0.hour > startHour }, id: \.hour) { mark in
                 Rectangle()
-                    .fill(Color(.separator).opacity(mark.hour == 0 ? 0.55 : 0.28))
+                    .fill(OurDaysTheme.hairline)
                     .frame(width: contentWidth - railWidth - railSpacing, height: 1)
-                    .offset(x: railWidth + railSpacing, y: mark.y)
+                    .offset(x: railWidth + railSpacing, y: mark.y - offsetY)
             }
         }
-        .frame(width: contentWidth, height: DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight), alignment: .topLeading)
+        .frame(width: contentWidth, height: DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight) - offsetY, alignment: .topLeading)
     }
 }
 
 struct DayTimelineLane: View {
     @Environment(SettingsStore.self) private var settings
     let events: [EventMirror]
-    let tint: Color
+    let identity: OurDaysIdentity
     let dayStart: Date
     let hourHeight: CGFloat
+    let startHour: Int
     let width: CGFloat
     let onSelect: (EventMirror) -> Void
     let commentedAnchorKeys: Set<String>
     let persistedMirrorIDByKey: [String: String]
 
+    var offsetY: CGFloat { CGFloat(startHour) * hourHeight }
+
     var dayHeight: CGFloat {
-        DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight)
+        DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight) - offsetY
     }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(.secondarySystemBackground).opacity(0.55))
+            Color.clear
 
             ForEach(events) { event in
                 let frame = frame(for: event)
@@ -2104,7 +2265,7 @@ struct DayTimelineLane: View {
                 } label: {
                     DayTimelineEventBlock(
                         event: event,
-                        tint: tint,
+                        identity: identity,
                         hasComments: EventCommentIndicatorPlan.hasComments(
                             mirror: event,
                             commentedKeys: commentedAnchorKeys,
@@ -2119,10 +2280,6 @@ struct DayTimelineLane: View {
             }
         }
         .frame(width: width, height: dayHeight, alignment: .topLeading)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(.separator).opacity(0.18), lineWidth: 1)
-        )
     }
 
     private func frame(for event: EventMirror) -> DayTimelineEventFrame {
@@ -2130,12 +2287,13 @@ struct DayTimelineLane: View {
             return DayTimelineEventFrame(y: 0, height: hourHeight)
         }
 
-        return DayTimelineLayoutPlan.eventFrame(
+        let frame = DayTimelineLayoutPlan.eventFrame(
             startDate: event.startDate,
             endDate: event.endDate,
             dayStart: dayStart,
             hourHeight: hourHeight
         )
+        return DayTimelineEventFrame(y: max(0, frame.y - offsetY), height: frame.height)
     }
 
     private func timeText(for event: EventMirror) -> String {
@@ -2147,18 +2305,20 @@ struct DayTimelineLane: View {
     }
 }
 
-/// Small red dot marking a calendar event that has at least one comment. Decorative
+/// Small dot marking a calendar event that has at least one comment. Decorative
 /// (`accessibilityHidden`) so it doesn't disturb the buttons' existing accessibility labels;
 /// the visibility decision comes from `EventCommentIndicatorPlan`.
 struct CommentIndicatorDot: View {
     let isVisible: Bool
+    var color: Color = OurDaysTheme.ink
+    var ringColor: Color = OurDaysTheme.surface
 
     var body: some View {
         if isVisible {
             Circle()
-                .fill(Color.red)
+                .fill(color)
                 .frame(width: 8, height: 8)
-                .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1))
+                .overlay(Circle().stroke(ringColor, lineWidth: 1.5))
                 .accessibilityHidden(true)
         }
     }
@@ -2167,38 +2327,39 @@ struct CommentIndicatorDot: View {
 struct DayTimelineEventBlock: View {
     @Environment(SettingsStore.self) private var settings
     let event: EventMirror
-    let tint: Color
+    let identity: OurDaysIdentity
     var hasComments: Bool = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Rectangle()
-                .fill(Color(hex: event.calendarColorHex) ?? tint)
-                .frame(width: 3)
-                .clipShape(Capsule())
+        VStack(alignment: .leading, spacing: 2) {
+            Text(event.title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(OurDaysTheme.ink)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(event.title)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
+            HStack(spacing: 4) {
+                // The source calendar's own color survives as a small dot, so people
+                // who share several calendars can still tell them apart.
+                if let calendarColor = Color(hex: event.calendarColorHex) {
+                    Circle()
+                        .fill(calendarColor)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
                 Text(timeText)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(identity.onTint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(7)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+        .background(identity.tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(alignment: .topTrailing) {
-            CommentIndicatorDot(isVisible: hasComments).padding(4)
+            CommentIndicatorDot(isVisible: hasComments, ringColor: identity.tint).padding(6)
         }
     }
 
@@ -2217,44 +2378,50 @@ struct DayTimelineJointEventBlock: View {
     var hasComments: Bool = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Rectangle()
-                .fill(Color.green)
-                .frame(width: 3)
-                .clipShape(Capsule())
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(event.title)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                Text("\(event.calendarTitle) · \(settings.strings.jointScheduleLabel)")
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                HStack(spacing: -3) {
+                    Circle().fill(OurDaysIdentity.me.color).frame(width: 8, height: 8)
+                    Circle().fill(OurDaysIdentity.partner.color).frame(width: 8, height: 8)
+                }
+                .accessibilityHidden(true)
+                Text(settings.strings.jointScheduleLabel)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(OurDaysTheme.onJointSecondary)
                     .lineLimit(1)
-
-                Text(timeText)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             }
 
-            Spacer(minLength: 0)
+            Text(event.title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(OurDaysTheme.onJoint)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+
+            Text(detailText)
+                .font(.caption2)
+                .foregroundStyle(OurDaysTheme.onJointSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
-        .padding(7)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.green.opacity(isFocused ? 0.22 : 0.12))
+        .background(OurDaysTheme.joint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.green.opacity(isFocused ? 0.9 : 0.45), lineWidth: isFocused ? 2 : 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(OurDaysIdentity.me.color, lineWidth: isFocused ? 2 : 0)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .shadow(color: Color.green.opacity(isFocused ? 0.22 : 0.04), radius: isFocused ? 5 : 2, x: 0, y: 1)
+        .shadow(color: OurDaysTheme.joint.opacity(isFocused ? 0.35 : 0.12), radius: isFocused ? 8 : 3, x: 0, y: 2)
         .overlay(alignment: .topTrailing) {
-            CommentIndicatorDot(isVisible: hasComments).padding(4)
+            CommentIndicatorDot(isVisible: hasComments, color: OurDaysTheme.onJoint, ringColor: OurDaysTheme.joint).padding(7)
         }
+    }
+
+    private var detailText: String {
+        if let location = event.location, !location.isEmpty {
+            return "\(timeText) · \(location)"
+        }
+        return timeText
     }
 
     var timeText: String {
@@ -2275,7 +2442,7 @@ struct WeekAgendaView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 12) {
+            LazyVStack(spacing: 16) {
                 ForEach(days) { day in
                     WeekAgendaDaySection(
                         day: day,
@@ -2303,31 +2470,36 @@ struct WeekAgendaDaySection: View {
     let persistedMirrorIDByKey: [String: String]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(day.date, format: .dateTime.weekday(.wide))
-                        .font(.headline)
-                    Text(day.date, format: .dateTime.month(.abbreviated).day())
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        let isToday = Calendar.current.isDateInToday(day.date)
 
-                Spacer()
-
-                Text("\(day.items.count)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 2) {
+                Text(day.date.formatted(.dateTime.weekday(.abbreviated).locale(settings.appLanguage.locale)))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                Text(day.date.formatted(.dateTime.day()))
+                    .font(OurDaysTheme.displayFont(24))
+                    .foregroundStyle(isToday ? OurDaysTheme.onInkFill : OurDaysTheme.ink)
+                    .frame(width: 40, height: 40)
+                    .background {
+                        if isToday {
+                            Circle().fill(OurDaysTheme.inkFill)
+                        }
+                    }
             }
+            .frame(width: 44)
 
             if day.items.isEmpty {
                 Text(settings.strings.noEvents)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding(.horizontal, 12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(OurDaysTheme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    )
+                    .padding(.top, 18)
             } else {
                 VStack(spacing: 8) {
                     ForEach(day.items) { item in
@@ -2352,12 +2524,10 @@ struct WeekAgendaDaySection: View {
                         }
                     }
                 }
+                .padding(.top, 18)
             }
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func itemHasComments(_ item: WeekAgendaItem) -> Bool {
@@ -2382,55 +2552,60 @@ struct WeekAgendaItemCard: View {
     var hasComments: Bool = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Rectangle()
-                .fill(tint)
-                .frame(width: 4)
-                .clipShape(Capsule())
+        VStack(alignment: .leading, spacing: 4) {
+            Text(contextLabel)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(secondaryColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+            Text(item.title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(primaryColor)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
 
-                Text(contextLabel)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(tint)
+            Text(timeText)
+                .font(.caption)
+                .foregroundStyle(secondaryColor)
+
+            if let location = item.location, !location.isEmpty {
+                Label(location, systemImage: "mappin.and.ellipse")
+                    .font(.caption2)
+                    .foregroundStyle(secondaryColor)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-
-                Text(timeText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let location = item.location, !location.isEmpty {
-                    Label(location, systemImage: "mappin.and.ellipse")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(alignment: .topTrailing) {
-            CommentIndicatorDot(isVisible: hasComments).padding(7)
+            CommentIndicatorDot(
+                isVisible: hasComments,
+                color: item.kind == .joint ? OurDaysTheme.onJoint : OurDaysTheme.ink,
+                ringColor: background
+            )
+            .padding(8)
         }
     }
 
-    private var tint: Color {
+    private var background: Color {
         switch item.kind {
-        case .currentMember:
-            Color(hex: item.colorHex) ?? .blue
-        case .partner:
-            Color(hex: item.colorHex) ?? .pink
-        case .joint:
-            .green
+        case .currentMember: OurDaysIdentity.me.tint
+        case .partner: OurDaysIdentity.partner.tint
+        case .joint: OurDaysTheme.joint
+        }
+    }
+
+    private var primaryColor: Color {
+        item.kind == .joint ? OurDaysTheme.onJoint : OurDaysTheme.ink
+    }
+
+    private var secondaryColor: Color {
+        switch item.kind {
+        case .currentMember: OurDaysIdentity.me.onTint
+        case .partner: OurDaysIdentity.partner.onTint
+        case .joint: OurDaysTheme.onJointSecondary
         }
     }
 
@@ -2439,9 +2614,9 @@ struct WeekAgendaItemCard: View {
         case .currentMember:
             "\(settings.strings.meTitle) · \(item.calendarTitle)"
         case .partner:
-            "\(settings.strings.partnerTitle) · \(item.calendarTitle)"
+            "\(settings.partnerDisplayName) · \(item.calendarTitle)"
         case .joint:
-            "\(item.calendarTitle) · \(settings.strings.jointScheduleLabel)"
+            settings.strings.jointScheduleLabel
         }
     }
 
@@ -2524,6 +2699,7 @@ struct CreateInviteView: View {
                     }
                 }
             }
+            .ourDaysListBackground()
             .navigationTitle(strings.newInviteTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -2786,19 +2962,16 @@ struct EventCommentsSection: View {
 
     var body: some View {
         let strings = settings.strings
-        Section(strings.commentsSection) {
+        Section {
             ForEach(threadComments) { comment in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(authorDisplayName(comment.authorMemberID))
-                            .font(.caption.weight(.semibold))
-                        Spacer()
-                        Text(comment.createdAt, format: .dateTime.hour().minute())
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(comment.body)
-                }
+                EventCommentBubble(
+                    comment: comment,
+                    isMine: comment.authorMemberID == settings.currentMemberID,
+                    authorName: authorDisplayName(comment.authorMemberID)
+                )
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 .swipeActions {
                     Button(role: .destructive) {
                         services.commentService.delete(comment)
@@ -2809,21 +2982,45 @@ struct EventCommentsSection: View {
                 }
             }
 
-            HStack {
+            HStack(spacing: 10) {
                 TextField(strings.addCommentPlaceholder, text: $commentBody, axis: .vertical)
+                    .lineLimit(1...4)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 11)
+                    .background(OurDaysTheme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(OurDaysTheme.border, lineWidth: 1)
+                    )
                 Button {
                     addComment()
                 } label: {
-                    Image(systemName: "paperplane.fill")
+                    Image(systemName: "arrow.up")
+                        .font(.headline)
+                        .foregroundStyle(OurDaysTheme.onInkFill)
+                        .frame(width: 44, height: 44)
+                        .background(OurDaysTheme.inkFill, in: Circle())
                 }
+                .buttonStyle(.plain)
                 .disabled(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 1)
+                .accessibilityLabel(strings.addCommentPlaceholder)
             }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
 
             if let commentError {
                 Text(commentError)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(OurDaysTheme.destructive)
+                    .listRowBackground(Color.clear)
             }
+        } header: {
+            Text(strings.commentsSection)
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(OurDaysTheme.secondaryInk)
+                .textCase(nil)
         }
     }
 
@@ -2870,6 +3067,114 @@ struct EventCommentsSection: View {
     }
 }
 
+/// One comment as a chat bubble: the partner on the left in a white bubble, me on the
+/// right in my identity color — the same left/right reading as any messaging app.
+struct EventCommentBubble: View {
+    let comment: EventComment
+    let isMine: Bool
+    let authorName: String
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            if isMine {
+                Spacer(minLength: 48)
+            } else {
+                MemberAvatarForID(memberID: comment.authorMemberID, size: 28)
+            }
+
+            VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
+                Text(comment.body)
+                    .font(.body)
+                    .foregroundStyle(isMine ? Color.white : OurDaysTheme.ink)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        isMine ? OurDaysIdentity.me.color : OurDaysTheme.surface,
+                        in: UnevenRoundedRectangle(
+                            topLeadingRadius: 18,
+                            bottomLeadingRadius: isMine ? 18 : 6,
+                            bottomTrailingRadius: isMine ? 6 : 18,
+                            topTrailingRadius: 18,
+                            style: .continuous
+                        )
+                    )
+                    .textSelection(.enabled)
+                Text("\(authorName) · \(comment.createdAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption2)
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                    .padding(.horizontal, 6)
+            }
+
+            if !isMine {
+                Spacer(minLength: 48)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Owner-tinted header of an event detail sheet: who it belongs to, a serif title,
+/// and one line each for time and place.
+struct EventDetailHeader: View {
+    @Environment(SettingsStore.self) private var settings
+    let title: String
+    let ownerLabel: String
+    let ownerMemberID: String?
+    let timeText: String
+    let location: String?
+    let calendarTitle: String?
+    let isJoint: Bool
+
+    private var identity: OurDaysIdentity? {
+        guard let ownerMemberID else { return nil }
+        return ownerMemberID == settings.currentMemberID ? .me : .partner
+    }
+
+    private var primary: Color { isJoint ? OurDaysTheme.onJoint : OurDaysTheme.ink }
+    private var secondary: Color { isJoint ? OurDaysTheme.onJointSecondary : (identity?.onTint ?? OurDaysTheme.secondaryInk) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                if isJoint {
+                    HStack(spacing: -8) {
+                        MemberAvatarView(avatar: settings.currentAvatar, fallbackText: settings.myAvatarFallbackText, identity: .me, size: 26)
+                        MemberAvatarView(avatar: settings.partnerAvatar, fallbackText: settings.partnerAvatarFallbackText, identity: .partner, size: 26)
+                    }
+                } else if let ownerMemberID {
+                    MemberAvatarForID(memberID: ownerMemberID, size: 26)
+                }
+                Text(ownerLabel)
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(secondary)
+            }
+
+            Text(title)
+                .font(OurDaysTheme.displayFont(28))
+                .foregroundStyle(primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Label(timeText, systemImage: "clock")
+                if let location, !location.isEmpty {
+                    Label(location, systemImage: "mappin.and.ellipse")
+                }
+                if let calendarTitle, !calendarTitle.isEmpty {
+                    Label(calendarTitle, systemImage: "calendar")
+                }
+            }
+            .font(.subheadline)
+            .foregroundStyle(isJoint ? OurDaysTheme.onJointSecondary : OurDaysTheme.secondaryInk)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            isJoint ? OurDaysTheme.joint : (identity?.tint ?? OurDaysTheme.surface),
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+        )
+    }
+}
+
 struct EventDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -2888,25 +3193,37 @@ struct EventDetailView: View {
         NavigationStack {
             List {
                 Section {
-                    LabeledContent(strings.ownerLabel, value: event.ownerMemberID == settings.currentMemberID ? strings.meTitle : strings.partnerTitle)
-                    LabeledContent(strings.calendarLabel, value: event.sourceCalendarTitle)
-                    LabeledContent(strings.startsLabel, value: strings.abbreviatedDateTimeText(event.startDate))
-                    LabeledContent(strings.endsLabel, value: strings.abbreviatedDateTimeText(event.endDate))
-                    if let location = event.location {
-                        LabeledContent(strings.locationLabel, value: location)
-                    }
-                    if let notes = event.notes {
+                    EventDetailHeader(
+                        title: event.title,
+                        ownerLabel: event.ownerMemberID == settings.currentMemberID
+                            ? strings.myScheduleLabel
+                            : strings.partnerScheduleLabel(settings.partnerDisplayName),
+                        ownerMemberID: event.ownerMemberID,
+                        timeText: detailTimeText,
+                        location: event.location,
+                        calendarTitle: event.sourceCalendarTitle,
+                        isJoint: false
+                    )
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+
+                    if let notes = event.notes, !notes.isEmpty {
                         Text(notes)
+                            .font(.subheadline)
+                            .foregroundStyle(OurDaysTheme.ink)
+                            .ourDaysCard()
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 0, trailing: 16))
                     }
-                } header: {
-                    Text(event.title)
                 }
 
-                Section(strings.inviteSection) {
+                Section {
                     Button {
                         createInviteAfterConflictCheck()
                     } label: {
                         Label(strings.invitePartnerButton, systemImage: "person.badge.plus")
+                            .foregroundStyle(OurDaysTheme.ink)
                     }
                     // Optimistic send shows success instantly; disable to prevent a
                     // double-tap creating a duplicate invitation within this sheet.
@@ -2915,14 +3232,19 @@ struct EventDetailView: View {
                     if let inviteSuccessMessage {
                         Text(inviteSuccessMessage)
                             .font(.caption)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(OurDaysIdentity.me.onTint)
                     }
 
                     if let inviteError {
                         Text(inviteError)
                             .font(.caption)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(OurDaysTheme.destructive)
                     }
+                } header: {
+                    Text(strings.inviteSection)
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                        .textCase(nil)
                 }
 
                 // `event` may be my own transient "display:" mirror; resolve to the persisted
@@ -2933,6 +3255,8 @@ struct EventDetailView: View {
                     EventCommentsSection(anchor: EventCommentAnchorPlan.anchor(forMirror: commentMirror))
                 }
             }
+            .listSectionSpacing(16)
+            .ourDaysListBackground()
             .navigationTitle(strings.eventTitle)
             .navigationBarTitleDisplayMode(.inline)
             .task {
@@ -2961,6 +3285,16 @@ struct EventDetailView: View {
                 }
             }
         }
+    }
+
+    private var detailTimeText: String {
+        EventDetailTimePlan.text(
+            startDate: event.startDate,
+            endDate: event.endDate,
+            isAllDay: event.isAllDay,
+            strings: settings.strings,
+            locale: settings.appLanguage.locale
+        )
     }
 
     private func createInviteAfterConflictCheck() {
@@ -3078,23 +3412,39 @@ struct JointEventDetailView: View {
         NavigationStack {
             List {
                 Section {
-                    LabeledContent(strings.calendarLabel, value: event.calendarTitle)
-                    LabeledContent(strings.startsLabel, value: strings.abbreviatedDateTimeText(event.startDate))
-                    LabeledContent(strings.endsLabel, value: strings.abbreviatedDateTimeText(event.endDate))
-                    if let location = event.location {
-                        LabeledContent(strings.locationLabel, value: location)
-                    }
-                    if let notes = event.notes {
+                    EventDetailHeader(
+                        title: event.title,
+                        ownerLabel: strings.jointScheduleLabel,
+                        ownerMemberID: nil,
+                        timeText: EventDetailTimePlan.text(
+                            startDate: event.startDate,
+                            endDate: event.endDate,
+                            isAllDay: event.isAllDay,
+                            strings: strings,
+                            locale: settings.appLanguage.locale
+                        ),
+                        location: event.location,
+                        calendarTitle: nil,
+                        isJoint: true
+                    )
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+
+                    if let notes = event.notes, !notes.isEmpty {
                         Text(notes)
+                            .font(.subheadline)
+                            .foregroundStyle(OurDaysTheme.ink)
+                            .ourDaysCard()
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 0, trailing: 16))
                     }
-                    Label(strings.jointScheduleLabel, systemImage: "person.2.fill")
-                        .foregroundStyle(.green)
-                } header: {
-                    Text(event.title)
                 }
 
                 EventCommentsSection(anchor: EventCommentAnchorPlan.anchor(forInvitation: invitation))
             }
+            .listSectionSpacing(16)
+            .ourDaysListBackground()
             .navigationTitle(strings.eventTitle)
             .navigationBarTitleDisplayMode(.inline)
             .task {
@@ -3155,26 +3505,49 @@ struct ActivityTabView: View {
 
     var body: some View {
         let strings = settings.strings
-        Group {
+        List {
+            OurDaysPageHeader(title: strings.activityTitle, subtitle: strings.activitySubtitle)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+
             if items.isEmpty {
                 ContentUnavailableView(
                     strings.activityEmptyTitle,
                     systemImage: "bubble.left.and.bubble.right",
                     description: Text(strings.activityEmptyMessage)
                 )
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             } else {
-                List(items) { item in
-                    Button {
-                        open(item)
-                    } label: {
-                        ActivityFeedRow(item: item, authorName: authorName(for: item))
+                ForEach(ActivityFeedSectionPlan.sections(items)) { section in
+                    Section {
+                        ForEach(section.items) { item in
+                            Button {
+                                open(item)
+                            } label: {
+                                ActivityFeedRow(
+                                    item: item,
+                                    authorName: authorName(for: item),
+                                    contextText: contextText(for: item),
+                                    contextIdentity: contextIdentity(for: item)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                        }
+                    } header: {
+                        OurDaysSectionLabel(title: sectionTitle(for: section.dayStart))
+                            .textCase(nil)
                     }
-                    .buttonStyle(.plain)
                 }
-                .listStyle(.plain)
             }
         }
-        .navigationTitle(strings.activityTitle)
+        .listStyle(.plain)
+        .ourDaysListBackground()
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $selectedEvent) { event in
             EventDetailView(event: event)
         }
@@ -3215,6 +3588,40 @@ struct ActivityTabView: View {
         mirrors.first { $0.id == id }
     }
 
+    private func sectionTitle(for dayStart: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(dayStart) { return settings.strings.todaySectionTitle }
+        if calendar.isDateInYesterday(dayStart) { return settings.strings.yesterdaySectionTitle }
+        return dayStart.formatted(.dateTime.month().day().weekday(.abbreviated).locale(settings.appLanguage.locale))
+    }
+
+    /// nil = a joint event; otherwise whose event the thread hangs off.
+    private func contextIdentity(for item: ActivityFeedItem) -> OurDaysIdentity? {
+        guard let mirror = mirror(for: item.eventMirrorID) else { return nil }
+        return mirror.ownerMemberID == settings.currentMemberID ? .me : .partner
+    }
+
+    private func contextText(for item: ActivityFeedItem) -> String {
+        let strings = settings.strings
+        let owner: String
+        let startDate: Date?
+        if let mirror = mirror(for: item.eventMirrorID) {
+            owner = mirror.ownerMemberID == settings.currentMemberID
+                ? strings.myScheduleLabel
+                : strings.partnerScheduleLabel(settings.partnerDisplayName)
+            startDate = mirror.startDate
+        } else {
+            owner = strings.jointScheduleLabel
+            startDate = invitations.first(where: { $0.id == item.eventMirrorID })?.startDate
+        }
+        var parts = [owner]
+        if let startDate {
+            parts.append(startDate.formatted(.dateTime.month().day().hour().minute().locale(settings.appLanguage.locale)))
+        }
+        parts.append(strings.commentCountText(item.commentCount))
+        return parts.joined(separator: " · ")
+    }
+
     private func authorName(for item: ActivityFeedItem) -> String {
         MemberDisplayNamePlan.displayName(
             forMemberID: item.latestCommentAuthorMemberID,
@@ -3229,32 +3636,67 @@ struct ActivityTabView: View {
 private struct ActivityFeedRow: View {
     let item: ActivityFeedItem
     let authorName: String
+    let contextText: String
+    let contextIdentity: OurDaysIdentity?
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Circle()
-                .fill(item.hasUnread ? Color.accentColor : Color.clear)
-                .frame(width: 8, height: 8)
-                .padding(.top, 6)
-                .accessibilityHidden(!item.hasUnread)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+            MemberAvatarForID(memberID: item.latestCommentAuthorMemberID, size: 36)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
                     Text(item.eventTitle)
-                        .font(.headline)
+                        .font(.subheadline.weight(item.hasUnread ? .bold : .semibold))
+                        .foregroundStyle(OurDaysTheme.ink)
                         .lineLimit(1)
-                    Spacer()
-                    Text(item.latestCommentAt, format: .dateTime.month().day().hour().minute())
+                    Spacer(minLength: 4)
+                    Text(item.latestCommentAt.formatted(date: .omitted, time: .shortened))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                    if item.hasUnread {
+                        Circle()
+                            .fill(OurDaysTheme.ink)
+                            .frame(width: 8, height: 8)
+                    }
                 }
-                Text("\(authorName): \(item.latestCommentBody)")
+
+                Text(item.latestCommentBody)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .foregroundStyle(item.hasUnread ? OurDaysTheme.ink : OurDaysTheme.secondaryInk)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        OurDaysTheme.paper,
+                        in: UnevenRoundedRectangle(
+                            topLeadingRadius: 4,
+                            bottomLeadingRadius: 14,
+                            bottomTrailingRadius: 14,
+                            topTrailingRadius: 14,
+                            style: .continuous
+                        )
+                    )
+
+                HStack(spacing: 6) {
+                    if let contextIdentity {
+                        Circle().fill(contextIdentity.color).frame(width: 7, height: 7)
+                    } else {
+                        Capsule().fill(OurDaysTheme.joint).frame(width: 10, height: 7)
+                    }
+                    Text(contextText)
+                        .font(.caption)
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
         }
-        .padding(.vertical, 4)
+        .ourDaysCard()
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.eventTitle), \(authorName): \(item.latestCommentBody)")
     }
 }
 
@@ -3277,10 +3719,27 @@ struct InvitesTabView: View {
     var body: some View {
         let strings = settings.strings
         let visibleInvitations = InvitationListPlan.visibleInvitations(invitations)
+        let pendingInvitations = InvitationListPlan.sortedForDisplay(
+            visibleInvitations.filter { $0.status == .pending }
+        )
+        let handledInvitations = InvitationListPlan.sortedForDisplay(
+            visibleInvitations.filter { $0.status != .pending }
+        )
+        let answerableCount = pendingInvitations.filter {
+            InvitationInteractionPlan.canRespond(to: $0, currentMemberID: settings.currentMemberID)
+        }.count
 
         List {
+            OurDaysPageHeader(
+                title: strings.invitesTab,
+                subtitle: answerableCount > 0 ? strings.pendingInvitationsSubtitle(answerableCount) : nil
+            )
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+
             if !pendingIncomingAccessRequests.isEmpty {
-                Section(strings.pendingAccessRequestsLabel) {
+                Section {
                     ForEach(pendingIncomingAccessRequests) { request in
                         HistoryRequestRow(
                             request: request,
@@ -3291,50 +3750,80 @@ struct InvitesTabView: View {
                         } decline: {
                             update(request, status: .declined)
                         }
+                        .invitesRowStyle()
                     }
+                } header: {
+                    OurDaysSectionLabel(title: strings.pendingAccessRequestsLabel).textCase(nil)
                 }
             }
 
-            ForEach(InvitationStatus.allCases) { status in
-                let filtered = InvitationListPlan.sortedForDisplay(
-                    visibleInvitations.filter { $0.status == status }
-                )
-                if !filtered.isEmpty {
-                    Section(strings.invitationStatusTitle(for: status)) {
-                        ForEach(filtered) { invitation in
-                            InvitationRow(invitation: invitation, currentMemberID: settings.currentMemberID) {
-                                accept(invitation)
-                            } decline: {
-                                decline(invitation)
-                            } openInCalendar: {
-                                openInCalendar(invitation)
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                if InvitationListPlan.canDelete(invitation) {
-                                    Button(role: .destructive) {
-                                        archive(invitation)
-                                    } label: {
-                                        Label(strings.deleteButton, systemImage: "trash")
-                                    }
+            if !pendingInvitations.isEmpty {
+                Section {
+                    ForEach(pendingInvitations) { invitation in
+                        InvitationTicket(invitation: invitation, currentMemberID: settings.currentMemberID) {
+                            accept(invitation)
+                        } decline: {
+                            decline(invitation)
+                        }
+                        .invitesRowStyle()
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            if InvitationListPlan.canDelete(invitation) {
+                                Button(role: .destructive) {
+                                    archive(invitation)
+                                } label: {
+                                    Label(strings.deleteButton, systemImage: "trash")
                                 }
                             }
                         }
                     }
+                } header: {
+                    OurDaysSectionLabel(title: strings.invitationStatusTitle(for: .pending)).textCase(nil)
+                }
+            }
+
+            if !handledInvitations.isEmpty {
+                Section {
+                    ForEach(handledInvitations) { invitation in
+                        InvitationRow(invitation: invitation, currentMemberID: settings.currentMemberID) {
+                            accept(invitation)
+                        } decline: {
+                            decline(invitation)
+                        } openInCalendar: {
+                            openInCalendar(invitation)
+                        }
+                        .invitesRowStyle(vertical: 3)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            if InvitationListPlan.canDelete(invitation) {
+                                Button(role: .destructive) {
+                                    archive(invitation)
+                                } label: {
+                                    Label(strings.deleteButton, systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    OurDaysSectionLabel(title: strings.handledInvitationsSection).textCase(nil)
                 }
             }
 
             if visibleInvitations.isEmpty && pendingIncomingAccessRequests.isEmpty {
                 ContentUnavailableView(strings.noInvitations, systemImage: "envelope.open")
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             if let errorMessage {
-                Section {
-                    Text(errorMessage)
-                        .foregroundStyle(.red)
-                }
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(OurDaysTheme.destructive)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
         }
-        .navigationTitle(strings.invitesTab)
+        .listStyle(.plain)
+        .ourDaysListBackground()
+        .toolbar(.hidden, for: .navigationBar)
         .refreshable {
             await performSync()
         }
@@ -3479,6 +3968,14 @@ struct InvitesTabView: View {
     }
 }
 
+private extension View {
+    func invitesRowStyle(vertical: CGFloat = 6) -> some View {
+        listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: vertical, leading: 16, bottom: vertical, trailing: 16))
+    }
+}
+
 struct HistoryRequestRow: View {
     @Environment(SettingsStore.self) private var settings
     let request: CalendarAccessRequest
@@ -3490,26 +3987,161 @@ struct HistoryRequestRow: View {
     var body: some View {
         let strings = settings.strings
 
-        VStack(alignment: .leading, spacing: 8) {
-            Text(strings.incomingHistoryRequestText(
-                requester: requesterDisplayName,
-                rangeText: rangeText
-            ))
-            .font(.subheadline.weight(.semibold))
-            Text(strings.prePairingHistoryLabel)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                MemberAvatarForID(memberID: request.requesterMemberID, size: 36)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(strings.incomingHistoryRequestText(
+                        requester: requesterDisplayName,
+                        rangeText: rangeText
+                    ))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(OurDaysTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text(strings.prePairingHistoryLabel)
+                        .font(.caption)
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                }
+            }
+            HStack(spacing: 10) {
+                Button(strings.declineButton, action: decline)
+                    .buttonStyle(OurDaysSecondaryButtonStyle())
                 Button(strings.approveButton, action: approve)
-                    .buttonStyle(.borderedProminent)
-                Button(strings.declineButton, role: .destructive, action: decline)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(OurDaysPrimaryButtonStyle())
             }
         }
-        .padding(.vertical, 4)
+        .ourDaysCard()
     }
 }
 
+/// A pending invitation drawn as a ticket stub: the date block on the left, a dashed
+/// tear line, the details on the right, and the answer buttons under a second tear —
+/// an invitation is, after all, a ticket handed to the other person.
+struct InvitationTicket: View {
+    @Environment(SettingsStore.self) private var settings
+    let invitation: EventInvitation
+    let currentMemberID: String
+    let accept: () -> Void
+    let decline: () -> Void
+
+    private var isFromMe: Bool { invitation.creatorMemberID == currentMemberID }
+    private var senderIdentity: OurDaysIdentity { isFromMe ? .me : .partner }
+
+    var body: some View {
+        let strings = settings.strings
+        let locale = settings.appLanguage.locale
+        let canRespond = InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: currentMemberID)
+
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                VStack(spacing: 2) {
+                    Text(invitation.startDate.formatted(.dateTime.month(.abbreviated).locale(locale)))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(senderIdentity.onTint)
+                    Text(invitation.startDate.formatted(.dateTime.day()))
+                        .font(OurDaysTheme.displayFont(38))
+                        .foregroundStyle(OurDaysTheme.ink)
+                    Text(invitation.startDate.formatted(.dateTime.weekday(.abbreviated).locale(locale)))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(senderIdentity.onTint)
+                }
+                .frame(width: 88)
+                .frame(maxHeight: .infinity)
+                .background(senderIdentity.tint)
+
+                TicketTearLine(axis: .vertical)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        MemberAvatarForID(memberID: invitation.creatorMemberID, size: 20)
+                        Text(isFromMe ? strings.sentByMeLabel : strings.invitedYouLine(settings.partnerDisplayName))
+                            .font(.caption)
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                            .lineLimit(1)
+                    }
+                    Text(invitation.title)
+                        .font(.headline)
+                        .foregroundStyle(OurDaysTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(invitation.isAllDay
+                         ? strings.allDay
+                         : "\(strings.shortTimeText(invitation.startDate)) – \(strings.shortTimeText(invitation.endDate))")
+                        .font(.subheadline)
+                        .foregroundStyle(OurDaysTheme.ink.opacity(0.8))
+                    if let location = invitation.location, !location.isEmpty {
+                        Label(location, systemImage: "mappin.and.ellipse")
+                            .font(.footnote)
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+
+            TicketTearLine(axis: .horizontal)
+
+            Group {
+                if canRespond {
+                    HStack(spacing: 10) {
+                        Button(strings.declineButton, action: decline)
+                            .buttonStyle(OurDaysSecondaryButtonStyle())
+                            .frame(maxWidth: 120)
+                        Button(strings.acceptAndAddButton, action: accept)
+                            .buttonStyle(OurDaysPrimaryButtonStyle())
+                    }
+                } else {
+                    Text(strings.waitingForReplyLine(settings.partnerDisplayName))
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                }
+            }
+            .padding(14)
+        }
+        .background(OurDaysTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: .black.opacity(0.06), radius: 12, x: 0, y: 6)
+    }
+}
+
+struct TicketTearLine: View {
+    enum Axis { case horizontal, vertical }
+    let axis: Axis
+
+    var body: some View {
+        switch axis {
+        case .horizontal:
+            Line(axis: .horizontal)
+                .stroke(OurDaysTheme.border, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                .frame(height: 1.5)
+        case .vertical:
+            Line(axis: .vertical)
+                .stroke(OurDaysTheme.border, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                .frame(width: 1.5)
+        }
+    }
+
+    private struct Line: Shape {
+        let axis: Axis
+
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            switch axis {
+            case .horizontal:
+                path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+                path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+            case .vertical:
+                path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+            }
+            return path
+        }
+    }
+}
+
+/// A handled (accepted / declined / canceled) invitation: a compact row with its status.
 struct InvitationRow: View {
     @Environment(SettingsStore.self) private var settings
     let invitation: EventInvitation
@@ -3521,29 +4153,41 @@ struct InvitationRow: View {
     var body: some View {
         let strings = settings.strings
         let canOpenInCalendar = InvitationListPlan.canOpenInCalendar(invitation)
+        let isFromMe = invitation.creatorMemberID == currentMemberID
 
-        VStack(alignment: .leading, spacing: 8) {
-            Text(invitation.title)
-                .font(.headline)
-            Text("\(settings.strings.abbreviatedDateTimeText(invitation.startDate)) - \(settings.strings.shortTimeText(invitation.endDate))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if let location = invitation.location {
-                Label(location, systemImage: "mappin.and.ellipse")
+        HStack(spacing: 12) {
+            Text(invitation.startDate.formatted(.dateTime.day()))
+                .font(OurDaysTheme.displayFont(20))
+                .foregroundStyle(OurDaysTheme.ink)
+                .frame(width: 36)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(invitation.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(OurDaysTheme.ink)
+                    .lineLimit(1)
+                Text("\(isFromMe ? strings.sentByMeLabel : strings.invitedYouLine(settings.partnerDisplayName)) · \(settings.strings.abbreviatedDateTimeText(invitation.startDate))")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
 
-            if InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: currentMemberID) {
-                HStack {
-                    Button(strings.acceptButton, action: accept)
-                        .buttonStyle(.borderedProminent)
-                    Button(strings.declineButton, role: .destructive, action: decline)
-                        .buttonStyle(.bordered)
-                }
+            Spacer(minLength: 8)
+
+            OurDaysChip(
+                title: strings.invitationStatusTitle(for: invitation.status),
+                foreground: invitation.status == .accepted ? OurDaysTheme.ink : OurDaysTheme.secondaryInk,
+                background: invitation.status == .accepted ? OurDaysTheme.sunken : OurDaysTheme.paper
+            )
+
+            if canOpenInCalendar {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
             }
         }
-        .padding(.vertical, 4)
+        .ourDaysCard(padding: 14)
         .contentShape(Rectangle())
         .onTapGesture {
             guard canOpenInCalendar else { return }
@@ -3554,69 +4198,152 @@ struct InvitationRow: View {
 
 enum SettingsSheet: Identifiable {
     case historyRequest
+    case myAvatar
+    case partnerAvatar
 
     var id: String {
         switch self {
         case .historyRequest: "historyRequest"
+        case .myAvatar: "myAvatar"
+        case .partnerAvatar: "partnerAvatar"
         }
     }
 }
 
+/// The hero card of the 我们 tab: the two avatars linked together, how many days the
+/// pairing has lasted, and the sync state. Actions that change the pairing live in the
+/// list below it, so the card only shows state plus the one next step.
 struct PairingStatusCard: View {
     @Environment(SettingsStore.self) private var settings
     let status: PairingStatus
     let pairingDate: Date?
-    let partnerNickname: String
-    let myCalendarScopeValue: String
-    let partnerCalendarScopeValue: String
-    let prePairingHistoryScopeValue: String
+    let partnerName: String
+    let syncStatusText: String
     let isCloudKitEnabled: Bool
     let isPreparingShare: Bool
     let isCheckingCloudKitAccount: Bool
     let isSyncing: Bool
-    let isStoppingShare: Bool
     let cloudKitDiagnosticMessage: String?
     let onStartPairing: () -> Void
     let onCheckCloudKitStatus: () -> Void
     let onSync: () -> Void
-    let onRequestHistory: () -> Void
-    let onUnpair: () -> Void
-    let onOpenSharedPeople: () -> Void
+    let onEditMyAvatar: () -> Void
+    let onEditPartnerAvatar: () -> Void
     let onHideCloudKitDiagnostic: () -> Void
 
     var body: some View {
         let strings = settings.strings
 
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .center) {
-                Text(strings.pairingSection)
-                    .font(.headline)
+                HStack(spacing: -14) {
+                    Button(action: onEditMyAvatar) {
+                        MemberAvatarView(avatar: settings.currentAvatar, fallbackText: settings.myAvatarFallbackText, identity: .me, size: 56)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(strings.myAvatarLabel)
+                    .zIndex(1)
+
+                    if status != .notPaired {
+                        Button(action: onEditPartnerAvatar) {
+                            MemberAvatarView(avatar: settings.partnerAvatar, fallbackText: settings.partnerAvatarFallbackText, identity: .partner, size: 56)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(strings.partnerAvatarLabel(partnerName))
+                    } else {
+                        Circle()
+                            .strokeBorder(OurDaysTheme.border, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+                            .background(Circle().fill(OurDaysTheme.surface))
+                            .frame(width: 56, height: 56)
+                            .overlay(Image(systemName: "plus").font(.headline).foregroundStyle(OurDaysTheme.secondaryInk))
+                            .accessibilityHidden(true)
+                    }
+                }
+
                 Spacer()
-                Text(strings.pairingStatusTitle(for: status))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(statusTint)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(statusTint.opacity(0.12))
-                    .clipShape(Capsule())
+
+                Button(action: onSync) {
+                    Group {
+                        if isSyncing {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.headline)
+                        }
+                    }
+                    .foregroundStyle(OurDaysTheme.ink)
+                    .frame(width: 44, height: 44)
+                    .overlay(Circle().stroke(OurDaysTheme.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(isSyncing)
+                .accessibilityLabel(strings.syncAccessibilityLabel)
             }
 
-            if status == .notPaired {
-                notPairedContent(strings: strings)
-            } else if status == .paired {
-                pairedContent(strings: strings)
-            } else if status == .waitingForYouToShare {
-                waitingForYouToShareContent(strings: strings)
+            if status == .paired {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(strings.pairingDayHeadline(pairingDate.map { PairingDatePlan.dayCount(since: $0) } ?? 0))
+                        .font(OurDaysTheme.displayFont(32))
+                        .foregroundStyle(OurDaysTheme.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    if let pairingDate {
+                        Text(strings.pairedSinceLine(partnerName: partnerName, dateText: strings.pairingDateText(for: pairingDate)))
+                            .font(.subheadline)
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("pairing-day-count")
             } else {
-                pairingInProgressContent(strings: strings)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(strings.pairingStatusTitle(for: status))
+                        .font(OurDaysTheme.displayFont(28))
+                        .foregroundStyle(OurDaysTheme.ink)
+                    Text(status == .waitingForYouToShare ? strings.pairingWaitingForYouToShareDescription : strings.pairingDescription)
+                        .font(.subheadline)
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let pairingDate {
+                        Text(strings.pairingDateLine(strings.pairingDateText(for: pairingDate)))
+                            .font(.caption)
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                    }
+                }
             }
 
-            sharedPeopleContent(strings: strings)
+            HStack(spacing: 8) {
+                OurDaysChip(
+                    title: strings.pairingStatusTitle(for: status),
+                    foreground: status == .paired ? OurDaysTheme.onInkFill : OurDaysTheme.ink,
+                    background: status == .paired ? OurDaysTheme.inkFill : OurDaysTheme.sunken
+                )
+                OurDaysChip(title: syncStatusText, foreground: OurDaysTheme.secondaryInk)
+            }
+
+            if status == .notPaired || status == .waitingForYouToShare {
+                HStack(spacing: 10) {
+                    Button {
+                        onStartPairing()
+                    } label: {
+                        Label(strings.startPairingButton(isPreparing: isPreparingShare), systemImage: "person.badge.plus")
+                    }
+                    .buttonStyle(OurDaysPrimaryButtonStyle())
+                    .disabled(!isCloudKitEnabled || isPreparingShare)
+
+                    checkICloudButton(strings: strings)
+                }
+            } else if status != .paired {
+                HStack {
+                    Spacer()
+                    checkICloudButton(strings: strings)
+                }
+            }
 
             if !isCloudKitEnabled {
                 Text(strings.iCloudSharingUnavailableLocalBuild)
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(OurDaysTheme.destructive)
             }
 
             if let cloudKitDiagnosticMessage {
@@ -3624,7 +4351,7 @@ struct PairingStatusCard: View {
                     HStack {
                         Text(strings.diagnosticsTitle)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
                         Spacer()
                         Button {
                             onHideCloudKitDiagnostic()
@@ -3638,249 +4365,32 @@ struct PairingStatusCard: View {
                     }
                     Text(cloudKitDiagnosticMessage)
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
                         .textSelection(.enabled)
                 }
+                .padding(12)
+                .background(OurDaysTheme.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
-        .padding(16)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(.separator).opacity(0.24), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(OurDaysTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.06), radius: 14, x: 0, y: 8)
     }
 
-    private func sharedPeopleContent(strings: ShareCalStrings) -> some View {
-        let canOpenOfficialSharing = SharedPeoplePresentationPlan.canOpenOfficialSharing(
-            isCloudKitEnabled: isCloudKitEnabled,
-            isPreparingShare: isPreparingShare,
-            isStoppingShare: isStoppingShare
-        )
-
-        return Button {
-            onOpenSharedPeople()
+    private func checkICloudButton(strings: ShareCalStrings) -> some View {
+        Button {
+            onCheckCloudKitStatus()
         } label: {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label(strings.sharedPeopleTitle, systemImage: "person.2")
-                        .font(.subheadline.weight(.semibold))
-                    Text(strings.sharedPeopleDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 8)
-
-                if isPreparingShare {
-                    ProgressView()
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-            }
+            Image(systemName: "icloud.and.arrow.up")
+                .font(.headline)
+                .foregroundStyle(OurDaysTheme.ink)
+                .frame(width: 48, height: 48)
+                .overlay(Circle().stroke(OurDaysTheme.border, lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .disabled(!canOpenOfficialSharing)
-        .accessibilityIdentifier("shared-people-official-share-button")
-    }
-
-    private func notPairedContent(strings: ShareCalStrings) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(strings.pairingDescription)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 10) {
-                Button {
-                    onStartPairing()
-                } label: {
-                    Label(strings.startPairingButton(isPreparing: isPreparingShare), systemImage: "person.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!isCloudKitEnabled || isPreparingShare)
-
-                Button {
-                    onCheckCloudKitStatus()
-                } label: {
-                    Image(systemName: "icloud.and.arrow.up")
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.bordered)
-                .disabled(!isCloudKitEnabled || isCheckingCloudKitAccount)
-                .accessibilityLabel(strings.checkICloudStatusButton(isChecking: isCheckingCloudKitAccount))
-            }
-        }
-    }
-
-    private func pairedContent(strings: ShareCalStrings) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let pairingDate {
-                let dayCount = PairingDatePlan.dayCount(since: pairingDate)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(strings.pairingDayCountText(dayCount))
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                    Text(strings.pairingDateLine(strings.pairingDateText(for: pairingDate)))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityIdentifier("pairing-day-count")
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(partnerNickname)
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(strings.sharingScopeTitle)
-                    .font(.subheadline.weight(.semibold))
-                SharingScopeRow(label: strings.sharingMyCalendarLabel, value: myCalendarScopeValue)
-                SharingScopeRow(label: strings.partnersCalendarLabel, value: partnerCalendarScopeValue)
-                SharingScopeRow(label: strings.prePairingHistoryLabel, value: prePairingHistoryScopeValue)
-            }
-
-            HStack(spacing: 10) {
-                Button {
-                    onSync()
-                } label: {
-                    Label(strings.syncAccessibilityLabel, systemImage: "arrow.triangle.2.circlepath")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSyncing)
-
-                Button {
-                    onRequestHistory()
-                } label: {
-                    Label(strings.requestHistoryAccessButton, systemImage: "clock.arrow.circlepath")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(!isCloudKitEnabled || pairingDate == nil)
-            }
-
-            Button(role: .destructive) {
-                onUnpair()
-            } label: {
-                Label(strings.unpairButton, systemImage: "person.2.slash")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .disabled(!isCloudKitEnabled || isStoppingShare)
-        }
-    }
-
-    private func pairingInProgressContent(strings: ShareCalStrings) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(strings.pairingDescription)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let pairingDate {
-                Text(strings.pairingDateLine(strings.pairingDateText(for: pairingDate)))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 10) {
-                Button {
-                    onSync()
-                } label: {
-                    Label(strings.syncAccessibilityLabel, systemImage: "arrow.triangle.2.circlepath")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSyncing)
-
-                Button {
-                    onCheckCloudKitStatus()
-                } label: {
-                    Image(systemName: "icloud.and.arrow.up")
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.bordered)
-                .disabled(!isCloudKitEnabled || isCheckingCloudKitAccount)
-                .accessibilityLabel(strings.checkICloudStatusButton(isChecking: isCheckingCloudKitAccount))
-            }
-
-            Button(role: .destructive) {
-                onUnpair()
-            } label: {
-                Label(strings.unpairButton, systemImage: "person.2.slash")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .disabled(!isCloudKitEnabled || isStoppingShare)
-        }
-    }
-
-    private func waitingForYouToShareContent(strings: ShareCalStrings) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(strings.pairingWaitingForYouToShareDescription)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let pairingDate {
-                Text(strings.pairingDateLine(strings.pairingDateText(for: pairingDate)))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 10) {
-                Button {
-                    onStartPairing()
-                } label: {
-                    Label(strings.startPairingButton(isPreparing: isPreparingShare), systemImage: "person.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!isCloudKitEnabled || isPreparingShare)
-
-                Button {
-                    onCheckCloudKitStatus()
-                } label: {
-                    Image(systemName: "icloud.and.arrow.up")
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.bordered)
-                .disabled(!isCloudKitEnabled || isCheckingCloudKitAccount)
-                .accessibilityLabel(strings.checkICloudStatusButton(isChecking: isCheckingCloudKitAccount))
-            }
-
-            Button(role: .destructive) {
-                onUnpair()
-            } label: {
-                Label(strings.unpairButton, systemImage: "person.2.slash")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .disabled(!isCloudKitEnabled || isStoppingShare)
-        }
-    }
-
-    private var statusTint: Color {
-        switch status {
-        case .notPaired:
-            return .secondary
-        case .waitingForPartner, .waitingForPartnerToShare, .waitingForYouToShare:
-            return .orange
-        case .paired:
-            return .pink
-        }
+        .disabled(!isCloudKitEnabled || isCheckingCloudKitAccount)
+        .accessibilityLabel(strings.checkICloudStatusButton(isChecking: isCheckingCloudKitAccount))
     }
 }
 
@@ -3891,13 +4401,301 @@ struct SharingScopeRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OurDaysTheme.ink)
             Spacer(minLength: 8)
             Text(value)
-                .fontWeight(.semibold)
+                .foregroundStyle(OurDaysTheme.secondaryInk)
                 .multilineTextAlignment(.trailing)
         }
-        .font(.caption)
+    }
+}
+
+/// A tappable settings row with a leading glyph and a trailing chevron.
+struct SettingsNavigationRow<Leading: View>: View {
+    let title: String
+    var subtitle: String? = nil
+    var value: String? = nil
+    var isLoading = false
+    let action: () -> Void
+    @ViewBuilder let leading: () -> Leading
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                leading()
+                    .foregroundStyle(OurDaysTheme.ink)
+                    .frame(minWidth: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .foregroundStyle(OurDaysTheme.ink)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                    }
+                }
+                Spacer(minLength: 8)
+                if let value {
+                    Text(value)
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                }
+                if isLoading {
+                    ProgressView()
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Edits one avatar: a photo, or up to three letters on a palette tint. The identity ring
+/// stays fixed around the preview, because it is what tells the two people apart.
+struct AvatarEditorSheet: View {
+    private enum Mode: Hashable {
+        case photo
+        case text
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(SettingsStore.self) private var settings
+    let title: String
+    let defaultAvatar: MemberAvatar?
+    let fallbackText: String
+    let identity: OurDaysIdentity
+    let footnote: String
+    let onSave: (MemberAvatar?) -> Void
+    @State private var mode: Mode
+    @State private var imageData: Data?
+    @State private var text: String
+    @State private var background: AvatarBackground
+    @State private var isReset: Bool
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var isLoadingPhoto = false
+
+    init(
+        title: String,
+        avatar: MemberAvatar?,
+        defaultAvatar: MemberAvatar? = nil,
+        fallbackText: String,
+        identity: OurDaysIdentity,
+        footnote: String,
+        onSave: @escaping (MemberAvatar?) -> Void
+    ) {
+        self.title = title
+        self.defaultAvatar = defaultAvatar
+        self.fallbackText = fallbackText
+        self.identity = identity
+        self.footnote = footnote
+        self.onSave = onSave
+        let normalized = MemberAvatarPlan.normalized(avatar)
+        _mode = State(initialValue: normalized?.imageData != nil ? .photo : .text)
+        _imageData = State(initialValue: normalized?.imageData)
+        _text = State(initialValue: normalized?.text ?? "")
+        _background = State(initialValue: normalized?.background ?? (identity == .me ? .teal : .coral))
+        _isReset = State(initialValue: normalized == nil)
+    }
+
+    /// What Done saves: nil means "no custom avatar", so the default shows again.
+    private var draft: MemberAvatar? {
+        guard !isReset else { return nil }
+        switch mode {
+        case .photo:
+            return imageData.map { MemberAvatar(imageData: $0) }
+        case .text:
+            return MemberAvatarPlan.normalized(MemberAvatar(text: text, background: background))
+        }
+    }
+
+    var body: some View {
+        let strings = settings.strings
+
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 22) {
+                    MemberAvatarView(
+                        avatar: draft ?? defaultAvatar,
+                        fallbackText: fallbackText,
+                        identity: identity,
+                        size: 132
+                    )
+                    .padding(.top, 8)
+
+                    Picker("", selection: $mode) {
+                        Text(strings.avatarPhotoTab).tag(Mode.photo)
+                        Text(strings.avatarTextTab).tag(Mode.text)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    Group {
+                        switch mode {
+                        case .photo:
+                            photoContent(strings: strings)
+                        case .text:
+                            textContent(strings: strings)
+                        }
+                    }
+                    .ourDaysCard()
+
+                    Label {
+                        Text(footnote)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "info.circle")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+
+                    Button(strings.resetAvatarButton) {
+                        isReset = true
+                        imageData = nil
+                        text = ""
+                        pickerItem = nil
+                    }
+                    .buttonStyle(OurDaysSecondaryButtonStyle())
+                    .disabled(isReset)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+            }
+            .background(OurDaysTheme.paper)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(strings.cancelButton) {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(strings.doneButton) {
+                        onSave(draft)
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(isLoadingPhoto)
+                }
+            }
+            .onChange(of: pickerItem) { _, item in
+                guard let item else { return }
+                isLoadingPhoto = true
+                Task {
+                    let data = try? await item.loadTransferable(type: Data.self)
+                    await MainActor.run {
+                        isLoadingPhoto = false
+                        if let data, let jpeg = AvatarImageRenderer.squareJPEG(from: data) {
+                            imageData = jpeg
+                            isReset = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func photoContent(strings: ShareCalStrings) -> some View {
+        PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
+            HStack(spacing: 10) {
+                if isLoadingPhoto {
+                    ProgressView()
+                } else {
+                    Image(systemName: "photo.on.rectangle")
+                }
+                Text(imageData == nil ? strings.choosePhotoButton : strings.changePhotoButton)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(OurDaysPrimaryButtonStyle())
+    }
+
+    private func textContent(strings: ShareCalStrings) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(strings.avatarTextLabel)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                TextField(fallbackText, text: $text)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .padding(.horizontal, 14)
+                    .frame(height: 44)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(OurDaysTheme.border, lineWidth: 1)
+                    )
+                    .onChange(of: text) { _, newValue in
+                        let limited = MemberAvatarPlan.normalizedText(newValue) ?? ""
+                        if limited != newValue.trimmingCharacters(in: .whitespacesAndNewlines) {
+                            text = limited
+                        }
+                        isReset = false
+                    }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(strings.avatarBackgroundLabel)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                HStack {
+                    ForEach(AvatarBackground.allCases) { option in
+                        Button {
+                            background = option
+                            isReset = false
+                        } label: {
+                            Circle()
+                                .fill(option.fill)
+                                .frame(width: 44, height: 44)
+                                .overlay(
+                                    Circle().strokeBorder(
+                                        option == background ? OurDaysTheme.ink : OurDaysTheme.border,
+                                        lineWidth: option == background ? 2 : 1
+                                    )
+                                )
+                                .overlay {
+                                    if option == background {
+                                        Image(systemName: "checkmark")
+                                            .font(.footnote.weight(.bold))
+                                            .foregroundStyle(option.onFill)
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(strings.avatarBackgroundName(option))
+                        .accessibilityAddTraits(option == background ? .isSelected : [])
+                        if option != AvatarBackground.allCases.last {
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Turns a picked photo into the stored avatar: center-cropped square, 256 px, JPEG.
+enum AvatarImageRenderer {
+    static func squareJPEG(from data: Data, compressionQuality: CGFloat = 0.8) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let side = min(image.size.width, image.size.height)
+        guard side > 0 else { return nil }
+        let targetSide = MemberAvatarPlan.imagePixelSize
+        let scale = targetSide / side
+        let drawSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let origin = CGPoint(x: (targetSide - drawSize.width) / 2, y: (targetSide - drawSize.height) / 2)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: targetSide, height: targetSide), format: format)
+        return renderer.jpegData(withCompressionQuality: compressionQuality) { _ in
+            image.draw(in: CGRect(origin: origin, size: drawSize))
+        }
     }
 }
 
@@ -3961,6 +4759,7 @@ struct HistoryRequestSheet: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
+            .ourDaysListBackground()
             .navigationTitle(strings.prePairingHistoryRequestTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -4039,6 +4838,17 @@ struct SettingsTabView: View {
 
     private var outgoingAccessRequests: [CalendarAccessRequest] {
         CalendarAccessRequestListPlan.outgoing(accessRequests, currentMemberID: settings.currentMemberID)
+    }
+
+    private var syncStatusText: String {
+        let strings = settings.strings
+        if settings.syncPhase == .syncing {
+            return strings.syncingSelectedCalendars
+        }
+        if let lastSyncAt = settings.lastSyncAt {
+            return strings.lastSyncStatus(lastSyncAt.formatted(date: .omitted, time: .shortened))
+        }
+        return strings.notSyncedYet
     }
 
     private var pairingStatus: PairingStatus {
@@ -4129,18 +4939,20 @@ struct SettingsTabView: View {
         ScrollViewReader { proxy in
             List {
                 Section {
+                    OurDaysPageHeader(title: strings.usTitle, subtitle: strings.usSubtitle)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 0, trailing: 20))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+
                     PairingStatusCard(
                         status: pairingStatus,
                         pairingDate: settings.pairingDate,
-                        partnerNickname: settings.partnerStatusDisplayName,
-                        myCalendarScopeValue: myCalendarScopeValue,
-                        partnerCalendarScopeValue: partnerCalendarScopeValue,
-                        prePairingHistoryScopeValue: prePairingHistoryScopeValue,
+                        partnerName: settings.partnerStatusDisplayName,
+                        syncStatusText: syncStatusText,
                         isCloudKitEnabled: services.isCloudKitEnabled,
                         isPreparingShare: isPreparingShare,
                         isCheckingCloudKitAccount: isCheckingCloudKitAccount,
                         isSyncing: settings.syncPhase == .syncing,
-                        isStoppingShare: isStoppingShare,
                         cloudKitDiagnosticMessage: cloudKitDiagnosticMessage,
                         onStartPairing: {
                             Task { await prepareShare() }
@@ -4151,15 +4963,11 @@ struct SettingsTabView: View {
                         onSync: {
                             syncNow()
                         },
-                        onRequestHistory: {
-                            ensurePairingDateIfNeeded()
-                            activeSettingsSheet = .historyRequest
+                        onEditMyAvatar: {
+                            activeSettingsSheet = .myAvatar
                         },
-                        onUnpair: {
-                            showStopSharingConfirmation = true
-                        },
-                        onOpenSharedPeople: {
-                            Task { await prepareShare() }
+                        onEditPartnerAvatar: {
+                            activeSettingsSheet = .partnerAvatar
                         },
                         onHideCloudKitDiagnostic: {
                             cloudKitDiagnosticMessage = nil
@@ -4167,21 +4975,71 @@ struct SettingsTabView: View {
                     )
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
                 .id(SettingsFocusTarget.pairing)
 
+            if pairingStatus != .notPaired {
+                Section(strings.sharingScopeTitle) {
+                    SharingScopeRow(label: strings.sharingMyCalendarLabel, value: myCalendarScopeValue)
+                    SharingScopeRow(label: strings.partnersCalendarLabel, value: partnerCalendarScopeValue)
+                    SharingScopeRow(label: strings.prePairingHistoryLabel, value: prePairingHistoryScopeValue)
+                }
+                .listRowBackground(OurDaysTheme.surface)
+            }
+
+            Section(strings.moreSection) {
+                if pairingStatus != .notPaired {
+                    SettingsNavigationRow(title: strings.requestHistoryAccessButton) {
+                        ensurePairingDateIfNeeded()
+                        activeSettingsSheet = .historyRequest
+                    } leading: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                    .disabled(!services.isCloudKitEnabled || settings.pairingDate == nil)
+                }
+                SettingsNavigationRow(
+                    title: strings.sharedPeopleRowTitle,
+                    isLoading: isPreparingShare
+                ) {
+                    Task { await prepareShare() }
+                } leading: {
+                    Image(systemName: "person.2.badge.gearshape")
+                }
+                .accessibilityIdentifier("shared-people-official-share-button")
+                .disabled(!SharedPeoplePresentationPlan.canOpenOfficialSharing(
+                    isCloudKitEnabled: services.isCloudKitEnabled,
+                    isPreparingShare: isPreparingShare,
+                    isStoppingShare: isStoppingShare
+                ))
+            }
+            .listRowBackground(OurDaysTheme.surface)
+
             if PairingSafetyEducationPlan.shouldShowPersistentWarning(pairingStatus: pairingStatus) {
                 Section(strings.pairingSafetySection) {
-                    Text(strings.pairingSafetyPersistentWarningTitle)
-                        .font(.subheadline.weight(.semibold))
-                    Text(strings.pairingSafetyPersistentWarningMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Label {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(strings.pairingSafetyPersistentWarningTitle)
+                                .font(.subheadline.weight(.semibold))
+                            Text(strings.pairingSafetyPersistentWarningMessage)
+                                .font(.caption)
+                                .foregroundStyle(OurDaysTheme.secondaryInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } icon: {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                    }
                 }
+                .listRowBackground(OurDaysTheme.surface)
             }
 
             Section(strings.profileSection) {
+                SettingsNavigationRow(title: strings.myAvatarLabel) {
+                    activeSettingsSheet = .myAvatar
+                } leading: {
+                    MemberAvatarView(avatar: settings.currentAvatar, fallbackText: settings.myAvatarFallbackText, identity: .me, size: 28)
+                }
                 LabeledContent {
                     TextField(
                         strings.myDisplayNamePlaceholder,
@@ -4202,7 +5060,18 @@ struct SettingsTabView: View {
                 } label: {
                     Text(strings.partnerNicknameEditLabel)
                 }
+                if pairingStatus != .notPaired {
+                    SettingsNavigationRow(
+                        title: strings.partnerAvatarLabel(settings.partnerDisplayName),
+                        subtitle: strings.partnerAvatarFootnote
+                    ) {
+                        activeSettingsSheet = .partnerAvatar
+                    } leading: {
+                        MemberAvatarView(avatar: settings.partnerAvatar, fallbackText: settings.partnerAvatarFallbackText, identity: .partner, size: 28)
+                    }
+                }
             }
+            .listRowBackground(OurDaysTheme.surface)
 
             Section(strings.languageSection) {
                 Picker(strings.appLanguagePicker, selection: $settings.appLanguage) {
@@ -4347,8 +5216,22 @@ struct SettingsTabView: View {
                     }
                 }
             }
+
+            if pairingStatus != .notPaired {
+                Section {
+                    Button(strings.unpairButton, role: .destructive) {
+                        showStopSharingConfirmation = true
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .disabled(!services.isCloudKitEnabled || isStoppingShare)
+                }
+                .listRowBackground(OurDaysTheme.surface)
+            }
         }
+        .listSectionSpacing(20)
+        .ourDaysListBackground()
         .navigationTitle(strings.settingsTitle)
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             authorizationState = services.calendarAccess.authorizationState()
             refreshCalendars()
@@ -4377,6 +5260,30 @@ struct SettingsTabView: View {
                     initialRange: nextHistoryRequestRange
                 ) { startDate, endDate in
                     sendAccessRequest(startDate: startDate, endDate: endDate)
+                }
+            case .myAvatar:
+                AvatarEditorSheet(
+                    title: strings.myAvatarLabel,
+                    avatar: settings.currentAvatar,
+                    fallbackText: settings.myAvatarFallbackText,
+                    identity: .me,
+                    footnote: strings.avatarSyncFootnote(settings.partnerDisplayName)
+                ) { avatar in
+                    settings.currentAvatar = MemberAvatarPlan.normalized(avatar)
+                    if pairingStatus != .notPaired {
+                        syncNow()
+                    }
+                }
+            case .partnerAvatar:
+                AvatarEditorSheet(
+                    title: strings.partnerAvatarLabel(settings.partnerDisplayName),
+                    avatar: settings.partnerAvatarOverride,
+                    defaultAvatar: settings.partnerSyncedAvatar,
+                    fallbackText: settings.partnerAvatarFallbackText,
+                    identity: .partner,
+                    footnote: strings.partnerAvatarFootnote
+                ) { avatar in
+                    settings.partnerAvatarOverride = MemberAvatarPlan.normalized(avatar)
                 }
             }
         }
@@ -4643,7 +5550,8 @@ struct SettingsTabView: View {
             let share = try await cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
             try await cloudKit.saveMemberProfileForSync(
                 ownerMemberID: settings.currentMemberID,
-                displayName: displayName
+                displayName: displayName,
+                avatar: settings.currentAvatar
             )
             guard activeSharePreparationID == preparationID else { return }
             settings.iCloudSharingEnabled = true
@@ -4685,6 +5593,7 @@ struct SettingsTabView: View {
         settings.hasPromptedPartnerNoteForCurrentPairing = false
         settings.hasShownPairingSafetyNoticeForCurrentPairing = false
         settings.partnerSyncedDisplayName = nil
+        settings.clearPartnerAvatars()
         settings.outgoingShareParticipantIDs = []
         settings.pairingConflict = nil
         settings.clearPairingDate()
@@ -4739,6 +5648,7 @@ struct SettingsTabView: View {
             settings.hasPromptedPartnerNoteForCurrentPairing = false
             settings.hasShownPairingSafetyNoticeForCurrentPairing = false
             settings.partnerSyncedDisplayName = nil
+            settings.clearPartnerAvatars()
             settings.outgoingShareParticipantIDs = []
             settings.pairingConflict = nil
             settings.clearPairingDate()
@@ -4784,6 +5694,283 @@ struct SettingsTabView: View {
             return "none"
         }
         return String(value.prefix(12))
+    }
+}
+
+// MARK: - Design language ("纸上双线")
+
+/// Tokens for the paper-and-two-lines look: a warm paper ground, ink text, and one
+/// identity color per person (taken from the app icon's teal and coral). Every token
+/// has a dark-mode twin so the system appearance keeps working.
+enum OurDaysTheme {
+    static let paper = Color(light: 0xF6F3EE, dark: 0x15161B)
+    static let surface = Color(light: 0xFFFFFF, dark: 0x202128)
+    static let sunken = Color(light: 0xEFEBE4, dark: 0x2B2C34)
+    static let hairline = Color(light: 0xEEEAE3, dark: 0x30313A)
+    static let border = Color(light: 0xE2DDD4, dark: 0x3A3B45)
+    static let ink = Color(light: 0x1E2233, dark: 0xECEDF2)
+    static let secondaryInk = Color(light: 0x5B6072, dark: 0xA3A7B5)
+    /// Fill for primary buttons; `onInkFill` is the text on top of it.
+    static let inkFill = Color(light: 0x1E2233, dark: 0xE9EAF0)
+    static let onInkFill = Color(light: 0xFFFFFF, dark: 0x1E2233)
+    /// Joint ("共同") events: the place where the two lines meet.
+    static let joint = Color(light: 0x1E2233, dark: 0x3A4468)
+    static let onJoint = Color(light: 0xFFFFFF, dark: 0xFFFFFF)
+    static let onJointSecondary = Color(light: 0xC9CCD6, dark: 0xC9CCD6)
+    static let destructive = Color(light: 0xB3283A, dark: 0xFF8592)
+
+    static let cornerRadius: CGFloat = 20
+
+    static func displayFont(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
+        .system(size: size, weight: weight, design: .serif)
+    }
+}
+
+enum OurDaysIdentity {
+    case me
+    case partner
+
+    /// Rings, dots and avatar fallbacks.
+    var color: Color {
+        switch self {
+        case .me: Color(light: 0x1F7A84, dark: 0x5CC3CC)
+        case .partner: Color(light: 0xC93E4E, dark: 0xFF8592)
+        }
+    }
+
+    /// Event blocks and chips.
+    var tint: Color {
+        switch self {
+        case .me: Color(light: 0xE1F1F2, dark: 0x173A3E)
+        case .partner: Color(light: 0xFBE6E8, dark: 0x4A1E25)
+        }
+    }
+
+    /// Text drawn on `tint` (passes 4.5:1 on it).
+    var onTint: Color {
+        switch self {
+        case .me: Color(light: 0x1A6871, dark: 0x8ED8DE)
+        case .partner: Color(light: 0xB3283A, dark: 0xFFB0B9)
+        }
+    }
+}
+
+extension AvatarBackground {
+    var fill: Color {
+        switch self {
+        case .sand: Color(light: 0xEFE6D6, dark: 0x4A4234)
+        case .teal: OurDaysIdentity.me.tint
+        case .coral: OurDaysIdentity.partner.tint
+        case .sage: Color(light: 0xE3EEDF, dark: 0x2F3D2B)
+        case .lavender: Color(light: 0xE9E6F5, dark: 0x37334D)
+        case .ink: Color(light: 0x1E2233, dark: 0xE9EAF0)
+        }
+    }
+
+    var onFill: Color {
+        self == .ink ? Color(light: 0xFFFFFF, dark: 0x1E2233) : OurDaysTheme.ink
+    }
+}
+
+struct OurDaysCardModifier: ViewModifier {
+    var padding: CGFloat = 16
+    var fill: Color = OurDaysTheme.surface
+
+    func body(content: Content) -> some View {
+        content
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(fill, in: RoundedRectangle(cornerRadius: OurDaysTheme.cornerRadius, style: .continuous))
+            .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
+    }
+}
+
+extension View {
+    func ourDaysCard(padding: CGFloat = 16, fill: Color = OurDaysTheme.surface) -> some View {
+        modifier(OurDaysCardModifier(padding: padding, fill: fill))
+    }
+
+    /// Paper ground behind a List/Form, with rows sitting on white cards.
+    func ourDaysListBackground() -> some View {
+        scrollContentBackground(.hidden)
+            .background(OurDaysTheme.paper)
+    }
+}
+
+struct OurDaysPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundStyle(OurDaysTheme.onInkFill)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .padding(.horizontal, 16)
+            .background(OurDaysTheme.inkFill, in: Capsule())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.4)
+    }
+}
+
+struct OurDaysSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.medium))
+            .foregroundStyle(OurDaysTheme.ink)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .padding(.horizontal, 16)
+            .background(OurDaysTheme.surface, in: Capsule())
+            .overlay(Capsule().stroke(OurDaysTheme.border, lineWidth: 1))
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
+    }
+}
+
+struct OurDaysChip: View {
+    let title: String
+    var foreground: Color = OurDaysTheme.ink
+    var background: Color = OurDaysTheme.sunken
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(foreground)
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(background, in: Capsule())
+    }
+}
+
+/// Small grey section label above a card group.
+struct OurDaysSectionLabel: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.footnote.weight(.bold))
+            .foregroundStyle(OurDaysTheme.secondaryInk)
+            .padding(.leading, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Serif page title with an optional one-line subtitle above it, replacing the
+/// default large navigation title so every tab opens the same way.
+struct OurDaysPageHeader: View {
+    let title: String
+    var subtitle: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let subtitle {
+                Text(subtitle)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                    .lineLimit(1)
+            }
+            Text(title)
+                .font(OurDaysTheme.displayFont(32))
+                .foregroundStyle(OurDaysTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .accessibilityAddTraits(.isHeader)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A member's avatar: photo, or text on a palette tint, or the name's first character on
+/// the identity tint. The identity color always rings it, so a custom avatar never hides
+/// whose event or comment it is.
+struct MemberAvatarView: View {
+    let avatar: MemberAvatar?
+    let fallbackText: String
+    let identity: OurDaysIdentity
+    var size: CGFloat = 32
+
+    private var ringWidth: CGFloat { size >= 80 ? 4 : (size >= 40 ? 2.5 : 2) }
+
+    var body: some View {
+        ZStack {
+            Circle().fill(OurDaysTheme.surface)
+            content
+                .clipShape(Circle())
+                .padding(size >= 80 ? ringWidth + 3 : ringWidth)
+        }
+        .overlay(Circle().stroke(identity.color, lineWidth: ringWidth))
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        let normalized = MemberAvatarPlan.normalized(avatar)
+        if let imageData = normalized?.imageData, let image = UIImage(data: imageData) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+        } else if let text = normalized?.text {
+            let background = normalized?.background
+            ZStack {
+                (background?.fill ?? identity.tint)
+                Text(text)
+                    .font(OurDaysTheme.displayFont(size * (text.count >= 3 ? 0.3 : 0.38)))
+                    .foregroundStyle(background?.onFill ?? identity.onTint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .padding(size * 0.08)
+            }
+        } else {
+            ZStack {
+                identity.tint
+                Text(fallbackText)
+                    .font(.system(size: size * 0.42, weight: .bold))
+                    .foregroundStyle(identity.onTint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+            }
+        }
+    }
+}
+
+extension SettingsStore {
+    var myAvatarFallbackText: String {
+        MemberAvatarPlan.initials(from: currentDisplayName, fallback: strings.meTitle)
+    }
+
+    var partnerAvatarFallbackText: String {
+        MemberAvatarPlan.initials(from: partnerDisplayName, fallback: strings.partnerTitle)
+    }
+}
+
+/// Avatar for whoever owns `memberID` (me or the partner), resolved from settings.
+struct MemberAvatarForID: View {
+    @Environment(SettingsStore.self) private var settings
+    let memberID: String
+    var size: CGFloat = 32
+
+    var body: some View {
+        if memberID == settings.currentMemberID {
+            MemberAvatarView(avatar: settings.currentAvatar, fallbackText: settings.myAvatarFallbackText, identity: .me, size: size)
+        } else {
+            MemberAvatarView(avatar: settings.partnerAvatar, fallbackText: settings.partnerAvatarFallbackText, identity: .partner, size: size)
+        }
+    }
+}
+
+extension Color {
+    /// A color that follows the system appearance, from two 0xRRGGBB literals.
+    init(light: UInt32, dark: UInt32) {
+        self.init(uiColor: UIColor { traits in
+            let value = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(
+                red: CGFloat((value >> 16) & 0xFF) / 255,
+                green: CGFloat((value >> 8) & 0xFF) / 255,
+                blue: CGFloat(value & 0xFF) / 255,
+                alpha: 1
+            )
+        })
     }
 }
 

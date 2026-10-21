@@ -33,7 +33,10 @@ DEFINE SCHEMA
         ownerMemberID STRING QUERYABLE,
         pairingID STRING QUERYABLE,
         displayName STRING,
-        updatedAt TIMESTAMP QUERYABLE SORTABLE
+        updatedAt TIMESTAMP QUERYABLE SORTABLE,
+        avatarImage BYTES,
+        avatarText STRING,
+        avatarBackground STRING
     );
 
     RECORD TYPE EventInvitation (

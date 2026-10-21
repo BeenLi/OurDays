@@ -4123,7 +4123,7 @@ final class CloudKitBatchUpsertPlanTests: XCTestCase {
                 MemberProfileRecordMapper.Key.ownerMemberID,
                 MemberProfileRecordMapper.Key.displayName,
                 MemberProfileRecordMapper.Key.updatedAt
-            ]
+            ] + MemberProfileRecordMapper.Key.avatarKeys
         )
     }
 
@@ -5269,5 +5269,267 @@ final class BackgroundRefreshSchedulePlanTests: XCTestCase {
 
     func testTaskIdentifierMatchesBundlePrefix() {
         XCTAssertEqual(BackgroundRefreshSchedulePlan.taskIdentifier, "com.leeberty.CoupleCalendar.refresh")
+    }
+}
+
+final class MemberAvatarPlanTests: XCTestCase {
+    func testNormalizedTextKeepsThreeLettersOrTwoWideCharacters() {
+        XCTAssertEqual(MemberAvatarPlan.normalizedText("  Leeroy "), "Lee")
+        XCTAssertEqual(MemberAvatarPlan.normalizedText("小雨同学"), "小雨")
+        XCTAssertEqual(MemberAvatarPlan.normalizedText("A雨b"), "A雨")
+        XCTAssertNil(MemberAvatarPlan.normalizedText("   "))
+        XCTAssertNil(MemberAvatarPlan.normalizedText(nil))
+    }
+
+    func testNormalizedPrefersPhotoAndDropsEmptyAvatars() {
+        let photo = Data([0x01, 0x02])
+        XCTAssertEqual(
+            MemberAvatarPlan.normalized(MemberAvatar(text: "Lee", background: .teal, imageData: photo)),
+            MemberAvatar(imageData: photo)
+        )
+        XCTAssertEqual(
+            MemberAvatarPlan.normalized(MemberAvatar(text: " 雨 ", background: .coral)),
+            MemberAvatar(text: "雨", background: .coral)
+        )
+        XCTAssertNil(MemberAvatarPlan.normalized(MemberAvatar(text: " ", background: .sage, imageData: Data())))
+        XCTAssertNil(MemberAvatarPlan.normalized(nil))
+    }
+
+    func testPartnerAvatarPrefersLocalOverrideOverSyncedAvatar() {
+        let override = MemberAvatar(text: "雨", background: .coral)
+        let synced = MemberAvatar(text: "Rain", background: .lavender)
+
+        XCTAssertEqual(MemberAvatarPlan.resolvedPartnerAvatar(override: override, synced: synced), override)
+        XCTAssertEqual(MemberAvatarPlan.resolvedPartnerAvatar(override: nil, synced: synced), MemberAvatar(text: "Rai", background: .lavender))
+        XCTAssertEqual(
+            MemberAvatarPlan.resolvedPartnerAvatar(override: MemberAvatar(text: " "), synced: synced),
+            MemberAvatar(text: "Rai", background: .lavender)
+        )
+        XCTAssertNil(MemberAvatarPlan.resolvedPartnerAvatar(override: nil, synced: nil))
+    }
+
+    func testInitialsUseFirstCharacterOrFallback() {
+        XCTAssertEqual(MemberAvatarPlan.initials(from: " lee", fallback: "我"), "L")
+        XCTAssertEqual(MemberAvatarPlan.initials(from: "小雨", fallback: "我"), "小")
+        XCTAssertEqual(MemberAvatarPlan.initials(from: "  ", fallback: "我"), "我")
+        XCTAssertEqual(MemberAvatarPlan.initials(from: nil, fallback: "TA"), "TA")
+    }
+}
+
+final class MemberProfileAvatarRecordTests: XCTestCase {
+    private let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
+
+    func testRoundTripsTextAvatar() throws {
+        let profile = CloudKitMemberProfile(
+            ownerMemberID: "_owner",
+            displayName: "Lee",
+            updatedAt: Date(timeIntervalSince1970: 1_800),
+            avatar: MemberAvatar(text: "Lee", background: .sand)
+        )
+
+        let record = MemberProfileRecordMapper.record(from: profile, zoneID: zoneID)
+
+        XCTAssertEqual(record[MemberProfileRecordMapper.Key.avatarText] as? String, "Lee")
+        XCTAssertEqual(record[MemberProfileRecordMapper.Key.avatarBackground] as? String, "sand")
+        XCTAssertNil(record[MemberProfileRecordMapper.Key.avatarImage])
+        XCTAssertEqual(try MemberProfileRecordMapper.memberProfile(from: record), profile)
+    }
+
+    func testRoundTripsPhotoAvatar() throws {
+        let photo = Data([0xFF, 0xD8, 0xFF])
+        let profile = CloudKitMemberProfile(
+            ownerMemberID: "_owner",
+            displayName: "Lee",
+            updatedAt: Date(timeIntervalSince1970: 1_800),
+            avatar: MemberAvatar(imageData: photo)
+        )
+
+        let record = MemberProfileRecordMapper.record(from: profile, zoneID: zoneID)
+
+        XCTAssertEqual(record[MemberProfileRecordMapper.Key.avatarImage] as? Data, photo)
+        XCTAssertEqual(try MemberProfileRecordMapper.memberProfile(from: record).avatar, MemberAvatar(imageData: photo))
+    }
+
+    func testProfileWithoutAvatarNeverTouchesAvatarKeys() {
+        let profile = CloudKitMemberProfile(
+            ownerMemberID: "_owner",
+            displayName: "Lee",
+            updatedAt: Date(timeIntervalSince1970: 1_800)
+        )
+
+        let record = MemberProfileRecordMapper.record(from: profile, zoneID: zoneID)
+
+        for key in MemberProfileRecordMapper.Key.avatarKeys {
+            XCTAssertFalse(record.changedKeys().contains(key), key)
+        }
+    }
+
+    func testReapplyingSameAvatarLeavesOtherAvatarKeysUntouched() {
+        let photo = Data([0x01, 0x02, 0x03])
+        let record = CKRecord(recordType: MemberProfileRecordMapper.recordType)
+        record[MemberProfileRecordMapper.Key.avatarImage] = photo as NSData
+        let changedBefore = Set(record.changedKeys())
+
+        MemberProfileRecordMapper.applyAvatar(MemberAvatar(imageData: photo), to: record)
+
+        XCTAssertEqual(Set(record.changedKeys()), changedBefore)
+    }
+
+    func testClearingAvatarRemovesStoredValues() {
+        let record = CKRecord(recordType: MemberProfileRecordMapper.recordType)
+        MemberProfileRecordMapper.applyAvatar(MemberAvatar(text: "Lee", background: .ink), to: record)
+
+        MemberProfileRecordMapper.applyAvatar(nil, to: record)
+
+        XCTAssertNil(record[MemberProfileRecordMapper.Key.avatarText])
+        XCTAssertNil(record[MemberProfileRecordMapper.Key.avatarBackground])
+        XCTAssertNil(MemberProfileRecordMapper.avatar(from: record))
+    }
+
+    func testPartnerSyncedAvatarComesFromNewestPartnerProfile() {
+        let older = CloudKitMemberProfile(
+            ownerMemberID: "_partner",
+            displayName: "Rain",
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            avatar: MemberAvatar(text: "Old")
+        )
+        let newer = CloudKitMemberProfile(
+            ownerMemberID: "_partner",
+            displayName: "Rain",
+            updatedAt: Date(timeIntervalSince1970: 2_000),
+            avatar: MemberAvatar(text: "雨", background: .coral)
+        )
+        let mine = CloudKitMemberProfile(
+            ownerMemberID: "_me",
+            displayName: "Lee",
+            updatedAt: Date(timeIntervalSince1970: 3_000),
+            avatar: MemberAvatar(text: "Lee")
+        )
+
+        XCTAssertEqual(
+            MemberProfileDisplayPlan.partnerSyncedAvatar(from: [older, mine, newer], partnerID: " _partner "),
+            MemberAvatar(text: "雨", background: .coral)
+        )
+        XCTAssertNil(MemberProfileDisplayPlan.partnerSyncedAvatar(from: [older, mine, newer], partnerID: nil))
+    }
+
+    func testRetriesWithoutAvatarOnlyForSchemaRejections() {
+        let withAvatar = CloudKitMemberProfile(
+            ownerMemberID: "_me",
+            displayName: "Lee",
+            updatedAt: .now,
+            avatar: MemberAvatar(text: "Lee")
+        )
+        let withoutAvatar = CloudKitMemberProfile(ownerMemberID: "_me", displayName: "Lee", updatedAt: .now)
+        let invalid = CKError(.invalidArguments)
+        let partial = CKError(.partialFailure, userInfo: [
+            CKPartialErrorsByItemIDKey: [CKRecord.ID(recordName: "member-profile:_me"): CKError(.invalidArguments)]
+        ])
+
+        XCTAssertTrue(MemberProfileAvatarSchemaFallbackPlan.shouldRetryWithoutAvatar(error: invalid, profile: withAvatar))
+        XCTAssertTrue(MemberProfileAvatarSchemaFallbackPlan.shouldRetryWithoutAvatar(error: partial, profile: withAvatar))
+        XCTAssertFalse(MemberProfileAvatarSchemaFallbackPlan.shouldRetryWithoutAvatar(error: invalid, profile: withoutAvatar))
+        XCTAssertFalse(MemberProfileAvatarSchemaFallbackPlan.shouldRetryWithoutAvatar(error: CKError(.networkUnavailable), profile: withAvatar))
+    }
+}
+
+final class OurDaysRedesignPlanTests: XCTestCase {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        calendar.firstWeekday = 2
+        return calendar
+    }
+
+    private func date(_ day: Int, _ hour: Int = 0, _ minute: Int = 0) -> Date {
+        calendar.date(from: DateComponents(year: 2026, month: 6, day: day, hour: hour, minute: minute))!
+    }
+
+    func testCollapsedTimelineStartsAtEarliestOfDefaultEventsAndNow() {
+        let dayStart = date(16)
+        let otherDay = date(20)
+
+        XCTAssertEqual(
+            DayTimelineCollapsePlan.visibleStartHour(eventStartDates: [date(16, 10)], dayStart: dayStart, now: otherDay, isExpanded: false, defaultStartHour: 8, calendar: calendar),
+            8
+        )
+        XCTAssertEqual(
+            DayTimelineCollapsePlan.visibleStartHour(eventStartDates: [date(16, 6, 30), date(17, 1)], dayStart: dayStart, now: otherDay, isExpanded: false, defaultStartHour: 8, calendar: calendar),
+            6
+        )
+        XCTAssertEqual(
+            DayTimelineCollapsePlan.visibleStartHour(eventStartDates: [], dayStart: dayStart, now: date(16, 5, 10), isExpanded: false, defaultStartHour: 8, calendar: calendar),
+            5
+        )
+    }
+
+    func testTimelineShowsWholeNightWhenExpandedOrAnEventCrossesMidnight() {
+        let dayStart = date(16)
+
+        XCTAssertEqual(
+            DayTimelineCollapsePlan.visibleStartHour(eventStartDates: [date(15, 22)], dayStart: dayStart, now: date(20), isExpanded: false, defaultStartHour: 8, calendar: calendar),
+            0
+        )
+        XCTAssertEqual(
+            DayTimelineCollapsePlan.visibleStartHour(eventStartDates: [date(16, 12)], dayStart: dayStart, now: date(20), isExpanded: true, defaultStartHour: 8, calendar: calendar),
+            0
+        )
+    }
+
+    func testWeekStripFlagsWhoHasEventsEachDay() {
+        let days = WeekStripPlan.days(
+            containing: date(17, 12),
+            mine: [DateInterval(start: date(15, 9), end: date(15, 10))],
+            partner: [DateInterval(start: date(16, 23), end: date(17, 1))],
+            joint: [DateInterval(start: date(18, 0), end: date(18, 0))],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(days.count, 7)
+        XCTAssertEqual(days.first?.date, date(15))
+        XCTAssertEqual(days.map(\.hasMine), [true, false, false, false, false, false, false])
+        XCTAssertEqual(days.map(\.hasPartner), [false, true, true, false, false, false, false])
+        XCTAssertEqual(days.map(\.hasJoint), [false, false, false, true, false, false, false])
+    }
+
+    func testWeekStripEventEndingAtMidnightDoesNotSpillIntoNextDay() {
+        let event = DateInterval(start: date(16, 22), end: date(17))
+        XCTAssertTrue(WeekStripPlan.overlaps(event, DateInterval(start: date(16), end: date(17))))
+        XCTAssertFalse(WeekStripPlan.overlaps(event, DateInterval(start: date(17), end: date(18))))
+    }
+
+    func testActivityFeedSectionsGroupByDayNewestFirst() {
+        func item(_ id: String, _ at: Date) -> ActivityFeedItem {
+            ActivityFeedItem(
+                eventMirrorID: id,
+                eventTitle: id,
+                latestCommentAt: at,
+                latestCommentBody: "",
+                latestCommentAuthorMemberID: "_partner",
+                commentCount: 1,
+                unreadCount: 0
+            )
+        }
+
+        let sections = ActivityFeedSectionPlan.sections(
+            [item("a", date(15, 9)), item("b", date(16, 21)), item("c", date(16, 8))],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(sections.map(\.dayStart), [date(16), date(15)])
+        XCTAssertEqual(sections.map { $0.items.map(\.eventMirrorID) }, [["b", "c"], ["a"]])
+    }
+
+    func testEventDetailTimeCombinesStartAndEndOnOneLine() {
+        let strings = ShareCalStrings(language: .english)
+        let locale = Locale(identifier: "en_US_POSIX")
+
+        let sameDay = EventDetailTimePlan.text(startDate: date(16, 19, 30), endDate: date(16, 21, 30), isAllDay: false, strings: strings, locale: locale, calendar: calendar)
+        XCTAssertTrue(sameDay.contains(" · "), sameDay)
+        XCTAssertFalse(sameDay.contains(" – Jun"), sameDay)
+
+        let allDay = EventDetailTimePlan.text(startDate: date(16), endDate: date(17), isAllDay: true, strings: strings, locale: locale, calendar: calendar)
+        XCTAssertTrue(allDay.hasSuffix(strings.allDay), allDay)
+        XCTAssertFalse(allDay.contains("–"), allDay)
     }
 }

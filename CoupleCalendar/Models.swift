@@ -534,11 +534,291 @@ struct ShareCalStrings {
         )
     }
 
+    // MARK: Redesign ("纸上双线") strings
+
+    var usTab: String { text("Us", "我们") }
+    var usTitle: String { text("Us", "我们") }
+    var usSubtitle: String { text("Pairing, sharing & settings", "配对、共享与设置") }
+    var moreSection: String { text("More", "更多") }
+    var sharedPeopleRowTitle: String { text("Shared People & Invite Link", "共享人与邀请链接") }
+    var todaySectionTitle: String { text("Today", "今天") }
+    var yesterdaySectionTitle: String { text("Yesterday", "昨天") }
+    var activitySubtitle: String { text("Conversations around your schedules", "你们围绕日程的对话") }
+    var myScheduleLabel: String { text("Mine", "我的日程") }
+    var sentByMeLabel: String { text("Sent by me", "我发出") }
+    var acceptAndAddButton: String { text("Accept & Add", "接受，加入日历") }
+    var handledInvitationsSection: String { text("Handled", "已处理") }
+    var myAvatarLabel: String { text("My Avatar", "我的头像") }
+    var avatarPhotoTab: String { text("Photo", "照片") }
+    var avatarTextTab: String { text("Text", "文字") }
+    var avatarTextLabel: String { text("Avatar text · up to 3 letters or 2 characters", "头像文字 · 最多 3 个字母或 2 个汉字") }
+    var avatarBackgroundLabel: String { text("Background", "底色") }
+    var choosePhotoButton: String { text("Choose Photo", "从相册选择") }
+    var changePhotoButton: String { text("Choose Another Photo", "换一张照片") }
+    var resetAvatarButton: String { text("Use Default", "恢复默认") }
+    var partnerAvatarFootnote: String { text("Only shown on this iPhone", "只在你的手机上显示") }
+
+    func pairingDayHeadline(_ dayCount: Int) -> String {
+        text("Day \(dayCount) paired", "配对第 \(dayCount) 天")
+    }
+
+    func pairedSinceLine(partnerName: String, dateText: String) -> String {
+        text("You & \(partnerName) · since \(dateText)", "你和\(partnerName) · 自 \(dateText) 起")
+    }
+
+    func calendarHeaderSubtitle(weekdayText: String, pairingDayCount: Int?) -> String {
+        guard let pairingDayCount else { return weekdayText }
+        return "\(weekdayText) · \(pairingDayHeadline(pairingDayCount))"
+    }
+
+    func nightCollapsedLabel(untilHour: Int) -> String {
+        let range = String(format: "00:00 – %02d:00", untilHour)
+        return text("\(range) · Both free", "\(range) · 双方都空闲")
+    }
+
+    func laneEventCountText(_ count: Int) -> String {
+        text("\(count)", "\(count) 项")
+    }
+
+    func commentCountText(_ count: Int) -> String {
+        text(count == 1 ? "1 comment" : "\(count) comments", "\(count) 条评论")
+    }
+
+    func partnerScheduleLabel(_ partnerName: String) -> String {
+        text("\(partnerName)'s", "\(partnerName)的日程")
+    }
+
+    func invitedYouLine(_ partnerName: String) -> String {
+        text("\(partnerName) invited you", "\(partnerName)邀请你")
+    }
+
+    func waitingForReplyLine(_ partnerName: String) -> String {
+        text("Waiting for \(partnerName)", "等待\(partnerName)回复")
+    }
+
+    func pendingInvitationsSubtitle(_ count: Int) -> String {
+        text(count == 1 ? "1 to answer" : "\(count) to answer", "\(count) 张待回复")
+    }
+
+    func partnerAvatarLabel(_ partnerName: String) -> String {
+        text("Avatar for \(partnerName)", "给\(partnerName)换个头像")
+    }
+
+    func avatarSyncFootnote(_ partnerName: String) -> String {
+        text(
+            "The ring is your identity color and stays no matter which avatar you pick, so \(partnerName) can always tell your events and comments apart. Your avatar syncs to \(partnerName).",
+            "外圈是你的身份色，头像怎么换它都在，让\(partnerName)在日历和评论里一眼认出你。头像会同步给\(partnerName)。"
+        )
+    }
+
+    func avatarBackgroundName(_ background: AvatarBackground) -> String {
+        switch background {
+        case .sand: text("Sand", "沙色")
+        case .teal: text("Teal", "青")
+        case .coral: text("Coral", "珊瑚")
+        case .sage: text("Sage", "鼠尾草")
+        case .lavender: text("Lavender", "薰衣草")
+        case .ink: text("Ink", "墨")
+        }
+    }
+
     private func text(_ english: String, _ chinese: String) -> String {
         switch language {
         case .english: english
         case .chinese: chinese
         }
+    }
+}
+
+/// Fixed palette for text avatars. Raw values are synced in `MemberProfile.avatarBackground`,
+/// so never rename a case; unknown values decode as nil and fall back to the identity tint.
+enum AvatarBackground: String, Codable, CaseIterable, Identifiable {
+    case sand
+    case teal
+    case coral
+    case sage
+    case lavender
+    case ink
+
+    var id: String { rawValue }
+}
+
+/// A member's avatar: a small square JPEG, or a short text mark on a palette background.
+/// `imageData` wins over `text` when both are present.
+struct MemberAvatar: Codable, Equatable {
+    var text: String?
+    var background: AvatarBackground?
+    var imageData: Data?
+
+    init(text: String? = nil, background: AvatarBackground? = nil, imageData: Data? = nil) {
+        self.text = text
+        self.background = background
+        self.imageData = imageData
+    }
+}
+
+enum MemberAvatarPlan {
+    /// Longest edge of a stored avatar photo, in pixels. Keeps the synced record small.
+    static let imagePixelSize: CGFloat = 256
+
+    /// "最多 3 个字母或 2 个汉字": ASCII-only marks keep 3 characters, anything wider keeps 2.
+    static func normalizedText(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        let limit = trimmed.allSatisfy(\.isASCII) ? 3 : 2
+        return String(trimmed.prefix(limit))
+    }
+
+    /// Nil when the avatar carries nothing to draw, so callers fall back to initials.
+    static func normalized(_ avatar: MemberAvatar?) -> MemberAvatar? {
+        guard let avatar else { return nil }
+        if let imageData = avatar.imageData, !imageData.isEmpty {
+            return MemberAvatar(imageData: imageData)
+        }
+        guard let text = normalizedText(avatar.text) else { return nil }
+        return MemberAvatar(text: text, background: avatar.background)
+    }
+
+    /// Same precedence as the partner's name: my local override > partner's synced avatar.
+    static func resolvedPartnerAvatar(override: MemberAvatar?, synced: MemberAvatar?) -> MemberAvatar? {
+        normalized(override) ?? normalized(synced)
+    }
+
+    /// Fallback mark drawn when no avatar is set: the first character of the display name.
+    static func initials(from displayName: String?, fallback: String) -> String {
+        guard let trimmed = displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let first = trimmed.first else {
+            return fallback
+        }
+        return String(first).uppercased()
+    }
+}
+
+/// Which hours the day timeline draws. Night hours before the first event of either
+/// person are folded into one "both free" band instead of a screen of empty lanes.
+enum DayTimelineCollapsePlan {
+    static func visibleStartHour(
+        eventStartDates: [Date],
+        dayStart: Date,
+        now: Date,
+        isExpanded: Bool,
+        defaultStartHour: Int = DayTimelineScrollTargetPlan.defaultStartHour,
+        calendar: Calendar = .current
+    ) -> Int {
+        guard !isExpanded else { return 0 }
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 60 * 60)
+        var startHour = defaultStartHour
+        for startDate in eventStartDates {
+            guard startDate < dayEnd else { continue }
+            guard startDate > dayStart else { return 0 }
+            startHour = min(startHour, calendar.component(.hour, from: startDate))
+        }
+        if now >= dayStart, now < dayEnd {
+            startHour = min(startHour, calendar.component(.hour, from: now))
+        }
+        return max(0, startHour)
+    }
+}
+
+struct WeekStripDay: Identifiable, Equatable {
+    let date: Date
+    let hasMine: Bool
+    let hasPartner: Bool
+    let hasJoint: Bool
+
+    var id: Date { date }
+}
+
+/// The seven days of the selected week, each flagged with whose schedules fall on it,
+/// so the week strip can show "who is busy that day" without opening the day.
+enum WeekStripPlan {
+    static func days(
+        containing selectedDate: Date,
+        mine: [DateInterval],
+        partner: [DateInterval],
+        joint: [DateInterval],
+        calendar: Calendar = .current
+    ) -> [WeekStripDay] {
+        guard let week = calendar.dateInterval(of: .weekOfYear, for: selectedDate) else { return [] }
+        return (0..<7).compactMap { offset in
+            guard let dayStart = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: week.start)),
+                  let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+            let day = DateInterval(start: dayStart, end: dayEnd)
+            return WeekStripDay(
+                date: dayStart,
+                hasMine: mine.contains { overlaps($0, day) },
+                hasPartner: partner.contains { overlaps($0, day) },
+                hasJoint: joint.contains { overlaps($0, day) }
+            )
+        }
+    }
+
+    static func overlaps(_ event: DateInterval, _ day: DateInterval) -> Bool {
+        if event.duration == 0 {
+            return event.start >= day.start && event.start < day.end
+        }
+        return event.start < day.end && event.end > day.start
+    }
+}
+
+/// One line of "when" for an event detail header: "Jun 16, Tue · 19:30 – 21:30".
+enum EventDetailTimePlan {
+    static func text(
+        startDate: Date,
+        endDate: Date,
+        isAllDay: Bool,
+        strings: ShareCalStrings,
+        locale: Locale,
+        calendar: Calendar = .current
+    ) -> String {
+        let dayFormatter = formatter(template: "MMMdEEE", locale: locale, calendar: calendar)
+        let timeFormatter = formatter(template: "jmm", locale: locale, calendar: calendar)
+        if isAllDay {
+            // All-day end dates are exclusive (next midnight); show the last covered day.
+            let lastDay = max(startDate, endDate.addingTimeInterval(-1))
+            if calendar.isDate(startDate, inSameDayAs: lastDay) {
+                return "\(dayFormatter.string(from: startDate)) · \(strings.allDay)"
+            }
+            return "\(dayFormatter.string(from: startDate)) – \(dayFormatter.string(from: lastDay)) · \(strings.allDay)"
+        }
+        if calendar.isDate(startDate, inSameDayAs: endDate) {
+            return "\(dayFormatter.string(from: startDate)) · \(timeFormatter.string(from: startDate)) – \(timeFormatter.string(from: endDate))"
+        }
+        return "\(dayFormatter.string(from: startDate)) \(timeFormatter.string(from: startDate)) – \(dayFormatter.string(from: endDate)) \(timeFormatter.string(from: endDate))"
+    }
+
+    private static func formatter(template: String, locale: Locale, calendar: Calendar) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = locale
+        formatter.timeZone = calendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate(template)
+        return formatter
+    }
+}
+
+struct ActivityFeedSection: Identifiable, Equatable {
+    let dayStart: Date
+    let items: [ActivityFeedItem]
+
+    var id: Date { dayStart }
+}
+
+/// Groups the activity feed by the calendar day of each thread's latest comment,
+/// keeping the feed's newest-first order inside and across sections.
+enum ActivityFeedSectionPlan {
+    static func sections(_ items: [ActivityFeedItem], calendar: Calendar = .current) -> [ActivityFeedSection] {
+        var sections: [ActivityFeedSection] = []
+        for item in items.sorted(by: { $0.latestCommentAt > $1.latestCommentAt }) {
+            let dayStart = calendar.startOfDay(for: item.latestCommentAt)
+            if let last = sections.last, last.dayStart == dayStart {
+                sections[sections.count - 1] = ActivityFeedSection(dayStart: dayStart, items: last.items + [item])
+            } else {
+                sections.append(ActivityFeedSection(dayStart: dayStart, items: [item]))
+            }
+        }
+        return sections
     }
 }
 

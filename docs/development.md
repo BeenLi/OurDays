@@ -6,8 +6,12 @@ Use these fixed simulator instances for the two-device CloudKit Share smoke test
 
 | Role | Simulator | UDID |
 | --- | --- | --- |
-| Owner | iPhone 17 | `5509EBC5-44A3-4C7D-862D-2811FA330AF1` |
-| Partner | iPhone 17 Pro | `E75449FE-AD7B-429B-84A5-12ED862B2349` |
+| Owner | iPhone 17 | `AF9A93BC-6151-4C6D-B5F7-E4F5053351E2` |
+| Partner | iPhone 17 Pro | `244DFAAC-93A7-4BE7-AEA0-4F0A52ABA7D6` |
+
+The previous pair on the other Mac was Owner `5509EBC5-44A3-4C7D-862D-2811FA330AF1`
+and Partner `E75449FE-AD7B-429B-84A5-12ED862B2349`; on that Mac run the smoke
+script with `OWNER_UDID=... PARTNER_UDID=...` overrides.
 
 These simulator instances preserve their iCloud sign-in state as long as the
 same UDIDs are reused. Do not erase, delete, or recreate them unless you intend
@@ -16,8 +20,8 @@ to sign in to iCloud again.
 Useful commands:
 
 ```bash
-xcrun simctl boot 5509EBC5-44A3-4C7D-862D-2811FA330AF1
-xcrun simctl boot E75449FE-AD7B-429B-84A5-12ED862B2349
+xcrun simctl boot AF9A93BC-6151-4C6D-B5F7-E4F5053351E2
+xcrun simctl boot 244DFAAC-93A7-4BE7-AEA0-4F0A52ABA7D6
 open -a Simulator
 ```
 
@@ -80,7 +84,7 @@ xcodebuild \
   -project CoupleCalendar.xcodeproj \
   -scheme CoupleCalendar \
   -configuration Release \
-  -destination 'platform=iOS Simulator,id=5509EBC5-44A3-4C7D-862D-2811FA330AF1' \
+  -destination 'platform=iOS Simulator,id=AF9A93BC-6151-4C6D-B5F7-E4F5053351E2' \
   build
 ```
 
@@ -95,7 +99,7 @@ on the Partner simulator.
 Partner validation:
 
 1. Install and run the same Release build on
-   `E75449FE-AD7B-429B-84A5-12ED862B2349`.
+   `244DFAAC-93A7-4BE7-AEA0-4F0A52ABA7D6`.
 2. Open the Owner share URL on the Partner simulator and accept the system
    prompt.
 3. Tap `Sync` in Partner.

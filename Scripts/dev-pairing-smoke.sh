@@ -7,8 +7,8 @@
 # Usage: Scripts/dev-pairing-smoke.sh [--skip-build]
 set -euo pipefail
 
-OWNER_UDID="${OWNER_UDID:-5509EBC5-44A3-4C7D-862D-2811FA330AF1}"   # iPhone 17
-PARTNER_UDID="${PARTNER_UDID:-E75449FE-AD7B-429B-84A5-12ED862B2349}" # iPhone 17 Pro
+OWNER_UDID="${OWNER_UDID:-AF9A93BC-6151-4C6D-B5F7-E4F5053351E2}"   # iPhone 17
+PARTNER_UDID="${PARTNER_UDID:-244DFAAC-93A7-4BE7-AEA0-4F0A52ABA7D6}" # iPhone 17 Pro
 BUNDLE_ID="com.leeberty.CoupleCalendar"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DERIVED="$ROOT_DIR/build/dev-smoke"

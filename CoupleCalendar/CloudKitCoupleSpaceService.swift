@@ -208,31 +208,6 @@ enum CloudKitSharePermissionPlan {
     }
 }
 
-/// Enforces the strict two-person model on the outgoing share by removing
-/// extra accepted participants once the partner is established.
-///
-/// Never enforce it by flipping `publicPermission` back to `.none`: CloudKit
-/// removes the already-joined participants (including the partner) when a
-/// link share is closed.
-enum TwoPersonShareLockPlan {
-    static func participantIDsToRemove(
-        acceptedParticipantIDs: [String],
-        partnerID: String?
-    ) -> [String] {
-        guard let partnerID = normalizedID(partnerID),
-              acceptedParticipantIDs.contains(partnerID) else {
-            return []
-        }
-        return acceptedParticipantIDs.filter { $0 != partnerID }.sorted()
-    }
-
-    private static func normalizedID(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedValue.isEmpty ? nil : trimmedValue
-    }
-}
-
 enum CloudKitShareHierarchyPlan {
     static func rootRecordID(zoneID: CKRecordZone.ID) -> CKRecord.ID {
         CKRecord.ID(recordName: CloudKitCoupleSpaceService.rootRecordName, zoneID: zoneID)
@@ -1616,35 +1591,16 @@ final class CloudKitCoupleSpaceService {
         )
     }
 
-    /// Fetches the accepted participants of the outgoing share and, when the
-    /// partner has joined, enforces the two-person lock: close the public link
-    /// and remove any extra accepted participants.
-    func fetchOutgoingShareParticipantIDs(
-        ownerMemberID: String,
-        lockingForPartnerID partnerID: String? = nil
-    ) async throws -> [String] {
+    /// Fetches the accepted participants of the outgoing share. Read-only:
+    /// an extra participant is reported to `TwoPersonPairingPlan`, which raises
+    /// a pairing conflict for the user to resolve. Nobody is removed from the
+    /// share without the user choosing (see `removeOutgoingShareParticipants`).
+    func fetchOutgoingShareParticipantIDs(ownerMemberID: String) async throws -> [String] {
         cloudKitSharingInfo("fetchOutgoingShareParticipantIDs begin ownerMemberIDPresent=\((!ownerMemberID.isEmpty).description)")
         try await ensureZone()
-        guard var share = try await fetchOutgoingShare() else {
+        guard let share = try await fetchOutgoingShare() else {
             cloudKitSharingInfo("fetchOutgoingShareParticipantIDs skipped; share missing")
             return []
-        }
-
-        let acceptedParticipantIDs = CloudKitShareParticipantIdentityPlan.acceptedParticipantIDs(from: share)
-        let participantIDsToRemove = Set(
-            TwoPersonShareLockPlan.participantIDsToRemove(
-                acceptedParticipantIDs: acceptedParticipantIDs,
-                partnerID: partnerID
-            )
-        )
-        if !participantIDsToRemove.isEmpty {
-            for participant in share.participants {
-                guard let identifier = CloudKitShareParticipantIdentityPlan.identifier(for: participant),
-                      participantIDsToRemove.contains(identifier) else { continue }
-                cloudKitSharingInfo("fetchOutgoingShareParticipantIDs removing extra participant=\(identifier)")
-                share.removeParticipant(participant)
-            }
-            share = try await saveShare(share)
         }
 
         let participantIDs = CloudKitShareParticipantIdentityPlan.acceptedParticipantIDs(from: share)

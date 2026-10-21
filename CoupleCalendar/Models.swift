@@ -299,8 +299,8 @@ struct ShareCalStrings {
     var pairingConflictTitle: String { text("Pairing Conflict", "配对冲突") }
     var pairingConflictMismatchMessage: String {
         text(
-            "The person who joined your calendar is not the person whose calendar you accepted. Choose who to keep as your partner; the other connection will be removed.",
-            "加入你日历的人和你接受的日历分享者不是同一个人。请选择保留哪一位作为伴侣，另一个连接将被移除。"
+            "The people who joined your calendar do not match the person whose calendar you accepted. Choose who to keep as your partner; the other connections will be removed.",
+            "加入你日历的人与你接受的日历分享者不一致。请选择保留哪一位作为伴侣，其余连接将被移除。"
         )
     }
     var pairingConflictMultipleIncomingMessage: String {
@@ -2553,6 +2553,16 @@ enum TwoPersonPairingPlan {
 
         let mutualIDs = incomingOwnerIDs.filter { outgoingIDs.contains($0) }
         if mutualIDs.count == 1, let partnerID = mutualIDs.first {
+            // Someone besides the partner joined my share. Never remove them
+            // silently: they may be the person I am about to switch to (their
+            // share invitation can arrive before or after they join mine), and
+            // removing them first leaves my share with no participant once the
+            // replacement is confirmed. The user picks who stays.
+            if outgoingIDs.contains(where: { $0 != partnerID }) {
+                return .conflicted(
+                    .outgoingIncomingMismatch(outgoingIDs: outgoingIDs, incomingOwnerIDs: incomingOwnerIDs)
+                )
+            }
             return .partner(partnerID, leaving: incomingOwnerIDs.filter { $0 != partnerID })
         }
         if mutualIDs.count > 1 {
@@ -2560,7 +2570,7 @@ enum TwoPersonPairingPlan {
         }
 
         if incomingOwnerIDs.isEmpty {
-            if outgoingIDs.count > 1, storedPartnerID.map({ !outgoingIDs.contains($0) }) ?? true {
+            if outgoingIDs.count > 1 {
                 return .conflicted(.multipleOutgoingParticipants(participantIDs: outgoingIDs))
             }
             return .partner(nil)

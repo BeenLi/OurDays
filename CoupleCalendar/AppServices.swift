@@ -602,8 +602,7 @@ struct SyncCoordinator {
                 // pairing conflict is unresolved (e.g. a stranger joined the
                 // share), nothing may be uploaded to the still-readable share.
                 async let outgoingParticipantIDsTask = cloudKit.fetchOutgoingShareParticipantIDs(
-                    ownerMemberID: settings.currentMemberID,
-                    lockingForPartnerID: settings.partnerShareOwnerID
+                    ownerMemberID: settings.currentMemberID
                 )
                 async let sharedZoneIDsTask = cloudKit.fetchSharedCoupleSpaceZoneIDs()
                 let outgoingParticipantIDs = try await outgoingParticipantIDsTask

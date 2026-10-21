@@ -1276,14 +1276,55 @@ final class TwoPersonPairingPlanTests: XCTestCase {
         )
     }
 
-    func testMultipleOutgoingParticipantsWithStoredPartnerIsNotAConflict() {
+    func testMultipleOutgoingParticipantsWithStoredPartnerIsStillAConflict() {
+        // A newcomer on the outgoing share is never removed silently, even when
+        // the stored partner is among the participants: the user decides.
         let resolution = TwoPersonPairingPlan.resolve(
             storedPartnerID: "_partner",
-            outgoingAcceptedParticipantIDs: ["_partner", "_intruder"],
+            outgoingAcceptedParticipantIDs: ["_partner", "_newcomer"],
             sharedZoneOwnerIDs: []
         )
 
         XCTAssertNil(resolution.partnerID)
+        XCTAssertEqual(
+            resolution.conflict,
+            .multipleOutgoingParticipants(participantIDs: ["_newcomer", "_partner"])
+        )
+    }
+
+    func testNewcomerJoiningEstablishedMutualShareIsAConflictWithBothAsCandidates() {
+        // A paired with B; C accepted A's link. Previously C was auto-removed
+        // before A could confirm a replacement, so the replacement ended with
+        // no participant at all. Now it is a conflict A resolves by choosing.
+        let resolution = TwoPersonPairingPlan.resolve(
+            storedPartnerID: "_partner",
+            outgoingAcceptedParticipantIDs: ["_newcomer", "_partner"],
+            sharedZoneOwnerIDs: ["_partner"]
+        )
+
+        XCTAssertNil(resolution.partnerID)
+        XCTAssertTrue(resolution.sharedZoneOwnerIDsToLeave.isEmpty)
+        XCTAssertEqual(
+            resolution.conflict,
+            .outgoingIncomingMismatch(outgoingIDs: ["_newcomer", "_partner"], incomingOwnerIDs: ["_partner"])
+        )
+        XCTAssertEqual(
+            TwoPersonPairingConflictPresentationPlan.candidateIDs(
+                .outgoingIncomingMismatch(outgoingIDs: ["_newcomer", "_partner"], incomingOwnerIDs: ["_partner"])
+            ),
+            ["_newcomer", "_partner"]
+        )
+    }
+
+    func testStaleIncomingZonesStillLeaveWhenOutgoingHasOnlyThePartner() {
+        let resolution = TwoPersonPairingPlan.resolve(
+            storedPartnerID: "_partner",
+            outgoingAcceptedParticipantIDs: ["_partner"],
+            sharedZoneOwnerIDs: ["_partner", "_oldFriend"]
+        )
+
+        XCTAssertEqual(resolution.partnerID, "_partner")
+        XCTAssertEqual(resolution.sharedZoneOwnerIDsToLeave, ["_oldFriend"])
         XCTAssertNil(resolution.conflict)
     }
 
@@ -1350,33 +1391,6 @@ final class ShareAcceptanceGuardPlanTests: XCTestCase {
         )
     }
 }
-
-final class TwoPersonShareLockPlanTests: XCTestCase {
-    func testRemovesExtraParticipantsOnlyWhenPartnerIsAmongThem() {
-        XCTAssertEqual(
-            TwoPersonShareLockPlan.participantIDsToRemove(
-                acceptedParticipantIDs: ["_partner", "_intruder"],
-                partnerID: "_partner"
-            ),
-            ["_intruder"]
-        )
-        XCTAssertEqual(
-            TwoPersonShareLockPlan.participantIDsToRemove(
-                acceptedParticipantIDs: ["_personA", "_personB"],
-                partnerID: nil
-            ),
-            []
-        )
-        XCTAssertEqual(
-            TwoPersonShareLockPlan.participantIDsToRemove(
-                acceptedParticipantIDs: ["_personA", "_personB"],
-                partnerID: "_partner"
-            ),
-            []
-        )
-    }
-}
-
 
 final class ExistingICloudDataRecoveryPlanTests: XCTestCase {
     func testPromptsWhenFreshLocalStateFindsExistingCloudDataAfterProfileSetup() {

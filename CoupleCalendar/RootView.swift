@@ -333,13 +333,8 @@ struct RootView: View {
                 modelContext: modelContext
             )
             settings.partnerShareOwnerID = nil
-            settings.partnerSyncedDisplayName = nil
-            settings.clearPartnerAvatars()
-            settings.partnerNoteName = ""
-            settings.hasPromptedPartnerNoteForCurrentPairing = false
-            settings.hasShownPairingSafetyNoticeForCurrentPairing = false
+            clearPartnerPairingState()
             settings.pairingConflict = nil
-            settings.clearPairingDate()
 
             try await cloudKit.acceptShare(metadata: pending.metadata)
             ShareCalAcceptedShareSignal.markAccepted(partnerOwnerID: pending.incomingOwnerID)
@@ -356,6 +351,7 @@ struct RootView: View {
     ) async {
         guard let cloudKit = services.cloudKitIfAvailable else { return }
         do {
+            let previousPartnerID = settings.partnerShareOwnerID
             switch conflict {
             case .outgoingIncomingMismatch(_, let incomingOwnerIDs):
                 // Whoever is kept: every other participant leaves my share, and
@@ -371,12 +367,34 @@ struct RootView: View {
                 settings.partnerShareOwnerID = keptID
             case .multipleOutgoingParticipants:
                 try await cloudKit.removeOutgoingShareParticipants(keeping: keptID)
+                if previousPartnerID != nil, previousPartnerID != keptID {
+                    settings.partnerShareOwnerID = nil
+                }
+            }
+            // Keeping someone other than the previous partner is a replacement:
+            // the old partner's nickname, avatar and pairing date must not carry
+            // over to the new person.
+            if let previousPartnerID, previousPartnerID != settings.partnerShareOwnerID {
+                clearPartnerPairingState()
             }
             settings.pairingConflict = nil
             await runForegroundSync(consumingAcceptedShareSignal: false, forceCloudKit: true)
         } catch {
             settings.lastSyncError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
         }
+    }
+
+    /// Forgets everything tied to the previous partner so a new pairing starts
+    /// clean (nickname note, synced profile, pairing date, one-time notices).
+    /// Callers set `partnerShareOwnerID` themselves.
+    @MainActor
+    private func clearPartnerPairingState() {
+        settings.partnerSyncedDisplayName = nil
+        settings.clearPartnerAvatars()
+        settings.partnerNoteName = ""
+        settings.hasPromptedPartnerNoteForCurrentPairing = false
+        settings.hasShownPairingSafetyNoticeForCurrentPairing = false
+        settings.clearPairingDate()
     }
 
     @MainActor

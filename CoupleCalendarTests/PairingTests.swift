@@ -595,7 +595,7 @@ final class SettingsStoreIdentityMigrationTests: XCTestCase {
 
         let firstLaunchSettings = SettingsStore(defaults: defaults)
 
-        XCTAssertEqual(firstLaunchSettings.currentMemberID, SettingsStore.unsyncedMemberID)
+        XCTAssertEqual(firstLaunchSettings.currentMemberID, MemberIDPlan.unsyncedMemberID)
         XCTAssertFalse(firstLaunchSettings.hasSyncedMemberID)
 
         firstLaunchSettings.currentMemberID = "_cloudKitUser"
@@ -624,7 +624,7 @@ final class SettingsStoreIdentityMigrationTests: XCTestCase {
         XCTAssertNil(settings.partnerShareOwnerID)
         XCTAssertTrue(settings.outgoingShareParticipantIDs.isEmpty)
         XCTAssertFalse(settings.hasStartedPairing)
-        XCTAssertEqual(settings.currentMemberID, SettingsStore.unsyncedMemberID)
+        XCTAssertEqual(settings.currentMemberID, MemberIDPlan.unsyncedMemberID)
         XCTAssertEqual(settings.currentDisplayName, "Display")
         XCTAssertEqual(settings.selectedCalendarIDs, ["calendar-1"])
         XCTAssertTrue(settings.consumeLegacyLocalDataPurgeFlag())

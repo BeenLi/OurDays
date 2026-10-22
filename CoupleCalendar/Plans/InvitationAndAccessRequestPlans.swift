@@ -526,3 +526,264 @@ enum InviteTimeAdjustmentPlan {
         return newStart.addingTimeInterval(duration)
     }
 }
+
+enum InvitationInteractionPlan {
+    static func canRespond(to invitation: EventInvitation, currentMemberID: String) -> Bool {
+        // In a two-person space, anyone who is not the creator is the invitee.
+        // The stored `inviteeMemberID` is the partner's hashed CloudKit ID (stamped
+        // by the creator), which never equals the recipient's local owner ID, so we
+        // identify the invitee by "not the creator" instead.
+        invitation.status == .pending && invitation.creatorMemberID != currentMemberID
+    }
+}
+
+enum InvitationLocalEventSyncPlan {
+
+    static func cancelAcceptedInvitationsMissingLocalEvents(
+        _ invitations: [EventInvitation],
+        existingLocalEventIDs: Set<String>,
+        now: Date
+    ) -> [EventInvitation] {
+        let trackableInvitations = invitations.filter { invitation in
+            guard let localEventID = invitation.createdLocalEventID else { return false }
+            return !localEventID.isEmpty
+        }
+        return cancelAcceptedInvitationsMissingLocalEvents(trackableInvitations, now: now) { invitation in
+            guard let localEventID = invitation.createdLocalEventID,
+                  !localEventID.isEmpty else {
+                return false
+            }
+            return existingLocalEventIDs.contains(localEventID)
+        }
+    }
+
+    static func cancelAcceptedInvitationsMissingLocalEvents(
+        _ invitations: [EventInvitation],
+        now: Date,
+        localEventExists: (EventInvitation) -> Bool
+    ) -> [EventInvitation] {
+        let missing = invitations.filter { invitation in
+            guard invitation.status == .accepted else {
+                return false
+            }
+            return !localEventExists(invitation)
+        }
+
+        for invitation in missing {
+            invitation.statusRawValue = InvitationStatus.canceled.rawValue
+            invitation.updatedAt = now
+        }
+
+        return missing
+    }
+}
+
+enum InvitationListPlan {
+    static func visibleInvitations(_ invitations: [EventInvitation]) -> [EventInvitation] {
+        invitations.filter { $0.archivedAt == nil }
+    }
+
+    /// Orders invitations so the schedule nearest to now (the most recent start date)
+    /// sits at the top, instead of the oldest invitation leading the list.
+    static func sortedForDisplay(_ invitations: [EventInvitation]) -> [EventInvitation] {
+        invitations.sorted { $0.startDate > $1.startDate }
+    }
+
+    static func canOpenInCalendar(_ invitation: EventInvitation) -> Bool {
+        invitation.status == .accepted
+    }
+
+    static func canDelete(_ invitation: EventInvitation) -> Bool {
+        invitation.archivedAt == nil
+    }
+}
+
+struct CreateInviteDraft: Equatable {
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let isAllDay: Bool
+    let location: String?
+    let notes: String?
+}
+
+enum CreateInviteValidationError: LocalizedError, Equatable {
+    case emptyTitle
+    case invalidDateRange
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyTitle:
+            return "Invite title is required."
+        case .invalidDateRange:
+            return "Invite end time must be after the start time."
+        }
+    }
+}
+
+enum CreateInvitePlan {
+    static func localCalendarDraft(from draft: CreateInviteDraft) throws -> LocalCalendarEventDraft {
+        let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { throw CreateInviteValidationError.emptyTitle }
+        guard draft.endDate > draft.startDate else { throw CreateInviteValidationError.invalidDateRange }
+
+        return LocalCalendarEventDraft(
+            title: title,
+            startDate: draft.startDate,
+            endDate: draft.endDate,
+            isAllDay: draft.isAllDay,
+            location: cleanOptional(draft.location),
+            notes: cleanOptional(draft.notes)
+        )
+    }
+
+    static func invitation(
+        from draft: CreateInviteDraft,
+        creatorMemberID: String,
+        inviteeMemberID: String
+    ) throws -> EventInvitation {
+        let localDraft = try localCalendarDraft(from: draft)
+        return EventInvitation(
+            creatorMemberID: creatorMemberID,
+            inviteeMemberID: inviteeMemberID,
+            title: localDraft.title,
+            startDate: localDraft.startDate,
+            endDate: localDraft.endDate,
+            isAllDay: localDraft.isAllDay,
+            location: localDraft.location,
+            notes: localDraft.notes,
+            statusRawValue: InvitationStatus.pending.rawValue
+        )
+    }
+
+    static func mirror(
+        from draft: CreateInviteDraft,
+        createdEvent: CreatedCalendarEvent,
+        ownerMemberID: String,
+        timeZoneIdentifier: String = TimeZone.current.identifier
+    ) throws -> EventMirror {
+        let localDraft = try localCalendarDraft(from: draft)
+        let fingerprint = [
+            createdEvent.eventIdentifier,
+            "\(Int(localDraft.startDate.timeIntervalSince1970.rounded()))",
+            "\(Int(localDraft.endDate.timeIntervalSince1970.rounded()))",
+            localDraft.title
+        ].joined(separator: "|")
+        let mirrorKey = EventMirrorKeyPlan.makeMirrorKey(
+            calendarIdentifier: createdEvent.calendarIdentifier,
+            eventIdentifier: createdEvent.eventIdentifier,
+            occurrenceStartDate: localDraft.startDate,
+            fingerprint: fingerprint
+        )
+
+        return EventMirror(
+            id: mirrorKey,
+            ownerMemberID: ownerMemberID,
+            mirrorKey: mirrorKey,
+            sourceCalendarID: createdEvent.calendarIdentifier,
+            sourceCalendarTitle: createdEvent.calendarTitle,
+            occurrenceStartDate: localDraft.startDate,
+            startDate: localDraft.startDate,
+            endDate: localDraft.endDate,
+            isAllDay: localDraft.isAllDay,
+            timeZoneIdentifier: timeZoneIdentifier,
+            title: localDraft.title,
+            location: localDraft.location,
+            notes: localDraft.notes,
+            urlString: nil,
+            calendarColorHex: createdEvent.calendarColorHex,
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: mirrorKey
+        )
+    }
+
+    static func conflictCandidateMirror(
+        from draft: CreateInviteDraft,
+        ownerMemberID: String
+    ) throws -> EventMirror {
+        let createdEvent = CreatedCalendarEvent(
+            eventIdentifier: "new-invite-candidate",
+            calendarIdentifier: ShareCalCalendarBootstrapPlan.calendarTitle,
+            calendarTitle: ShareCalCalendarBootstrapPlan.calendarTitle,
+            calendarColorHex: ShareCalCalendarBootstrapPlan.calendarColorHex
+        )
+        return try mirror(from: draft, createdEvent: createdEvent, ownerMemberID: ownerMemberID)
+    }
+
+    private static func cleanOptional(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+enum InvitationConflictPlan {
+    static func conflicts(
+        for event: EventMirror,
+        partnerMemberID: String,
+        mirrors: [EventMirror]
+    ) -> [EventMirror] {
+        mirrors
+            .filter { mirror in
+                mirror.deletedAt == nil
+                    && mirror.id != event.id
+                    && mirror.ownerMemberID == partnerMemberID
+                    && overlaps(
+                        startA: event.startDate,
+                        endA: event.endDate,
+                        startB: mirror.startDate,
+                        endB: mirror.endDate
+                    )
+            }
+            .sorted { $0.startDate < $1.startDate }
+    }
+
+    private static func overlaps(startA: Date, endA: Date, startB: Date, endB: Date) -> Bool {
+        startA < endB && startB < endA
+    }
+}
+
+enum AcceptedInvitationMirrorPlan {
+    static func mirror(
+        from invitation: EventInvitation,
+        createdEvent: CreatedCalendarEvent,
+        ownerMemberID: String,
+        timeZoneIdentifier: String = TimeZone.current.identifier
+    ) -> EventMirror {
+        let fingerprint = [
+            invitation.id,
+            createdEvent.eventIdentifier,
+            "\(Int(invitation.startDate.timeIntervalSince1970.rounded()))",
+            "\(Int(invitation.endDate.timeIntervalSince1970.rounded()))",
+            invitation.title
+        ].joined(separator: "|")
+        let mirrorKey = EventMirrorKeyPlan.makeMirrorKey(
+            calendarIdentifier: createdEvent.calendarIdentifier,
+            eventIdentifier: createdEvent.eventIdentifier,
+            occurrenceStartDate: invitation.startDate,
+            fingerprint: fingerprint
+        )
+
+        return EventMirror(
+            id: mirrorKey,
+            ownerMemberID: ownerMemberID,
+            mirrorKey: mirrorKey,
+            sourceCalendarID: createdEvent.calendarIdentifier,
+            sourceCalendarTitle: createdEvent.calendarTitle,
+            occurrenceStartDate: invitation.startDate,
+            startDate: invitation.startDate,
+            endDate: invitation.endDate,
+            isAllDay: invitation.isAllDay,
+            timeZoneIdentifier: timeZoneIdentifier,
+            title: invitation.title,
+            location: invitation.location,
+            notes: invitation.notes,
+            urlString: nil,
+            calendarColorHex: createdEvent.calendarColorHex,
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: mirrorKey
+        )
+    }
+}

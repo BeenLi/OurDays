@@ -2,6 +2,12 @@
 
 OurDays（原名 ShareCal）是一款**严格两人配对**的情侣共享日历 iOS App：双方各自挑选要共享的系统日历，App 将所选日程镜像到 iCloud 并通过一条 CKShare 互相可见。不上传账号密码、不依赖任何自建服务器——所有数据只存在于两个人自己的 iCloud 中。
 
+[![App Store](https://img.shields.io/badge/App%20Store-OurDays-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/cn/app/id6772868166)
+[![官网](https://img.shields.io/badge/官网-ourdays.cn-ff7a59)](https://ourdays.cn)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+**完全开源、永久免费、没有服务器。** 数据放在用户自己的 iCloud 里，项目唯一的固定开销是每年的 Apple 开发者账号费用，因此不需要靠订阅或广告维持。
+
 ## 功能特性
 
 - **两人配对**：通过 iCloud 共享链接配对；配对确立后，经旧链接加入的第三人会在同步时被自动移除；接受陌生人的分享会触发"更换配对"确认，多余的历史共享自动退出。
@@ -34,7 +40,7 @@ App 为四个 Tab 的标准 iOS 结构：
 | --- | --- |
 | UI | SwiftUI（`@Observable`），无第三方依赖 |
 | 本地存储 | SwiftData（仅作本地缓存，`cloudKitDatabase: .none`）+ UserDefaults（设置与配对状态） |
-| 云同步 | CloudKit：私有数据库自有 `CoupleSpace` zone + CKShare 层级共享；`CKSyncEngine` 推送变更 |
+| 云同步 | CloudKit：私有数据库自有 `CoupleSpace` zone + CKShare 层级共享；CKDatabaseSubscription 静默推送 + 后台刷新唤醒拉取 |
 | 系统日历 | EventKit（读取所选日历、为接受的邀请创建日程） |
 | 身份 | CloudKit `userRecordID` 作为唯一成员 ID（即共享 zone 的 ownerName，无自建账号体系） |
 | 测试 | XCTest，决策逻辑收敛在无状态 "Plan enum" 中直接单测 |
@@ -137,8 +143,47 @@ xcodebuild -project CoupleCalendar.xcodeproj -scheme CoupleCalendar \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:CoupleCalendarTests
 ```
 
-- 代码架构与约定见 [CLAUDE.md](CLAUDE.md)。
+### 代码结构
+
+`CoupleCalendar/` 下没有第三方依赖，依赖方向固定为 **Views → Services/Stores → Plans → Models**，Plans 从不反向引用服务或存储：
+
+```text
+CoupleCalendar/
+├── CoupleCalendarApp.swift        @main、AppDelegate、通知/后台刷新注册
+├── RootView.swift                 四 Tab 容器、sheet/alert 路由、配对冲突弹窗
+├── Views/                         SwiftUI 界面，一屏一文件（仅 App target）
+│   ├── CalendarTabView / WeekAgendaView / DayTimeline/
+│   ├── ActivityTabView / InvitesTabView / CreateInviteView / EventDetail/
+│   ├── Settings/                  配对状态卡、头像编辑、历史申请
+│   ├── DesignSystem.swift         OurDaysTheme、卡片/按钮样式、头像视图
+│   └── CloudSharingController.swift   UICloudSharingController 封装
+├── Plans/                         无状态 "Plan enum"：全部决策逻辑，纯函数，直接单测
+│   ├── PairingPlans / SyncPlans / CloudKitPlans
+│   ├── InvitationAndAccessRequestPlans / CommentPlans / ActivityAndNotificationPlans
+│   ├── CalendarSourcePlans / CalendarDisplayPlans / CalendarNavigationPlans
+│   ├── DayTimelinePlans / AgendaPlans / MemberIdentityPlans
+├── SettingsStore.swift            UserDefaults 持久化的设置与配对状态（@Observable）
+├── SyncCoordinator.swift          foregroundSync：唯一的同步管线 + 后台刷新 runner
+├── AppServices.swift              服务容器
+├── CloudKitCoupleSpaceService.swift   全部 CloudKit I/O：zone / root / share / 查询 / 写入
+├── CloudKitRecordMappers.swift    CKRecord ↔ 模型 的纯映射
+├── ShareCalSceneDelegate.swift    场景代理、CKShare 接受处理
+├── CalendarAccessService.swift    EventKit 访问
+├── EventServices.swift            镜像 / 邀请 / 评论的生成与变更
+├── Models.swift                   SwiftData 模型与本地清理
+├── ShareCalStrings.swift          手写中英文案
+└── Diagnostics/                   仅由启动参数驱动的探针与冒烟工具，正常运行不使用
+```
+
+```text
+CoupleCalendarTests/               XCTest，一个领域一个文件，直接编译非 UI 源码（无 @testable import）
+Scripts/                           CloudKit schema 导入、双模拟器配对冒烟脚本
+docs/                              开发流程、隐私政策、官网源码、截图
+```
+
+- 代码架构与约定（身份模型、CloudKit 布局、Plan 约定、共享 helper）见 [CLAUDE.md](CLAUDE.md)。
 - CloudKit Schema 部署、固定双模拟器冒烟测试、停止共享隐私验证等运维流程见 [docs/development.md](docs/development.md)。
+- CI：[`.github/workflows/ios-ci.yml`](.github/workflows/ios-ci.yml) 在 macOS runner 上构建并跑全部测试（push 到 main 与针对 main 的 PR）。
 
 ## 开源协议
 

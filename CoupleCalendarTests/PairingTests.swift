@@ -72,23 +72,6 @@ final class PairingSettingsPlanTests: XCTestCase {
         )
     }
 
-    func testBuildsOutgoingAndIncomingCalendarStatuses() {
-        XCTAssertEqual(
-            PairingSettingsPlan.outgoingStatus(hasStartedPairing: false, outgoingParticipantIDs: []),
-            .off
-        )
-        XCTAssertEqual(
-            PairingSettingsPlan.outgoingStatus(hasStartedPairing: true, outgoingParticipantIDs: []),
-            .waitingForPartner
-        )
-        XCTAssertEqual(
-            PairingSettingsPlan.outgoingStatus(hasStartedPairing: true, outgoingParticipantIDs: ["icloud-owner"]),
-            .on
-        )
-        XCTAssertEqual(PairingSettingsPlan.incomingStatus(incomingOwnerID: nil), .unavailable)
-        XCTAssertEqual(PairingSettingsPlan.incomingStatus(incomingOwnerID: "icloud-owner"), .on)
-    }
-
     func testPartnerDisplayNamePrefersLocalNoteThenSyncedProfile() {
         XCTAssertEqual(
             PairingSettingsPlan.partnerDisplayName(

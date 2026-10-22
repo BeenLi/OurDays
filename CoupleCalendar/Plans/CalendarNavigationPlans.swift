@@ -72,17 +72,6 @@ enum CalendarDateNavigationPlan {
         return calendar.date(byAdding: component, value: value, to: selectedDate) ?? selectedDate
     }
 
-    static func dateStrip(
-        around selectedDate: Date,
-        range: ClosedRange<Int> = -3...3,
-        calendar: Calendar = .current
-    ) -> [Date] {
-        let dayStart = calendar.startOfDay(for: selectedDate)
-        return range.compactMap { offset in
-            calendar.date(byAdding: .day, value: offset, to: dayStart)
-        }
-    }
-
     static func selectionResult(for date: Date) -> CalendarDateSelectionResult {
         CalendarDateSelectionResult(selectedDate: date, mode: .day)
     }

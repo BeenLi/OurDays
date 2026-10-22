@@ -283,11 +283,6 @@ final class CalendarDateNavigationPlanTests: XCTestCase {
             CalendarDateNavigationPlan.date(afterMoving: selected, mode: .week, direction: .next, calendar: calendar),
             try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 14)))
         )
-
-        let strip = CalendarDateNavigationPlan.dateStrip(around: selected, calendar: calendar)
-
-        XCTAssertEqual(strip.first, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 4))))
-        XCTAssertEqual(strip.last, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 10))))
     }
 
     func testSelectingDateFromHierarchySwitchesToDayMode() throws {

@@ -45,32 +45,6 @@ enum CalendarAccessRequestSource: String, Codable, CaseIterable, Identifiable {
 }
 
 @Model
-final class CoupleSpace {
-    @Attribute(.unique) var id: String
-    var schemaVersion: Int
-    var createdAt: Date
-    var ownerMemberID: String
-    var cloudKitRecordName: String?
-    var shareRecordName: String?
-
-    init(
-        id: String = UUID().uuidString,
-        schemaVersion: Int = 1,
-        createdAt: Date = .now,
-        ownerMemberID: String,
-        cloudKitRecordName: String? = nil,
-        shareRecordName: String? = nil
-    ) {
-        self.id = id
-        self.schemaVersion = schemaVersion
-        self.createdAt = createdAt
-        self.ownerMemberID = ownerMemberID
-        self.cloudKitRecordName = cloudKitRecordName
-        self.shareRecordName = shareRecordName
-    }
-}
-
-@Model
 final class MemberProfile {
     @Attribute(.unique) var id: String
     var displayName: String
@@ -356,45 +330,14 @@ final class EventComment: Identifiable {
     }
 }
 
-@Model
-final class SyncState {
-    @Attribute(.unique) var id: String
-    var privateDatabaseTokenData: Data?
-    var sharedDatabaseTokenData: Data?
-    var syncEngineStateData: Data?
-    var lastSyncAt: Date?
-    var lastErrorMessage: String?
-    var pendingMutationCount: Int
-
-    init(
-        id: String = "default",
-        privateDatabaseTokenData: Data? = nil,
-        sharedDatabaseTokenData: Data? = nil,
-        syncEngineStateData: Data? = nil,
-        lastSyncAt: Date? = nil,
-        lastErrorMessage: String? = nil,
-        pendingMutationCount: Int = 0
-    ) {
-        self.id = id
-        self.privateDatabaseTokenData = privateDatabaseTokenData
-        self.sharedDatabaseTokenData = sharedDatabaseTokenData
-        self.syncEngineStateData = syncEngineStateData
-        self.lastSyncAt = lastSyncAt
-        self.lastErrorMessage = lastErrorMessage
-        self.pendingMutationCount = pendingMutationCount
-    }
-}
-
 @MainActor
 enum ShareCalLocalDataCleanupService {
     static func purge(modelContext: ModelContext) throws {
-        try deleteAll(CoupleSpace.self, modelContext: modelContext)
         try deleteAll(EventMirror.self, modelContext: modelContext)
         try deleteAll(LocalEventShadow.self, modelContext: modelContext)
         try deleteAll(EventComment.self, modelContext: modelContext)
         try deleteAll(EventInvitation.self, modelContext: modelContext)
         try deleteAll(CalendarAccessRequest.self, modelContext: modelContext)
-        try deleteAll(SyncState.self, modelContext: modelContext)
         try modelContext.save()
     }
 
@@ -471,14 +414,12 @@ enum ShareCalLocalDataCleanupService {
 
 enum ShareCalModelContainer {
     static let schema = Schema([
-        CoupleSpace.self,
         MemberProfile.self,
         EventMirror.self,
         LocalEventShadow.self,
         EventInvitation.self,
         CalendarAccessRequest.self,
-        EventComment.self,
-        SyncState.self
+        EventComment.self
     ])
 
     static func make(isStoredInMemoryOnly: Bool = false) throws -> ModelContainer {

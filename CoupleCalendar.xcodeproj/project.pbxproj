@@ -71,6 +71,13 @@
 		11BFA6FDC0F6D9A6CB35DC3E /* PairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BC1E0EA9E517ABD7A697E4 /* PairingTests.swift */; };
 		11B621B4823D90D16B9CC27E /* SettingsAndStringsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B140A0665519028BFA9BC4 /* SettingsAndStringsTests.swift */; };
 		11BD07CF824F0D8ED6966B77 /* SyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BF3CA9223B14F6C371C5EB /* SyncTests.swift */; };
+		11B4C6330A93F81F6255C98E /* CloudKitPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B79D609684453E26B2F62C /* CloudKitPlans.swift */; };
+		11B24B2F9501D0A5223982F0 /* CloudKitPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B79D609684453E26B2F62C /* CloudKitPlans.swift */; };
+		11B7D737110F671C0A72DC73 /* LaunchDiagnosticPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B9B6EE4184F4E773E5FA8E /* LaunchDiagnosticPlans.swift */; };
+		11BA86096FB0F879BA403940 /* LaunchDiagnosticPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B9B6EE4184F4E773E5FA8E /* LaunchDiagnosticPlans.swift */; };
+		11B5C77B263466588B2C87B0 /* ShareCalSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */; };
+		11B8EC6648A651EB1072445D /* ShareCalSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */; };
+		11BB740084CB539F183DB621 /* CloudSharingController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BF559D75F2160305BCCA94 /* CloudSharingController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -138,6 +145,10 @@
 		11BC1E0EA9E517ABD7A697E4 /* PairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingTests.swift; sourceTree = "<group>"; };
 		11B140A0665519028BFA9BC4 /* SettingsAndStringsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsAndStringsTests.swift; sourceTree = "<group>"; };
 		11BF3CA9223B14F6C371C5EB /* SyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncTests.swift; sourceTree = "<group>"; };
+		11B79D609684453E26B2F62C /* CloudKitPlans.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitPlans.swift; sourceTree = "<group>"; };
+		11B9B6EE4184F4E773E5FA8E /* LaunchDiagnosticPlans.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchDiagnosticPlans.swift; sourceTree = "<group>"; };
+		11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCalSceneDelegate.swift; sourceTree = "<group>"; };
+		11BF559D75F2160305BCCA94 /* CloudSharingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSharingController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -178,6 +189,7 @@
 		11A000220000000000000001 /* CoupleCalendar */ = {
 			isa = PBXGroup;
 			children = (
+				11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */,
 				11B499213B48EF2BC030CD31 /* Plans */,
 				11BFDB621FAA860BAFF077AB /* CloudKitRecordMappers.swift */,
 				11B762A754D40721B13B3DD2 /* ShareCalStrings.swift */,
@@ -235,6 +247,7 @@
 		11BF340828C6AA81C3844EED /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				11BF559D75F2160305BCCA94 /* CloudSharingController.swift */,
 				11B609B2901DF1E7CD1180F5 /* WeekAgendaView.swift */,
 				11B10119F8CEB09342887F54 /* Settings */,
 				11B442248ED7D2F1EF875059 /* OnboardingSheets.swift */,
@@ -283,6 +296,8 @@
 		11B499213B48EF2BC030CD31 /* Plans */ = {
 			isa = PBXGroup;
 			children = (
+				11B9B6EE4184F4E773E5FA8E /* LaunchDiagnosticPlans.swift */,
+				11B79D609684453E26B2F62C /* CloudKitPlans.swift */,
 				11BAA229790393A28A8DB3A4 /* SyncPlans.swift */,
 				11B4E126BDD4A88C7B8DA4AE /* PairingPlans.swift */,
 				11BA69D6F08AF3455E74A215 /* MemberIdentityPlans.swift */,
@@ -424,6 +439,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				11BB740084CB539F183DB621 /* CloudSharingController.swift in Sources */,
+				11B5C77B263466588B2C87B0 /* ShareCalSceneDelegate.swift in Sources */,
+				11B7D737110F671C0A72DC73 /* LaunchDiagnosticPlans.swift in Sources */,
+				11B4C6330A93F81F6255C98E /* CloudKitPlans.swift in Sources */,
 				11B6B154FD1A43E9790D6C73 /* ShareCalStrings.swift in Sources */,
 				11B5F0C2B6888FBDB41F97D6 /* CloudKitRecordMappers.swift in Sources */,
 				11B43AA9CEB30327D45FDBE3 /* ActivityAndNotificationPlans.swift in Sources */,
@@ -467,6 +486,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				11B8EC6648A651EB1072445D /* ShareCalSceneDelegate.swift in Sources */,
+				11BA86096FB0F879BA403940 /* LaunchDiagnosticPlans.swift in Sources */,
+				11B24B2F9501D0A5223982F0 /* CloudKitPlans.swift in Sources */,
 				11B83F37C718F69AD979C1BE /* ActivityAndNotificationTests.swift in Sources */,
 				11BAAB3F34B0B4796E52B1AA /* CalendarMirrorTests.swift in Sources */,
 				11B91A89FBF07E983A4EB166 /* CloudKitTests.swift in Sources */,

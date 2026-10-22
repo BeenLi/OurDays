@@ -1,0 +1,136 @@
+import Foundation
+
+enum ShareCalLaunchDiagnosticPlan {
+    static let cloudKitWriteProbeArgument = "-ShareCalCloudKitWriteProbe"
+    static let seedCalendarEventArgument = "-ShareCalSeedCalendarEvent"
+    static let seedCalendarEventTitleArgument = "-ShareCalSeedCalendarEventTitle"
+    static let seedCalendarEventStartDateArgument = "-ShareCalSeedCalendarEventStart"
+    static let seedCalendarEventEndDateArgument = "-ShareCalSeedCalendarEventEnd"
+    static let stopSharingProbeArgument = "-ShareCalStopICloudSharing"
+    static let sharedReadProbeArgument = "-ShareCalSharedReadProbe"
+    static let preparePairingShareArgument = "-ShareCalPreparePairingShare"
+    static let acceptShareURLArgument = "-ShareCalAcceptShareURL"
+    static let forceSyncArgument = "-ShareCalForceSync"
+    /// Test-harness only: seed a display name + mark onboarding/recovery prompts resolved
+    /// in the app's own UserDefaults at launch, so automation isn't blocked by the
+    /// first-run profile sheet. Inert without the argument (normal launches ignore it).
+    static let seedProfileNameArgument = "-ShareCalSeedProfileName"
+    static let cloudKitWriteProbeRecordType = "CoupleSpace"
+    /// Marker for scripts that grep the unified log for the share invitation URL.
+    static let pairingShareURLLogPrefix = "ShareCalPairingShareURL:"
+
+    // Joint-event / comment smoke diagnostics (drive an invitation → accept → joint
+    // event → cross-device comment thread). All log a `ShareCalDiag ...` marker the
+    // smoke script greps. Inert without their argument.
+    static let seedInvitationArgument = "-ShareCalSeedInvitation"
+    static let seedInvitationTitleArgument = "-ShareCalSeedInvitationTitle"
+    static let acceptInvitationArgument = "-ShareCalAcceptInvitation"
+    static let addJointCommentArgument = "-ShareCalAddJointComment"
+    static let probeJointCommentsArgument = "-ShareCalProbeJointComments"
+    /// V1b visual check: seed a partner-authored comment on a fresh ORDINARY (non-joint) event
+    /// of my own, so a single simulator can show the red dot on my event + the comment thread in
+    /// its `EventDetailView` (the path that joint events bypass). Inert without the argument.
+    static let seedOrdinaryCommentArgument = "-ShareCalSeedOrdinaryComment"
+    /// Common prefix for the new diagnostics' log markers.
+    static let diagnosticLogPrefix = "ShareCalDiag"
+
+    static func shouldRunCloudKitWriteProbe(arguments: [String]) -> Bool {
+        arguments.contains(cloudKitWriteProbeArgument)
+    }
+
+    static func shouldSeedCalendarEvent(arguments: [String]) -> Bool {
+        arguments.contains(seedCalendarEventArgument)
+    }
+
+    static func shouldRunStopSharingProbe(arguments: [String]) -> Bool {
+        arguments.contains(stopSharingProbeArgument)
+    }
+
+    static func shouldRunSharedReadProbe(arguments: [String]) -> Bool {
+        arguments.contains(sharedReadProbeArgument)
+    }
+
+    static func shouldPreparePairingShare(arguments: [String]) -> Bool {
+        arguments.contains(preparePairingShareArgument)
+    }
+
+    static func shouldForceSync(arguments: [String]) -> Bool {
+        arguments.contains(forceSyncArgument)
+    }
+
+    static func shouldSeedInvitation(arguments: [String]) -> Bool {
+        arguments.contains(seedInvitationArgument)
+    }
+
+    static func seedInvitationTitle(arguments: [String]) -> String? {
+        value(after: seedInvitationTitleArgument, arguments: arguments)
+    }
+
+    static func shouldAcceptInvitation(arguments: [String]) -> Bool {
+        arguments.contains(acceptInvitationArgument)
+    }
+
+    static func jointCommentBody(arguments: [String]) -> String? {
+        value(after: addJointCommentArgument, arguments: arguments)
+    }
+
+    static func ordinaryCommentBody(arguments: [String]) -> String? {
+        value(after: seedOrdinaryCommentArgument, arguments: arguments)
+    }
+
+    static func shouldProbeJointComments(arguments: [String]) -> Bool {
+        arguments.contains(probeJointCommentsArgument)
+    }
+
+    static func seedProfileName(arguments: [String] = ProcessInfo.processInfo.arguments) -> String? {
+        value(after: seedProfileNameArgument, arguments: arguments)
+    }
+
+    static func acceptShareURL(arguments: [String]) -> URL? {
+        guard let urlString = value(after: acceptShareURLArgument, arguments: arguments) else {
+            return nil
+        }
+        return URL(string: urlString)
+    }
+
+    static func seedCalendarEventTitle(arguments: [String]) -> String? {
+        value(after: seedCalendarEventTitleArgument, arguments: arguments)
+    }
+
+    static func seedCalendarEventDraft(arguments: [String], now: Date = .now) -> LocalCalendarEventDraft {
+        let title = seedCalendarEventTitle(arguments: arguments) ?? ShareCalSmokeTestEventPlan.title
+        guard let startDate = dateValue(after: seedCalendarEventStartDateArgument, arguments: arguments),
+              let endDate = dateValue(after: seedCalendarEventEndDateArgument, arguments: arguments),
+              endDate > startDate else {
+            return ShareCalSmokeTestEventPlan.draft(now: now, title: title)
+        }
+
+        return LocalCalendarEventDraft(
+            title: title,
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            location: nil,
+            notes: ShareCalSmokeTestEventPlan.notes
+        )
+    }
+
+    private static func dateValue(after argument: String, arguments: [String]) -> Date? {
+        guard let rawValue = value(after: argument, arguments: arguments) else { return nil }
+        return ISO8601DateFormatter().date(from: rawValue)
+    }
+
+    private static func value(after argument: String, arguments: [String]) -> String? {
+        guard let argumentIndex = arguments.firstIndex(of: argument) else {
+            return nil
+        }
+
+        let valueIndex = arguments.index(after: argumentIndex)
+        guard arguments.indices.contains(valueIndex) else {
+            return nil
+        }
+
+        let rawValue = arguments[valueIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+        return rawValue.isEmpty ? nil : rawValue
+    }
+}

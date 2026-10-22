@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OurDays · 两人日历 | 只属于你们俩的私密共享日历</title>
-<meta name="description" content="OurDays 是一款只为两个人设计的私密共享日历:双栏并排看彼此日程,发起事件邀请,在日程下评论。数据只通过 Apple iCloud 在两人之间私密同步,无自建服务器、无广告、无追踪。">
+<meta name="description" content="OurDays 是一款只为两个人设计的私密共享日历:双栏并排看彼此日程,共同日程横跨两栏,在日程下评论。完全开源、免费,数据只通过 Apple iCloud 在两人之间私密同步,无自建服务器、无广告、无追踪。现已上架 App Store。">
 <style>
   :root {
     color-scheme: light dark;
@@ -30,11 +30,16 @@
   a { color: var(--accent); }
 
   /* ---------- Device frame ---------- */
-  .device {
-    width: 100%; background: #0b0b0d; border-radius: 42px; padding: 9px;
-    box-shadow: 0 24px 60px rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.12);
-  }
-  .device img { width: 100%; height: auto; display: block; border-radius: 34px; aspect-ratio: 1206 / 2622; object-fit: cover; }
+  .device { width: 100%; }
+  .device img { width: 100%; height: auto; display: block; aspect-ratio: 1080 / 2217; filter: drop-shadow(0 24px 40px rgba(0,0,0,.20)); }
+  .feature .new { float: right; font-size: .68rem; font-weight: 700; letter-spacing: .04em; color: var(--you); background: rgba(255,90,138,.12); border-radius: 999px; padding: 2px 8px; margin-left: 8px; }
+  .ghost-btn { display: inline-flex; align-items: center; margin-left: 12px; padding: 12px 18px; border-radius: 14px; border: 1px solid var(--hairline); background: var(--card); color: var(--text); text-decoration: none; font-weight: 600; font-size: .95rem; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .step { background: var(--card); border-radius: 18px; padding: 22px; box-shadow: var(--shadow); }
+  .step .n { font-size: 1.6rem; font-weight: 700; color: var(--accent); line-height: 1; margin-bottom: 10px; }
+  .step h3 { margin: 0 0 6px; font-size: 1.08rem; }
+  .step p { margin: 0; color: var(--muted); font-size: .95rem; }
+  .step p.en { font-size: .85rem; margin-top: 8px; }
 
   /* ---------- Hero ---------- */
   .hero { position: relative; overflow: hidden; }
@@ -61,7 +66,7 @@
   .lead { font-size: 1.35rem; line-height: 1.5; margin: 0 0 28px; font-weight: 600; letter-spacing: -.01em; }
   .lead .en { display: block; font-size: .98rem; font-weight: 400; margin-top: 6px; }
   .hero-art { flex: 1 1 300px; display: flex; justify-content: center; }
-  .hero-art .device { max-width: 290px; }
+  .hero-art .device { max-width: 300px; }
 
   .appstore-btn {
     display: inline-flex; align-items: center; gap: 10px;
@@ -131,7 +136,7 @@
     .hero-inner { padding-top: 44px; gap: 32px; }
     .lead { font-size: 1.2rem; }
     .hero-art { order: 2; }
-    .hero-art .device { max-width: 250px; }
+    .hero-art .device { max-width: 260px; }
   }
 
   @media (prefers-color-scheme: dark) {
@@ -151,21 +156,22 @@
       <div class="hero-copy">
         <img class="appicon" src="/assets/appicon.jpg" alt="OurDays 应用图标" width="84" height="84">
         <h1>OurDays</h1>
-        <p class="slogan">两人日历 · Calendar for Two</p>
+        <p class="slogan">两人日历 · Calendar for Two · 1.5 现已上架</p>
         <p class="lead">
-          只属于你们俩的私密共享日历。
-          <span class="en">A private shared calendar built for just the two of you.</span>
+          两个人的日历，放在你们自己的 iCloud 里。
+          <span class="en">A calendar for two, kept in your own iCloud.</span>
         </p>
         <a class="appstore-btn" href="https://apps.apple.com/cn/app/id6772868166" aria-label="在 App Store 下载 OurDays">
           <svg viewBox="0 0 384 512" aria-hidden="true"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
           <span><span class="l1">Download on the</span><span class="l2">App Store</span></span>
         </a>
-        <p class="req">iOS 18 或更高版本 · 需要 iCloud　·　Free</p>
+        <a class="ghost-btn" href="https://github.com/BeenLi/OurDays" target="_blank" rel="noopener">GitHub 源码</a>
+        <p class="req">iOS 18 或更高版本 · 需要 iCloud　·　免费 · 开源 · 无内购</p>
       </div>
 
       <div class="hero-art">
         <div class="device">
-          <img src="/assets/calendar.png" alt="OurDays 双栏并排日程界面:我 与 对方(小雨)的当天安排并排显示" width="1206" height="2622" loading="eager">
+          <img src="/assets/dayview.webp" alt="OurDays 双栏日视图:我 与 小偶偶 两条泳道并排,共同日程「一起吃晚饭」横跨两栏" width="1080" height="2217" loading="eager">
         </div>
       </div>
     </div>
@@ -177,35 +183,76 @@
     <p class="section-sub en">Built for two — not a group calendar</p>
     <div class="features">
       <div class="feature">
-        <div class="ico">🗓️</div>
-        <h3>双栏并排日程</h3>
-        <p>把你和对方的当天 / 当周安排并排显示,一眼看清彼此何时有空、何时冲突。</p>
-        <p class="en">See your day and your partner's in two columns — instantly spot free time and conflicts.</p>
+        <span class="new">1.5 新</span><div class="ico">🗓️</div>
+        <h3>双栏日视图</h3>
+        <p>左栏是你,右栏是 TA,泳道头是各自的头像和当天的日程数。日 / 周一键切换,时间轴自动滚到现在。</p>
+        <p class="en">Your lane on the left, theirs on the right, each headed by an avatar and the day's event count. Switch day / week with one tap.</p>
+      </div>
+      <div class="feature">
+        <span class="new">1.5 新</span><div class="ico">🖤</div>
+        <h3>共同日程,横跨两栏</h3>
+        <p>你们一起的安排用墨色块横跨左右两栏,和各自的日程一眼区分;详情页顶部并排显示两个人的头像。</p>
+        <p class="en">Plans you share are drawn as one ink block across both lanes; the detail page shows both avatars side by side.</p>
+      </div>
+      <div class="feature">
+        <span class="new">1.5 新</span><div class="ico">🙂</div>
+        <h3>昵称、头像与备注名</h3>
+        <p>配对前先设好自己的昵称和头像(照片或文字,外圈是身份色);配对后对方的会自动同步过来。你还能给 TA 起一个只有你看得到的备注名。</p>
+        <p class="en">Set your nickname and avatar before pairing; your partner's syncs over once paired. Add a private pet name only you can see.</p>
+      </div>
+      <div class="feature">
+        <span class="new">1.5 新</span><div class="ico">💬</div>
+        <h3>带头像的评论</h3>
+        <p>在任意一条日程下留言,TA 的气泡在左、你的在右,各带头像。「动态」Tab 按事件聚合双方评论,未读数在角标。</p>
+        <p class="en">Comment under any event — their bubbles on the left, yours on the right, each with an avatar. The Activity tab groups them by event.</p>
+      </div>
+      <div class="feature">
+        <span class="new">1.5 新</span><div class="ico">📅</div>
+        <h3>配对第 N 天</h3>
+        <p>从配对那天起算第 1 天,显示在日历顶栏和「我们」页的配对卡上。每一天,都算数。</p>
+        <p class="en">Counted from the day you paired, shown in the calendar header and on the pairing card. Every day counts.</p>
+      </div>
+      <div class="feature">
+        <span class="new">1.5 新</span><div class="ico">🔗</div>
+        <h3>严格两人配对</h3>
+        <p>一条 iCloud 共享链接完成配对。若有第三人经旧链接加入,App 会弹出「配对冲突」提醒让你决定,而不是悄悄替换。</p>
+        <p class="en">Pair through one iCloud share link. If a third person joins via an old link, a “pairing conflict” alert lets you decide — never a silent swap.</p>
       </div>
       <div class="feature">
         <div class="ico">🔒</div>
         <h3>选择性镜像</h3>
-        <p>你自己决定共享哪些本机日历,未选择的私人日程绝不外露。</p>
-        <p class="en">You decide which local calendars to share; unselected private events are never exposed.</p>
+        <p>你自己决定共享哪些本机日历,支持「完整详情 / 仅忙碌」;未选择的私人日程绝不外露。默认只共享配对日之后的日程。</p>
+        <p class="en">You decide which local calendars to share, with “full details / busy only” visibility; unselected events are never exposed.</p>
       </div>
       <div class="feature">
         <div class="ico">💌</div>
         <h3>事件邀请</h3>
-        <p>直接在 App 内向对方发起日程邀请,对方可以接受或婉拒。</p>
-        <p class="en">Send a schedule invite to your partner in-app; they can accept or decline.</p>
-      </div>
-      <div class="feature">
-        <div class="ico">💬</div>
-        <h3>事件评论</h3>
-        <p>在具体某个日程下留言讨论,沟通就发生在安排旁边,不必再切到聊天软件。</p>
-        <p class="en">Discuss a specific event right under it — no need to switch to a chat app.</p>
+        <p>直接在 App 内向对方发起日程邀请,接受后自动写入对方的系统日历,状态双向同步。</p>
+        <p class="en">Send a schedule invite in-app; on accept it's written into your partner's calendar, with status synced both ways.</p>
       </div>
       <div class="feature">
         <div class="ico">☁️</div>
         <h3>私密同步</h3>
-        <p>数据保存在本机,并通过你和伴侣之间的 iCloud / CloudKit 私密共享同步。</p>
-        <p class="en">Data stays on your device and syncs only through the private iCloud share between you two.</p>
+        <p>数据保存在本机,并通过你和伴侣之间的 iCloud / CloudKit 私密共享同步。没有服务器,也没有账号。</p>
+        <p class="en">Data stays on your device and syncs only through the private iCloud share between you two. No server, no account.</p>
       </div>
+    </div>
+  </section>
+
+  <!-- ===== How it works ===== -->
+  <section>
+    <h2 class="section-title">三步,开始你们的日历</h2>
+    <p class="section-sub en">Three steps to a shared calendar</p>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h3>先设好自己</h3>
+        <p>起一个昵称,选一张照片或两个字做头像。这时还不需要知道对方是谁。</p>
+        <p class="en">Pick a nickname and an avatar. You don't need to know who your partner is yet.</p></div>
+      <div class="step"><div class="n">2</div><h3>发一条链接配对</h3>
+        <p>一条 iCloud 共享链接,对方点开即配对;TA 的昵称和头像自动同步过来。</p>
+        <p class="en">Send one iCloud share link; your partner taps it and you're paired. Their name and avatar sync over.</p></div>
+      <div class="step"><div class="n">3</div><h3>挑出要共享的日历</h3>
+        <p>勾选要让对方看到的那几本系统日历,其余私人日程绝不外露。</p>
+        <p class="en">Tick the system calendars your partner may see; everything else stays private.</p></div>
     </div>
   </section>
 
@@ -215,16 +262,20 @@
     <p class="section-sub en">A look inside</p>
     <div class="shots">
       <div class="shot">
-        <div class="device"><img src="/assets/calendar.png" alt="双栏并排日历" width="1206" height="2622" loading="lazy"></div>
-        <div class="cap">并排日程<span class="en">Side-by-side</span></div>
+        <div class="device"><img src="/assets/dayview.webp" alt="双栏日视图" width="1080" height="2217" loading="lazy"></div>
+        <div class="cap">双栏日视图<span class="en">Two-lane day view</span></div>
       </div>
       <div class="shot">
-        <div class="device"><img src="/assets/activity.png" alt="事件评论动态" width="1206" height="2622" loading="lazy"></div>
-        <div class="cap">事件评论<span class="en">Comments</span></div>
+        <div class="device"><img src="/assets/comments.webp" alt="日程详情与带头像的评论" width="1080" height="2217" loading="lazy"></div>
+        <div class="cap">带头像的评论<span class="en">Comments with avatars</span></div>
       </div>
       <div class="shot">
-        <div class="device"><img src="/assets/invites.png" alt="事件邀请" width="1206" height="2622" loading="lazy"></div>
-        <div class="cap">事件邀请<span class="en">Invitations</span></div>
+        <div class="device"><img src="/assets/pairing.webp" alt="我们页:配对第 1 天" width="1080" height="2218" loading="lazy"></div>
+        <div class="cap">配对第 N 天<span class="en">Day N together</span></div>
+      </div>
+      <div class="shot">
+        <div class="device"><img src="/assets/profile.webp" alt="我的头像编辑" width="1080" height="2217" loading="lazy"></div>
+        <div class="cap">昵称与头像<span class="en">Nickname &amp; avatar</span></div>
       </div>
     </div>
   </section>
@@ -233,10 +284,11 @@
   <section>
     <div class="privacy-card">
       <div class="lock">🔐</div>
-      <h2>隐私,是默认设置</h2>
-      <p>OurDays 没有自建服务器,数据只在你和伴侣之间通过 Apple iCloud 私密同步。不含广告 SDK、第三方分析或跨应用追踪,也绝不出售个人数据。</p>
-      <p class="en">OurDays runs no server of its own, and contains no ad SDKs, third-party analytics, or tracking. Your data is never sold.</p>
+      <h2>开源、免费,没有服务器</h2>
+      <p>OurDays 完全开源,没有自建服务器,也没有账号体系:数据只在你和伴侣之间通过 Apple iCloud 私密同步。不含广告 SDK、第三方分析或跨应用追踪。它唯一的运行成本是每年的 Apple 开发者年费,所以可以一直免费、一直开着。</p>
+      <p class="en">OurDays is fully open source, runs no server and has no accounts of its own: data syncs only through your own iCloud. No ad SDKs, analytics, or tracking. Its only running cost is the yearly Apple developer fee — which is why it can stay free, and stay up.</p>
       <div class="badges">
+        <span class="badge">🧩 完全开源</span>
         <span class="badge">🚫 无自建服务器</span>
         <span class="badge">🚫 无广告 SDK</span>
         <span class="badge">🚫 无第三方分析</span>
@@ -262,6 +314,7 @@
         <a href="/privacy.html">隐私政策 Privacy</a>
         <a href="/support.html">支持 Support</a>
         <a href="https://apps.apple.com/cn/app/id6772868166">App Store</a>
+        <a href="https://github.com/BeenLi/OurDays">GitHub</a>
       </nav>
       <p class="beian"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">沪ICP备2026030016号-2</a></p>
       <div>© 2026 OurDays</div>

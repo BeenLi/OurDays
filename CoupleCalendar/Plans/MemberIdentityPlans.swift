@@ -74,6 +74,18 @@ enum MemberIDPlan {
     /// Placeholder owner ID for partner-owned local records created before the
     /// partner's CloudKit identity is known.
     static let unknownPartnerID = "partner"
+
+    /// Trims whitespace; nil for nil/blank. The one normalization every ID comparison
+    /// goes through (member IDs, share owner names, participant IDs, nicknames).
+    static func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedValue.isEmpty ? nil : trimmedValue
+    }
+
+    static func normalizedList(_ values: [String]) -> [String] {
+        values.compactMap(normalized)
+    }
 }
 
 /// Resolves a member ID (the CloudKit `_`-prefixed userRecordID) to a

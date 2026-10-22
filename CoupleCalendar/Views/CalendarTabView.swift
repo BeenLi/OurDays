@@ -280,7 +280,7 @@ struct CalendarTabView: View {
             .contentShape(Rectangle())
             .simultaneousGesture(swipeNavigationGesture)
             .refreshable {
-                await performSync()
+                await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
             }
             .accessibilityAction(named: Text(strings.previousDateAccessibilityLabel)) {
                 moveSelectedDate(.previous)
@@ -366,19 +366,6 @@ struct CalendarTabView: View {
                 direction: direction
             )
         }
-    }
-
-    private func performSync() async {
-        // foregroundSync sets syncPhase = .syncing synchronously on entry, and
-        // everything here runs on the main actor, so this single guard already
-        // prevents overlapping/reentrant syncs from this screen.
-        guard settings.syncPhase != .syncing else { return }
-        let coordinator = SyncCoordinator(
-            calendarAccess: services.calendarAccess,
-            eventMirrorService: services.eventMirrorService,
-            cloudKit: services.cloudKitIfAvailable
-        )
-        await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
     }
 
     private func refreshLocalDisplayMirrors() {

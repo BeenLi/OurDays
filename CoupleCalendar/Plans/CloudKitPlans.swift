@@ -213,26 +213,20 @@ enum CloudKitShareParticipantIdentityPlan {
         // Only the CloudKit user record name is comparable with shared-zone
         // owner names; the contact fallbacks just keep pairing status visible
         // when CloudKit withholds it.
-        if let userRecordName = normalized(userIdentity.userRecordID?.recordName) {
+        if let userRecordName = MemberIDPlan.normalized(userIdentity.userRecordID?.recordName) {
             return userRecordName
         }
-        if let emailAddress = normalized(userIdentity.lookupInfo?.emailAddress) {
+        if let emailAddress = MemberIDPlan.normalized(userIdentity.lookupInfo?.emailAddress) {
             return emailAddress
         }
-        if let phoneNumber = normalized(userIdentity.lookupInfo?.phoneNumber) {
+        if let phoneNumber = MemberIDPlan.normalized(userIdentity.lookupInfo?.phoneNumber) {
             return phoneNumber
         }
         if let nameComponents = userIdentity.nameComponents {
             let name = PersonNameComponentsFormatter.localizedString(from: nameComponents, style: .medium)
-            return normalized(name)
+            return MemberIDPlan.normalized(name)
         }
         return nil
-    }
-
-    private static func normalized(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedValue.isEmpty ? nil : trimmedValue
     }
 
     private static func unique(_ values: [String]) -> [String] {

@@ -450,3 +450,39 @@ final class WeekAgendaPlanTests: XCTestCase {
         )
     }
 }
+
+final class EventTimeRangeTextPlanTests: XCTestCase {
+    func testAllDayUsesLocalizedLabelAndTimedEventsShowStartEnd() {
+        let strings = ShareCalStrings(language: .english)
+        let start = Date(timeIntervalSince1970: 1_000)
+        let end = Date(timeIntervalSince1970: 4_600)
+
+        XCTAssertEqual(
+            EventTimeRangeTextPlan.text(startDate: start, endDate: end, isAllDay: true, strings: strings),
+            strings.allDay
+        )
+        XCTAssertEqual(
+            EventTimeRangeTextPlan.text(startDate: start, endDate: end, isAllDay: false, strings: strings),
+            "\(start.formatted(date: .omitted, time: .shortened)) - \(end.formatted(date: .omitted, time: .shortened))"
+        )
+    }
+}
+
+final class DateFormatterCacheTests: XCTestCase {
+    func testReusesFormatterForSameConfigurationAndSeparatesDifferentOnes() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let english = Locale(identifier: "en_US")
+        let chinese = Locale(identifier: "zh_Hans")
+
+        let first = DateFormatterCache.formatter(template: "MMM d", locale: english, calendar: calendar)
+        let second = DateFormatterCache.formatter(template: "MMM d", locale: english, calendar: calendar)
+        let other = DateFormatterCache.formatter(template: "MMM d", locale: chinese, calendar: calendar)
+        let fixed = DateFormatterCache.formatter(dateFormat: "yyyy年M月d日", locale: chinese, calendar: calendar)
+
+        XCTAssertTrue(first === second)
+        XCTAssertFalse(first === other)
+        XCTAssertEqual(first.timeZone.identifier, "Asia/Shanghai")
+        XCTAssertEqual(fixed.string(from: Date(timeIntervalSince1970: 0)), "1970年1月1日")
+    }
+}

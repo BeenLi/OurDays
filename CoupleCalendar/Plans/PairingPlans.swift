@@ -2,15 +2,9 @@ import Foundation
 
 enum ICloudSharingTeardownPlan {
     static func localOwnerIDsToPurge(partnerShareOwnerID: String?) -> Set<String> {
-        var ownerIDs = Set([partnerShareOwnerID].compactMap { normalizedID($0) })
+        var ownerIDs = Set([partnerShareOwnerID].compactMap { MemberIDPlan.normalized($0) })
         ownerIDs.insert(MemberIDPlan.unknownPartnerID)
         return ownerIDs
-    }
-
-    private static func normalizedID(_ id: String?) -> String? {
-        guard let id else { return nil }
-        let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedID.isEmpty ? nil : trimmedID
     }
 }
 
@@ -28,8 +22,8 @@ enum PairingSettingsPlan {
         outgoingParticipantIDs: [String],
         incomingOwnerID: String?
     ) -> PairingStatus {
-        let hasAcceptedOutgoingShare = !normalizedIDs(outgoingParticipantIDs).isEmpty
-        let hasIncomingShare = normalizedID(incomingOwnerID) != nil
+        let hasAcceptedOutgoingShare = !MemberIDPlan.normalizedList(outgoingParticipantIDs).isEmpty
+        let hasIncomingShare = MemberIDPlan.normalized(incomingOwnerID) != nil
         if hasAcceptedOutgoingShare && hasIncomingShare {
             return .paired
         }
@@ -50,10 +44,10 @@ enum PairingSettingsPlan {
         partnerSyncedDisplayName: String?,
         fallback: String
     ) -> String {
-        if let noteName = normalizedID(partnerNoteName) {
+        if let noteName = MemberIDPlan.normalized(partnerNoteName) {
             return noteName
         }
-        if let syncedDisplayName = normalizedID(partnerSyncedDisplayName) {
+        if let syncedDisplayName = MemberIDPlan.normalized(partnerSyncedDisplayName) {
             return syncedDisplayName
         }
         return fallback
@@ -65,8 +59,8 @@ enum PairingSettingsPlan {
         fallback: String,
         language: AppLanguage
     ) -> String {
-        let displayName = normalizedID(partnerSyncedDisplayName) ?? fallback
-        guard let noteName = normalizedID(partnerNoteName),
+        let displayName = MemberIDPlan.normalized(partnerSyncedDisplayName) ?? fallback
+        guard let noteName = MemberIDPlan.normalized(partnerNoteName),
               noteName != displayName else {
             return displayName
         }
@@ -82,17 +76,7 @@ enum PairingSettingsPlan {
     }
 
     static func normalizedDisplayName(_ displayName: String?) -> String? {
-        normalizedID(displayName)
-    }
-
-    private static func normalizedIDs(_ ids: [String]) -> [String] {
-        ids.compactMap(normalizedID)
-    }
-
-    private static func normalizedID(_ id: String?) -> String? {
-        guard let id else { return nil }
-        let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedID.isEmpty ? nil : trimmedID
+        MemberIDPlan.normalized(displayName)
     }
 }
 
@@ -163,15 +147,9 @@ enum ExistingICloudDataRecoveryPlan {
         lastSyncAt: Date?
     ) -> Bool {
         guard !hasStartedPairing else { return false }
-        guard normalizedID(partnerShareOwnerID) == nil else { return false }
-        guard !outgoingShareParticipantIDs.contains(where: { normalizedID($0) != nil }) else { return false }
+        guard MemberIDPlan.normalized(partnerShareOwnerID) == nil else { return false }
+        guard !outgoingShareParticipantIDs.contains(where: { MemberIDPlan.normalized($0) != nil }) else { return false }
         return lastSyncAt == nil
-    }
-
-    private static func normalizedID(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedValue.isEmpty ? nil : trimmedValue
     }
 }
 
@@ -232,7 +210,7 @@ enum TwoPersonPairingPlan {
         outgoingAcceptedParticipantIDs: [String],
         sharedZoneOwnerIDs: [String]
     ) -> Resolution {
-        let storedPartnerID = normalizedID(storedPartnerID)
+        let storedPartnerID = MemberIDPlan.normalized(storedPartnerID)
         // Only CloudKit user record names (always "_"-prefixed) can be compared
         // against zone owner names; other identifier forms are display-only.
         let outgoingIDs = uniqueSorted(outgoingAcceptedParticipantIDs).filter { $0.hasPrefix("_") }
@@ -279,13 +257,7 @@ enum TwoPersonPairingPlan {
     }
 
     private static func uniqueSorted(_ ids: [String]) -> [String] {
-        Array(Set(ids.compactMap(normalizedID))).sorted()
-    }
-
-    private static func normalizedID(_ id: String?) -> String? {
-        guard let id else { return nil }
-        let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedID.isEmpty ? nil : trimmedID
+        Array(Set(ids.compactMap(MemberIDPlan.normalized))).sorted()
     }
 }
 
@@ -314,16 +286,10 @@ enum ShareAcceptanceGuardPlan {
     ) -> Bool {
         let incomingOwnerID = incomingOwnerID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !incomingOwnerID.isEmpty else { return false }
-        if let storedPartnerID = normalizedID(storedPartnerID) {
+        if let storedPartnerID = MemberIDPlan.normalized(storedPartnerID) {
             return storedPartnerID != incomingOwnerID
         }
-        let outgoingIDs = Set(outgoingParticipantIDs.compactMap(normalizedID).filter { $0.hasPrefix("_") })
+        let outgoingIDs = Set(outgoingParticipantIDs.compactMap(MemberIDPlan.normalized).filter { $0.hasPrefix("_") })
         return !outgoingIDs.isEmpty && !outgoingIDs.contains(incomingOwnerID)
-    }
-
-    private static func normalizedID(_ id: String?) -> String? {
-        guard let id else { return nil }
-        let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedID.isEmpty ? nil : trimmedID
     }
 }

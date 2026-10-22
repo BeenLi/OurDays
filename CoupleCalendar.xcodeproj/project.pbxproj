@@ -73,8 +73,6 @@
 		11BD07CF824F0D8ED6966B77 /* SyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BF3CA9223B14F6C371C5EB /* SyncTests.swift */; };
 		11B4C6330A93F81F6255C98E /* CloudKitPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B79D609684453E26B2F62C /* CloudKitPlans.swift */; };
 		11B24B2F9501D0A5223982F0 /* CloudKitPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B79D609684453E26B2F62C /* CloudKitPlans.swift */; };
-		11B7D737110F671C0A72DC73 /* LaunchDiagnosticPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B9B6EE4184F4E773E5FA8E /* LaunchDiagnosticPlans.swift */; };
-		11BA86096FB0F879BA403940 /* LaunchDiagnosticPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B9B6EE4184F4E773E5FA8E /* LaunchDiagnosticPlans.swift */; };
 		11B5C77B263466588B2C87B0 /* ShareCalSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */; };
 		11B8EC6648A651EB1072445D /* ShareCalSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */; };
 		11BB740084CB539F183DB621 /* CloudSharingController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BF559D75F2160305BCCA94 /* CloudSharingController.swift */; };
@@ -84,6 +82,11 @@
 		11BDC81D4E60B21BB1002ECC /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B276FF0E19D22E500E7DAC /* SyncCoordinator.swift */; };
 		11B8E3DF7D3EDB1C327072C7 /* AgendaPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B234E0B58F23EDF1395C86 /* AgendaPlans.swift */; };
 		11BF5D5B0460BCC31799D5F1 /* AgendaPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B234E0B58F23EDF1395C86 /* AgendaPlans.swift */; };
+		11BC3CC426E32618D0FCAD7E /* LaunchDiagnosticPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BF767E188FCE27310D2D8F /* LaunchDiagnosticPlans.swift */; };
+		11B755414965A4AF0B5A08B1 /* LaunchDiagnosticPlans.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BF767E188FCE27310D2D8F /* LaunchDiagnosticPlans.swift */; };
+		11BBC1B26A10734A765C071A /* LaunchDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B540D5E5331C01BDC7310C /* LaunchDiagnostics.swift */; };
+		11B1094864BE9194D7BECAE6 /* CloudKitDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BFB729526A91E9F55245D2 /* CloudKitDiagnostics.swift */; };
+		11BDA7551046B3BAB240F2BF /* CloudKitDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BFB729526A91E9F55245D2 /* CloudKitDiagnostics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -152,12 +155,14 @@
 		11B140A0665519028BFA9BC4 /* SettingsAndStringsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsAndStringsTests.swift; sourceTree = "<group>"; };
 		11BF3CA9223B14F6C371C5EB /* SyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncTests.swift; sourceTree = "<group>"; };
 		11B79D609684453E26B2F62C /* CloudKitPlans.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitPlans.swift; sourceTree = "<group>"; };
-		11B9B6EE4184F4E773E5FA8E /* LaunchDiagnosticPlans.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchDiagnosticPlans.swift; sourceTree = "<group>"; };
 		11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCalSceneDelegate.swift; sourceTree = "<group>"; };
 		11BF559D75F2160305BCCA94 /* CloudSharingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSharingController.swift; sourceTree = "<group>"; };
 		11B21571EFF6DB73CEAAB6D5 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		11B276FF0E19D22E500E7DAC /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
 		11B234E0B58F23EDF1395C86 /* AgendaPlans.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgendaPlans.swift; sourceTree = "<group>"; };
+		11BF767E188FCE27310D2D8F /* LaunchDiagnosticPlans.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchDiagnosticPlans.swift; sourceTree = "<group>"; };
+		11B540D5E5331C01BDC7310C /* LaunchDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchDiagnostics.swift; sourceTree = "<group>"; };
+		11BFB729526A91E9F55245D2 /* CloudKitDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitDiagnostics.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -198,6 +203,7 @@
 		11A000220000000000000001 /* CoupleCalendar */ = {
 			isa = PBXGroup;
 			children = (
+				11B5450727913DFDBA049A83 /* Diagnostics */,
 				11B276FF0E19D22E500E7DAC /* SyncCoordinator.swift */,
 				11B21571EFF6DB73CEAAB6D5 /* SettingsStore.swift */,
 				11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */,
@@ -308,7 +314,6 @@
 			isa = PBXGroup;
 			children = (
 				11B234E0B58F23EDF1395C86 /* AgendaPlans.swift */,
-				11B9B6EE4184F4E773E5FA8E /* LaunchDiagnosticPlans.swift */,
 				11B79D609684453E26B2F62C /* CloudKitPlans.swift */,
 				11BAA229790393A28A8DB3A4 /* SyncPlans.swift */,
 				11B4E126BDD4A88C7B8DA4AE /* PairingPlans.swift */,
@@ -322,6 +327,16 @@
 				11BF234CC3F75163D1BB230D /* ActivityAndNotificationPlans.swift */,
 			);
 			path = Plans;
+			sourceTree = "<group>";
+		};
+		11B5450727913DFDBA049A83 /* Diagnostics */ = {
+			isa = PBXGroup;
+			children = (
+				11BFB729526A91E9F55245D2 /* CloudKitDiagnostics.swift */,
+				11B540D5E5331C01BDC7310C /* LaunchDiagnostics.swift */,
+				11BF767E188FCE27310D2D8F /* LaunchDiagnosticPlans.swift */,
+			);
+			path = Diagnostics;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -451,12 +466,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				11B1094864BE9194D7BECAE6 /* CloudKitDiagnostics.swift in Sources */,
+				11BBC1B26A10734A765C071A /* LaunchDiagnostics.swift in Sources */,
+				11BC3CC426E32618D0FCAD7E /* LaunchDiagnosticPlans.swift in Sources */,
 				11B8E3DF7D3EDB1C327072C7 /* AgendaPlans.swift in Sources */,
 				11B2A1361D837BF44D9FC5BA /* SyncCoordinator.swift in Sources */,
 				11B1C3DEC9A5F096BE6DD665 /* SettingsStore.swift in Sources */,
 				11BB740084CB539F183DB621 /* CloudSharingController.swift in Sources */,
 				11B5C77B263466588B2C87B0 /* ShareCalSceneDelegate.swift in Sources */,
-				11B7D737110F671C0A72DC73 /* LaunchDiagnosticPlans.swift in Sources */,
 				11B4C6330A93F81F6255C98E /* CloudKitPlans.swift in Sources */,
 				11B6B154FD1A43E9790D6C73 /* ShareCalStrings.swift in Sources */,
 				11B5F0C2B6888FBDB41F97D6 /* CloudKitRecordMappers.swift in Sources */,
@@ -501,11 +518,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				11BDA7551046B3BAB240F2BF /* CloudKitDiagnostics.swift in Sources */,
+				11B755414965A4AF0B5A08B1 /* LaunchDiagnosticPlans.swift in Sources */,
 				11BF5D5B0460BCC31799D5F1 /* AgendaPlans.swift in Sources */,
 				11BDC81D4E60B21BB1002ECC /* SyncCoordinator.swift in Sources */,
 				11BC90359E3B587847206909 /* SettingsStore.swift in Sources */,
 				11B8EC6648A651EB1072445D /* ShareCalSceneDelegate.swift in Sources */,
-				11BA86096FB0F879BA403940 /* LaunchDiagnosticPlans.swift in Sources */,
 				11B24B2F9501D0A5223982F0 /* CloudKitPlans.swift in Sources */,
 				11B83F37C718F69AD979C1BE /* ActivityAndNotificationTests.swift in Sources */,
 				11BAAB3F34B0B4796E52B1AA /* CalendarMirrorTests.swift in Sources */,

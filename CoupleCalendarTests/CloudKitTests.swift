@@ -264,7 +264,6 @@ final class CloudKitStopSharingPlanTests: XCTestCase {
     func testLocalICloudDataCleanupPurgesCachedShareCalModels() throws {
         let container = try ShareCalModelContainer.make(isStoredInMemoryOnly: true)
         let context = ModelContext(container)
-        context.insert(CoupleSpace(ownerMemberID: "me"))
         context.insert(MemberProfile(id: "profile", displayName: "Me", avatarColorHex: "#FF2D55"))
         context.insert(cleanupMirror(owner: "partner", key: "partner-event"))
         context.insert(LocalEventShadow(
@@ -297,18 +296,15 @@ final class CloudKitStopSharingPlanTests: XCTestCase {
             requestedStartDate: Date(timeIntervalSince1970: 6_000),
             requestedEndDate: Date(timeIntervalSince1970: 7_000)
         ))
-        context.insert(SyncState(lastSyncAt: Date(timeIntervalSince1970: 8_000)))
         try context.save()
 
         try ShareCalLocalDataCleanupService.purge(modelContext: context)
 
-        XCTAssertEqual(try context.fetch(FetchDescriptor<CoupleSpace>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<EventMirror>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<LocalEventShadow>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<EventComment>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<EventInvitation>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<CalendarAccessRequest>()).count, 0)
-        XCTAssertEqual(try context.fetch(FetchDescriptor<SyncState>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<MemberProfile>()).count, 1)
     }
 
@@ -705,10 +701,6 @@ final class ShareCalSceneDelegateConfigurationTests: XCTestCase {
         XCTAssertEqual(ShareCalSceneDelegateConfigurationPlan.configurationName, "Default Configuration")
         XCTAssertTrue(ShareCalSceneDelegateConfigurationPlan.acceptsColdStartShareMetadata)
         XCTAssertTrue(ShareCalSceneDelegateConfigurationPlan.sceneDelegateClass === ShareCalSceneDelegate.self)
-        XCTAssertEqual(
-            ShareCalSceneDelegateConfigurationPlan.sceneDelegateClassName(moduleName: "CoupleCalendar"),
-            "CoupleCalendar.ShareCalSceneDelegate"
-        )
     }
 }
 

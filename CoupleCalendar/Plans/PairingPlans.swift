@@ -22,14 +22,6 @@ enum PairingStatus: Equatable {
     case paired
 }
 
-enum PairingCalendarStatus: Equatable {
-    case off
-    case waitingForPartner
-    case waitingForPartnerToShare
-    case on
-    case unavailable
-}
-
 enum PairingSettingsPlan {
     static func status(
         hasStartedPairing: Bool,
@@ -51,20 +43,6 @@ enum PairingSettingsPlan {
             return .waitingForPartner
         }
         return .notPaired
-    }
-
-    static func outgoingStatus(
-        hasStartedPairing: Bool,
-        outgoingParticipantIDs: [String]
-    ) -> PairingCalendarStatus {
-        if !normalizedIDs(outgoingParticipantIDs).isEmpty {
-            return .on
-        }
-        return hasStartedPairing ? .waitingForPartner : .off
-    }
-
-    static func incomingStatus(incomingOwnerID: String?) -> PairingCalendarStatus {
-        normalizedID(incomingOwnerID) == nil ? .unavailable : .on
     }
 
     static func partnerDisplayName(

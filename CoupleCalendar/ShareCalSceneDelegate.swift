@@ -95,8 +95,4 @@ enum ShareCalSceneDelegateConfigurationPlan {
     static var sceneDelegateClass: AnyClass {
         ShareCalSceneDelegate.self
     }
-
-    static func sceneDelegateClassName(moduleName: String) -> String {
-        "\(moduleName).ShareCalSceneDelegate"
-    }
 }

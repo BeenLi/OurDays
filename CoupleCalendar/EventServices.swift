@@ -243,17 +243,6 @@ enum InvitationInteractionPlan {
 }
 
 enum InvitationLocalEventSyncPlan {
-    static func localEventIDsToTrack(from invitations: [EventInvitation]) -> Set<String> {
-        Set(
-            invitations.compactMap { invitation in
-                guard let localEventID = invitation.createdLocalEventID,
-                      !localEventID.isEmpty else {
-                    return nil
-                }
-                return localEventID
-            }
-        )
-    }
 
     static func cancelAcceptedInvitationsMissingLocalEvents(
         _ invitations: [EventInvitation],

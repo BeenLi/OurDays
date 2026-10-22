@@ -1511,15 +1511,6 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
-    func queueMirrorsForSync(_ mirrors: [EventMirror]) {
-        ensureSyncDriverStarted()
-        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
-        let records = mirrors.map {
-            EventMirrorRecordMapper.record(from: $0, zoneID: zoneID, parentRecordID: parentRecordID)
-        }
-        syncDriver.queue(recordsToSave: records)
-    }
-
     func saveMirrorsForSync(_ mirrors: [EventMirror]) async throws {
         guard !mirrors.isEmpty else {
             cloudKitSharingInfo("saveMirrorsForSync skipped; no mirrors")
@@ -1594,15 +1585,6 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
-    func queueInvitationsForSync(_ invitations: [EventInvitation]) {
-        ensureSyncDriverStarted()
-        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
-        let records = invitations.map {
-            InvitationRecordMapper.record(from: $0, zoneID: zoneID, parentRecordID: parentRecordID)
-        }
-        syncDriver.queue(recordsToSave: records)
-    }
-
     @MainActor
     func saveInvitationForSync(
         _ invitation: EventInvitation,
@@ -1639,15 +1621,6 @@ final class CloudKitCoupleSpaceService {
             let targetZoneID = try await acceptedSharedZoneID(ownerMemberID: request.ownerMemberID)
             try await saveCalendarAccessRequestsForSync([request], in: targetZoneID, database: sharedDatabase)
         }
-    }
-
-    func queueCommentsForSync(_ comments: [EventComment]) {
-        ensureSyncDriverStarted()
-        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
-        let records = comments.map {
-            CommentRecordMapper.record(from: $0, zoneID: zoneID, parentRecordID: parentRecordID)
-        }
-        syncDriver.queue(recordsToSave: records)
     }
 
     @MainActor

@@ -64,14 +64,10 @@ struct ShareCalStrings {
     var calendarTab: String { text("Calendar", "日历") }
     var activityTab: String { text("Activity", "动态") }
     var invitesTab: String { text("Invites", "邀请") }
-    var settingsTab: String { text("Settings", "设置") }
     var activityTitle: String { text("Activity", "动态") }
     var activityEmptyTitle: String { text("No activity yet", "还没有动态") }
     var activityEmptyMessage: String {
         text("Comments on shared events show up here.", "共享日程下的评论会显示在这里。")
-    }
-    func activityUnreadBadge(_ count: Int) -> String {
-        text("\(count) new", "\(count) 条新消息")
     }
     var notifCommentTitle: String { text("New comment", "新评论") }
     var notifInviteReceivedTitle: String { text("New invitation", "新邀请") }
@@ -87,7 +83,6 @@ struct ShareCalStrings {
         text("Your history access request was answered.", "你的历史访问申请有了回应。")
     }
     var settingsTitle: String { text("Settings", "设置") }
-    var modePicker: String { text("Mode", "模式") }
     var dayMode: String { text("Day", "日") }
     var weekMode: String { text("Week", "周") }
     var meTitle: String { text("Me", "我") }
@@ -133,13 +128,11 @@ struct ShareCalStrings {
     var noEvents: String { text("No events", "暂无日程") }
     var allDay: String { text("All day", "全天") }
     var ownerLabel: String { text("Owner", "所有者") }
-    var calendarLabel: String { text("Calendar", "日历") }
     var startsLabel: String { text("Starts", "开始") }
     var endsLabel: String { text("Ends", "结束") }
     var locationLabel: String { text("Location", "地点") }
     var inviteSection: String { text("Invite", "邀请") }
     var invitePartnerButton: String { text("Invite partner", "邀请对方") }
-    var sendingInvitationButton: String { text("Sending invitation...", "正在发送邀请...") }
     var invitationSentMessage: String { text("Invitation sent.", "邀请已发送。") }
     var inviteAnywayButton: String { text("Invite anyway", "仍然邀请") }
     var cancelButton: String { text("Cancel", "取消") }
@@ -151,15 +144,12 @@ struct ShareCalStrings {
     var eventTitle: String { text("Event", "日程") }
     var doneButton: String { text("Done", "完成") }
     var noInvitations: String { text("No invitations", "暂无邀请") }
-    var acceptButton: String { text("Accept", "接受") }
     var declineButton: String { text("Decline", "拒绝") }
     var saveButton: String { text("Save", "保存") }
     var skipButton: String { text("Skip", "跳过") }
     var continueButton: String { text("Continue", "继续") }
     var profileSection: String { text("Profile", "个人资料") }
     var myNicknameLabel: String { text("My Nickname", "我的昵称") }
-    var myICloudEmailLabel: String { text("My iCloud Email", "我的 iCloud 邮箱") }
-    var myICloudEmailPlaceholder: String { text("name@icloud.com", "name@icloud.com") }
     var partnerNicknameEditLabel: String { text("Partner Note", "对方备注名") }
     var myDisplayNamePlaceholder: String { text("My nickname", "我的昵称") }
     var partnerDisplayNamePlaceholder: String { text("Partner note", "对方备注名") }
@@ -216,7 +206,6 @@ struct ShareCalStrings {
     var partnerNicknameLabel: String { text("Nickname", "昵称") }
     var sharingMyCalendarLabel: String { text("Sharing My Calendar", "我共享给对方") }
     var partnersCalendarLabel: String { text("Partner's Calendar", "对方共享给我") }
-    var pairingDayLabel: String { text("Pairing Date", "配对日") }
     var sharingScopeTitle: String { text("Sharing Scope", "共享范围") }
     var sharedAfterPairingDateValue: String { text("After pairing date", "配对日之后") }
     func sharedAfterDateValue(_ date: Date) -> String {
@@ -277,13 +266,6 @@ struct ShareCalStrings {
         )
     }
     var unpairSucceeded: String { text("Unpaired.", "已解除配对。") }
-    var sharedPeopleTitle: String { text("Shared People", "共享人") }
-    var sharedPeopleDescription: String {
-        text(
-            "Manage people and invitation link with iCloud sharing.",
-            "使用 iCloud 共享界面管理成员和邀请链接。"
-        )
-    }
     var pairingSafetySection: String { text("Before Uninstalling", "卸载前提醒") }
     var pairingSafetyPersistentWarningTitle: String {
         text("Unpair before uninstalling or reinstalling this app.", "卸载或重装本 App 前，请先解除配对。")
@@ -334,9 +316,6 @@ struct ShareCalStrings {
         )
     }
     var deleteICloudDataSucceeded: String { text("iCloud data deleted.", "iCloud 数据已删除。") }
-    var createsICloudShareDescription: String {
-        text("Creates a pairing invitation for your partner.", "为对方创建配对邀请。")
-    }
     var iCloudSharingUnavailableLocalBuild: String {
         text("Pairing is unavailable in this local build.", "当前本地构建不可用配对功能。")
     }
@@ -431,20 +410,6 @@ struct ShareCalStrings {
         }
     }
 
-    func pairingCalendarStatusTitle(for status: PairingCalendarStatus) -> String {
-        switch status {
-        case .off: text("Off", "未开启")
-        case .waitingForPartner: text("Waiting for Partner", "等待对方接受")
-        case .waitingForPartnerToShare: text("Waiting for Partner to Share", "等待对方共享")
-        case .on: text("On", "已开启")
-        case .unavailable: text("Unavailable", "不可用")
-        }
-    }
-
-    func pairingDayCountText(_ dayCount: Int) -> String {
-        "D+\(dayCount)"
-    }
-
     func pairingDateLine(_ dateText: String) -> String {
         text("Pairing date: \(dateText)", "配对日：\(dateText)")
     }
@@ -456,13 +421,6 @@ struct ShareCalStrings {
         case .chinese:
             "\(displayName)（\(note)）"
         }
-    }
-
-    func calendarPairingStatusLine(dayCount: Int, dateText: String) -> String {
-        text(
-            "Paired \(pairingDayCountText(dayCount)) · Shared since \(dateText)",
-            "配对 \(pairingDayCountText(dayCount)) · 共享自 \(dateText)"
-        )
     }
 
     func incomingHistoryRequestText(requester: String, rangeText: String) -> String {

@@ -21,7 +21,7 @@ xcodebuild -project CoupleCalendar.xcodeproj -scheme CoupleCalendar \
 Scripts/import-cloudkit-schema.sh development
 ```
 
-There is one scheme (`CoupleCalendar`) and all unit tests live in a single file, `CoupleCalendarTests/CoupleCalendarTests.swift`.
+There is one scheme (`CoupleCalendar`). Unit tests live in `CoupleCalendarTests/`, one file per area (`PairingTests.swift`, `CloudKitTests.swift`, `InvitationAndAccessRequestTests.swift`, `CalendarMirrorTests.swift`, `DayTimelineAndNavigationTests.swift`, `CommentTests.swift`, `SyncTests.swift`, `ActivityAndNotificationTests.swift`, `SettingsAndStringsTests.swift`); `-only-testing:CoupleCalendarTests/<ClassName>` works regardless of file.
 
 ## What this app is
 
@@ -31,9 +31,11 @@ There is one scheme (`CoupleCalendar`) and all unit tests live in a single file,
 
 Source lives in `CoupleCalendar/`, no SPM dependencies:
 
-- **Models.swift** — SwiftData models (`EventMirror`, `LocalEventShadow`, `EventInvitation`, `EventComment`, `CalendarAccessRequest`), `ShareCalStrings` (hand-rolled EN/ZH localization via `text(english, chinese)`), and most pure "Plan" enums.
+- **Models.swift** — SwiftData models (`EventMirror`, `LocalEventShadow`, `EventInvitation`, `EventComment`, `CalendarAccessRequest`, `MemberProfile`, `SyncState`), their stored enums, `ShareCalModelContainer`, and `ShareCalLocalDataCleanupService`.
+- **ShareCalStrings.swift** — hand-rolled EN/ZH localization via `text(english, chinese)`, plus `AppLanguage` / `AppLegalInfo`.
+- **Plans/** — the pure "Plan" enums, one file per area: `PairingPlans` (`TwoPersonPairingPlan`, `ShareAcceptanceGuardPlan`, …), `SyncPlans`, `InvitationAndAccessRequestPlans`, `CalendarNavigationPlans`, `CalendarDisplayPlans`, `DayTimelinePlans`, `CommentPlans`, `ActivityAndNotificationPlans`, `MemberIdentityPlans`, `CalendarSourcePlans`.
 - **AppServices.swift** — `SettingsStore` (UserDefaults-backed, `@Observable`) and `SyncCoordinator.foregroundSync`, the single sync pipeline.
-- **CloudKitCoupleSpaceService.swift** — all CloudKit I/O: zone/root/share management, record mappers, share acceptance handler, scene delegate.
+- **CloudKitCoupleSpaceService.swift** — all CloudKit I/O: zone/root/share management, share acceptance handler, scene delegate, launch diagnostics. **CloudKitRecordMappers.swift** — the pure `CKRecord` ↔ model mappers (`EventMirrorRecordMapper`, `InvitationRecordMapper`, `CommentRecordMapper`, `CalendarAccessRequestRecordMapper`, `MemberProfileRecordMapper`) and the batch/query plans next to them.
 - **RootView.swift** — the tab container, sheet/alert routing, and pairing-conflict alerts. **Views/** holds the rest of the SwiftUI UI, one file per screen (`CalendarTabView`, `InvitesTabView`, `ActivityTabView`, `Settings/`, `DayTimeline/`, `EventDetail/`, …) plus `DesignSystem.swift` (`OurDaysTheme`, `OurDaysIdentity`, card/button styles, avatar views). UI files are compiled into the app target only; the unit-test target compiles the non-UI sources directly (no `@testable import`), so a new non-UI file must be added to both targets in `project.pbxproj`.
 - **CalendarAccessService.swift / EventServices.swift** — EventKit access and mirror/invitation/comment generation.
 

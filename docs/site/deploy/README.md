@@ -38,8 +38,9 @@ scp docs/site/assets/*.webp docs/site/assets/*.jpg \
 # 静态文件无需 reload，nginx 直接读新文件
 
 # 或者只开一条 SSH 连接把整站打包传过去（避免下面的 SSH 限流）：
-tar czf - -C docs/site index.html privacy.html support.html assets \
+COPYFILE_DISABLE=1 tar czf - -C docs/site index.html privacy.html support.html assets \
   | ssh tencent 'tar xzf - -C /usr/share/nginx/html'
+# COPYFILE_DISABLE=1 让 macOS 的 tar 不夹带 ._xxx AppleDouble 文件（2026-10-22 第一次传时漏了，服务器上多了 9 个 163 B 的 ._ 文件，无害）
 # 2026-10-22 起截图为 assets/*.webp（dayview / comments / pairing / profile）；旧 PNG 已删除
 ```
 

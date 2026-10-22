@@ -33,9 +33,14 @@
 # 在本机 docs/site/ 下改好 html 后:
 scp docs/site/index.html docs/site/privacy.html docs/site/support.html \
     tencent:/usr/share/nginx/html/
-scp docs/site/assets/*.png docs/site/assets/*.jpg \
+scp docs/site/assets/*.webp docs/site/assets/*.jpg \
     tencent:/usr/share/nginx/html/assets/
 # 静态文件无需 reload，nginx 直接读新文件
+
+# 或者只开一条 SSH 连接把整站打包传过去（避免下面的 SSH 限流）：
+tar czf - -C docs/site index.html privacy.html support.html assets \
+  | ssh tencent 'tar xzf - -C /usr/share/nginx/html'
+# 2026-10-22 起截图为 assets/*.webp（dayview / comments / pairing / profile）；旧 PNG 已删除
 ```
 
 > ⚠️ **SSH 限流**:短时间频繁 ssh/scp(尤其大文件)会触发服务器 SSH 防爆破,报

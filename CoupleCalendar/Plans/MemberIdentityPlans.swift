@@ -66,6 +66,16 @@ enum MemberAvatarPlan {
     }
 }
 
+/// Placeholder member IDs used before the CloudKit identities are known.
+enum MemberIDPlan {
+    /// Placeholder member ID used until the CloudKit userRecordID is known
+    /// (and permanently in LOCAL_SIGNING builds without CloudKit).
+    static let unsyncedMemberID = "local-user"
+    /// Placeholder owner ID for partner-owned local records created before the
+    /// partner's CloudKit identity is known.
+    static let unknownPartnerID = "partner"
+}
+
 /// Resolves a member ID (the CloudKit `_`-prefixed userRecordID) to a
 /// human-readable nickname. Member IDs must never be shown raw in the UI.
 enum MemberDisplayNamePlan {

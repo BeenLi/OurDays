@@ -78,3 +78,51 @@ struct CreatedCalendarEvent: Equatable {
     let calendarTitle: String
     let calendarColorHex: String
 }
+
+enum CalendarAuthorizationState: Equatable {
+    case notDetermined
+    case denied
+    case restricted
+    case writeOnly
+    case fullAccess
+    case legacyAuthorized
+    case unknown
+
+    var canReadEvents: Bool {
+        switch self {
+        case .fullAccess, .legacyAuthorized:
+            true
+        default:
+            false
+        }
+    }
+}
+
+/// Builds the stable key that identifies one EventKit occurrence across syncs.
+/// Shared by the mirror generator, the SwiftData models and the display plans, so
+/// it lives with the other calendar-source plans rather than in `EventMirrorService`.
+enum EventMirrorKeyPlan {
+    static func makeMirrorKey(
+        calendarIdentifier: String,
+        eventIdentifier: String,
+        occurrenceStartDate: Date,
+        fingerprint: String
+    ) -> String {
+        let stableEventID = eventIdentifier.isEmpty ? fingerprint : eventIdentifier
+        let occurrenceEpoch = Int(occurrenceStartDate.timeIntervalSince1970.rounded())
+        return "\(calendarIdentifier):\(stableEventID):\(occurrenceEpoch)"
+    }
+
+    static func fingerprint(for event: CalendarSourceEvent) -> String {
+        [
+            event.eventIdentifier,
+            event.calendarIdentifier,
+            "\(Int(event.startDate.timeIntervalSince1970.rounded()))",
+            "\(Int(event.endDate.timeIntervalSince1970.rounded()))",
+            event.title,
+            event.location ?? "",
+            event.notes ?? "",
+            event.url?.absoluteString ?? ""
+        ].joined(separator: "|")
+    }
+}

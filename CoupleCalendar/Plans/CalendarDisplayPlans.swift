@@ -125,8 +125,8 @@ enum CalendarDisplayMirrorPlan {
         ownerMemberID: String
     ) -> [EventMirror] {
         events.map { event in
-            let fingerprint = EventMirrorService.fingerprint(for: event)
-            let mirrorKey = EventMirrorService.makeMirrorKey(
+            let fingerprint = EventMirrorKeyPlan.fingerprint(for: event)
+            let mirrorKey = EventMirrorKeyPlan.makeMirrorKey(
                 calendarIdentifier: event.calendarIdentifier,
                 eventIdentifier: event.eventIdentifier,
                 occurrenceStartDate: event.occurrenceStartDate,

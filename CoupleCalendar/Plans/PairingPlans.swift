@@ -3,7 +3,7 @@ import Foundation
 enum ICloudSharingTeardownPlan {
     static func localOwnerIDsToPurge(partnerShareOwnerID: String?) -> Set<String> {
         var ownerIDs = Set([partnerShareOwnerID].compactMap { normalizedID($0) })
-        ownerIDs.insert(SettingsStore.unknownPartnerID)
+        ownerIDs.insert(MemberIDPlan.unknownPartnerID)
         return ownerIDs
     }
 

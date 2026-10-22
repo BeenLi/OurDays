@@ -2,25 +2,6 @@ import EventKit
 import Foundation
 import UIKit
 
-enum CalendarAuthorizationState: Equatable {
-    case notDetermined
-    case denied
-    case restricted
-    case writeOnly
-    case fullAccess
-    case legacyAuthorized
-    case unknown
-
-    var canReadEvents: Bool {
-        switch self {
-        case .fullAccess, .legacyAuthorized:
-            true
-        default:
-            false
-        }
-    }
-}
-
 enum CalendarAccessError: LocalizedError {
     case noWritableCalendarSource
 

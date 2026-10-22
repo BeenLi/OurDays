@@ -172,7 +172,7 @@ final class LocalEventShadow {
     var isTombstone: Bool
 
     var mirrorKey: String {
-        EventMirrorService.makeMirrorKey(
+        EventMirrorKeyPlan.makeMirrorKey(
             calendarIdentifier: calendarIdentifier,
             eventIdentifier: localEventIdentifier,
             occurrenceStartDate: occurrenceStartDate,

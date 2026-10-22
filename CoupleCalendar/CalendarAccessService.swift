@@ -168,10 +168,6 @@ final class CalendarAccessService {
         }
     }
 
-    func existingEventIdentifiers(for eventIdentifiers: Set<String>) -> Set<String> {
-        Set(eventIdentifiers.filter { eventStore.event(withIdentifier: $0) != nil })
-    }
-
     func localEventExists(for invitation: EventInvitation) -> Bool {
         if let localEventID = invitation.createdLocalEventID,
            !localEventID.isEmpty,
@@ -195,11 +191,6 @@ final class CalendarAccessService {
         }
     }
 
-    func createLocalEvent(from draft: LocalCalendarEventDraft) throws -> String {
-        let createdEvent = try createEvent(from: draft, calendar: writableCalendarForNewEvents())
-        return createdEvent.eventIdentifier
-    }
-
     func createShareCalEvent(from draft: LocalCalendarEventDraft) throws -> CreatedCalendarEvent {
         try createEvent(from: draft, calendar: ensureShareCalEKCalendar())
     }
@@ -220,15 +211,6 @@ final class CalendarAccessService {
             calendarTitle: calendar.title,
             calendarColorHex: UIColor(cgColor: calendar.cgColor).hexString
         )
-    }
-
-    private func writableCalendarForNewEvents() throws -> EKCalendar {
-        if let defaultCalendar = eventStore.defaultCalendarForNewEvents,
-           defaultCalendar.allowsContentModifications {
-            return defaultCalendar
-        }
-
-        return try ensureShareCalEKCalendar()
     }
 
     private func ensureShareCalEKCalendar() throws -> EKCalendar {
@@ -271,13 +253,6 @@ final class CalendarAccessService {
             colorHex: UIColor(cgColor: calendar.cgColor).hexString,
             allowsContentModifications: calendar.allowsContentModifications
         )
-    }
-
-    static func defaultSyncWindow(now: Date = .now) -> DateInterval {
-        let calendar = Calendar.current
-        let start = calendar.date(byAdding: .day, value: -90, to: now) ?? now
-        let end = calendar.date(byAdding: .day, value: 365, to: now) ?? now
-        return DateInterval(start: start, end: end)
     }
 }
 

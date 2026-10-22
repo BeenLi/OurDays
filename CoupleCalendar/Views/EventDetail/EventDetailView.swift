@@ -154,7 +154,7 @@ struct EventDetailView: View {
                 await syncOnOpenIfNeeded()
             }
             .refreshable {
-                await performSync()
+                await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -201,7 +201,7 @@ struct EventDetailView: View {
 
         conflictMessage = settings.strings.invitationConflictMessage(
             eventTitle: firstConflict.title,
-            timeText: timeText(for: firstConflict),
+            timeText: EventTimeRangeTextPlan.text(for: firstConflict, strings: settings.strings),
             additionalConflictCount: conflicts.count - 1
         )
         isShowingInviteConflict = true
@@ -252,26 +252,6 @@ struct EventDetailView: View {
         }
     }
 
-    private func timeText(for event: EventMirror) -> String {
-        if event.isAllDay {
-            return settings.strings.allDay
-        }
-        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
-    }
-
-    private func performSync() async {
-        // foregroundSync sets syncPhase = .syncing synchronously on entry, and
-        // everything here runs on the main actor, so this single guard already
-        // prevents overlapping/reentrant syncs from this screen.
-        guard settings.syncPhase != .syncing else { return }
-        let coordinator = SyncCoordinator(
-            calendarAccess: services.calendarAccess,
-            eventMirrorService: services.eventMirrorService,
-            cloudKit: services.cloudKitIfAvailable
-        )
-        await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
-    }
-
     private func syncOnOpenIfNeeded() async {
         guard ForegroundSyncPlan.shouldRunAutomaticSync(
             lastSyncAt: settings.lastSyncAt,
@@ -279,7 +259,7 @@ struct EventDetailView: View {
             syncPhase: settings.syncPhase,
             hasPendingAcceptedShare: false
         ) else { return }
-        await performSync()
+        await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
     }
 }
 
@@ -340,7 +320,7 @@ struct JointEventDetailView: View {
                 await syncOnOpenIfNeeded()
             }
             .refreshable {
-                await performSync()
+                await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -352,16 +332,6 @@ struct JointEventDetailView: View {
         }
     }
 
-    private func performSync() async {
-        guard settings.syncPhase != .syncing else { return }
-        let coordinator = SyncCoordinator(
-            calendarAccess: services.calendarAccess,
-            eventMirrorService: services.eventMirrorService,
-            cloudKit: services.cloudKitIfAvailable
-        )
-        await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
-    }
-
     private func syncOnOpenIfNeeded() async {
         guard ForegroundSyncPlan.shouldRunAutomaticSync(
             lastSyncAt: settings.lastSyncAt,
@@ -369,6 +339,6 @@ struct JointEventDetailView: View {
             syncPhase: settings.syncPhase,
             hasPendingAcceptedShare: false
         ) else { return }
-        await performSync()
+        await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
     }
 }

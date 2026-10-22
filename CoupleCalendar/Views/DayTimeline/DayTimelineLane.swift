@@ -56,7 +56,7 @@ struct DayTimelineLane: View {
                 .buttonStyle(.plain)
                 .frame(width: blockWidth(isNarrowed: isNarrowed), height: eventHeight, alignment: .top)
                 .offset(x: blockX(isNarrowed: isNarrowed), y: eventY)
-                .accessibilityLabel("\(event.title), \(timeText(for: event))")
+                .accessibilityLabel("\(event.title), \(EventTimeRangeTextPlan.text(for: event, strings: settings.strings))")
             }
         }
         .frame(width: width, height: dayHeight, alignment: .topLeading)
@@ -76,13 +76,6 @@ struct DayTimelineLane: View {
         return DayTimelineEventFrame(y: max(0, frame.y - offsetY), height: frame.height)
     }
 
-    private func timeText(for event: EventMirror) -> String {
-        if event.isAllDay {
-            return settings.strings.allDay
-        }
-
-        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
-    }
 }
 
 /// Small dot marking a calendar event that has at least one comment. Decorative

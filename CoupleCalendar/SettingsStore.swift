@@ -91,19 +91,19 @@ final class SettingsStore {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         Self.resetLegacyPairingStateIfNeeded(defaults: defaults)
-        currentMemberID = Self.normalizedString(defaults.string(forKey: Key.currentMemberID)) ?? MemberIDPlan.unsyncedMemberID
-        let resolvedCurrentDisplayName = Self.normalizedString(defaults.string(forKey: Key.currentDisplayName)) ?? ""
+        currentMemberID = MemberIDPlan.normalized(defaults.string(forKey: Key.currentMemberID)) ?? MemberIDPlan.unsyncedMemberID
+        let resolvedCurrentDisplayName = MemberIDPlan.normalized(defaults.string(forKey: Key.currentDisplayName)) ?? ""
         currentDisplayName = resolvedCurrentDisplayName
         currentICloudEmailAddress = defaults.string(forKey: Key.currentICloudEmailAddress) ?? ""
-        partnerNoteName = Self.normalizedString(defaults.string(forKey: Key.partnerNoteName)) ?? ""
+        partnerNoteName = MemberIDPlan.normalized(defaults.string(forKey: Key.partnerNoteName)) ?? ""
         partnerShareOwnerID = defaults.string(forKey: Key.partnerShareOwnerID)
-        partnerSyncedDisplayName = Self.normalizedString(defaults.string(forKey: Key.partnerSyncedDisplayName))
+        partnerSyncedDisplayName = MemberIDPlan.normalized(defaults.string(forKey: Key.partnerSyncedDisplayName))
         currentAvatar = Self.storedAvatar(defaults: defaults, forKey: Key.currentAvatar)
         partnerSyncedAvatar = Self.storedAvatar(defaults: defaults, forKey: Key.partnerSyncedAvatar)
         partnerAvatarOverride = Self.storedAvatar(defaults: defaults, forKey: Key.partnerAvatarOverride)
         let storedHasCompletedInitialProfilePrompt = defaults.object(forKey: Key.hasCompletedInitialProfilePrompt) as? Bool ?? false
         if storedHasCompletedInitialProfilePrompt,
-           Self.normalizedString(resolvedCurrentDisplayName) == nil {
+           MemberIDPlan.normalized(resolvedCurrentDisplayName) == nil {
             hasCompletedInitialProfilePrompt = false
             defaults.set(false, forKey: Key.hasCompletedInitialProfilePrompt)
         } else {
@@ -165,7 +165,7 @@ final class SettingsStore {
     }
 
     static func storedPartnerShareOwnerID(defaults: UserDefaults = .standard) -> String? {
-        normalizedString(defaults.string(forKey: Key.partnerShareOwnerID))
+        MemberIDPlan.normalized(defaults.string(forKey: Key.partnerShareOwnerID))
     }
 
     static func storedOutgoingShareParticipantIDs(defaults: UserDefaults = .standard) -> [String] {
@@ -233,18 +233,6 @@ final class SettingsStore {
         } else {
             defaults.removeObject(forKey: key)
         }
-    }
-
-    private func normalizedID(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedValue.isEmpty ? nil : trimmedValue
-    }
-
-    private static func normalizedString(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedValue.isEmpty ? nil : trimmedValue
     }
 
     private enum Key {

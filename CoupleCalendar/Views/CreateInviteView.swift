@@ -212,7 +212,7 @@ struct CreateInviteView: View {
                 if let firstConflict = conflicts.first {
                     conflictMessage = settings.strings.invitationConflictMessage(
                         eventTitle: firstConflict.title,
-                        timeText: timeText(for: firstConflict),
+                        timeText: EventTimeRangeTextPlan.text(for: firstConflict, strings: settings.strings),
                         additionalConflictCount: conflicts.count - 1
                     )
                     isShowingConflict = true
@@ -234,7 +234,7 @@ struct CreateInviteView: View {
                 inviteeMemberID: settings.partnerOwnerIDForLocalData
             )
             invitation.createdLocalEventID = createdEvent.eventIdentifier
-            try upsertMirror(mirror)
+            try EventMirrorStore.upsert(mirror, modelContext: modelContext)
             modelContext.insert(invitation)
             settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
                 afterEnsuring: CalendarDescriptor(
@@ -271,33 +271,6 @@ struct CreateInviteView: View {
         }
     }
 
-    private func upsertMirror(_ mirror: EventMirror) throws {
-        let mirrorKey = mirror.mirrorKey
-        let descriptor = FetchDescriptor<EventMirror>(
-            predicate: #Predicate { $0.mirrorKey == mirrorKey }
-        )
-        if let existing = try modelContext.fetch(descriptor).first {
-            existing.ownerMemberID = mirror.ownerMemberID
-            existing.sourceCalendarID = mirror.sourceCalendarID
-            existing.sourceCalendarTitle = mirror.sourceCalendarTitle
-            existing.occurrenceStartDate = mirror.occurrenceStartDate
-            existing.startDate = mirror.startDate
-            existing.endDate = mirror.endDate
-            existing.isAllDay = mirror.isAllDay
-            existing.timeZoneIdentifier = mirror.timeZoneIdentifier
-            existing.title = mirror.title
-            existing.location = mirror.location
-            existing.notes = mirror.notes
-            existing.urlString = mirror.urlString
-            existing.calendarColorHex = mirror.calendarColorHex
-            existing.visibilityRawValue = mirror.visibilityRawValue
-            existing.deletedAt = mirror.deletedAt
-            existing.cloudKitRecordName = mirror.cloudKitRecordName
-        } else {
-            modelContext.insert(mirror)
-        }
-    }
-
     private func validationMessage(for error: Error) -> String {
         if let validationError = error as? CreateInviteValidationError {
             switch validationError {
@@ -310,10 +283,4 @@ struct CreateInviteView: View {
         return error.localizedDescription
     }
 
-    private func timeText(for event: EventMirror) -> String {
-        if event.isAllDay {
-            return settings.strings.allDay
-        }
-        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
-    }
 }

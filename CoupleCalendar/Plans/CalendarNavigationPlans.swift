@@ -111,21 +111,11 @@ enum CalendarDateNavigationPlan {
     }
 
     private static func monthDayText(for date: Date, calendar: Calendar, locale: Locale) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = locale
-        formatter.timeZone = calendar.timeZone
-        formatter.setLocalizedDateFormatFromTemplate("MMM d")
-        return formatter.string(from: date)
+        DateFormatterCache.formatter(template: "MMM d", locale: locale, calendar: calendar).string(from: date)
     }
 
     private static func monthText(for date: Date, calendar: Calendar, locale: Locale) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = locale
-        formatter.timeZone = calendar.timeZone
-        formatter.setLocalizedDateFormatFromTemplate("MMM")
-        return formatter.string(from: date)
+        DateFormatterCache.formatter(template: "MMM", locale: locale, calendar: calendar).string(from: date)
     }
 
     private static func dayText(for date: Date, calendar: Calendar, locale: Locale) -> String {

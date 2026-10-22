@@ -10,8 +10,8 @@ enum EventDetailTimePlan {
         locale: Locale,
         calendar: Calendar = .current
     ) -> String {
-        let dayFormatter = formatter(template: "MMMdEEE", locale: locale, calendar: calendar)
-        let timeFormatter = formatter(template: "jmm", locale: locale, calendar: calendar)
+        let dayFormatter = DateFormatterCache.formatter(template: "MMMdEEE", locale: locale, calendar: calendar)
+        let timeFormatter = DateFormatterCache.formatter(template: "jmm", locale: locale, calendar: calendar)
         if isAllDay {
             // All-day end dates are exclusive (next midnight); show the last covered day.
             let lastDay = max(startDate, endDate.addingTimeInterval(-1))
@@ -25,14 +25,74 @@ enum EventDetailTimePlan {
         }
         return "\(dayFormatter.string(from: startDate)) \(timeFormatter.string(from: startDate)) – \(dayFormatter.string(from: endDate)) \(timeFormatter.string(from: endDate))"
     }
+}
 
-    private static func formatter(template: String, locale: Locale, calendar: Calendar) -> DateFormatter {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = locale
-        formatter.timeZone = calendar.timeZone
-        formatter.setLocalizedDateFormatFromTemplate(template)
-        return formatter
+/// `DateFormatter()` costs milliseconds to build; the display plans format every visible
+/// event, so configured formatters are kept per (format, locale, calendar, time zone).
+/// A formatter is never mutated after it is cached, which makes it safe to share.
+enum DateFormatterCache {
+    private static let lock = NSLock()
+    private static var formatters: [String: DateFormatter] = [:]
+
+    /// Formatter for a localized template such as `"MMM d"` (via `setLocalizedDateFormatFromTemplate`).
+    static func formatter(template: String, locale: Locale, calendar: Calendar, timeZone: TimeZone? = nil) -> DateFormatter {
+        formatter(key: "template:\(template)", locale: locale, calendar: calendar, timeZone: timeZone ?? calendar.timeZone) {
+            $0.setLocalizedDateFormatFromTemplate(template)
+        }
+    }
+
+    /// Formatter for a fixed `dateFormat` such as `"yyyy年M月d日"`.
+    static func formatter(dateFormat: String, locale: Locale, calendar: Calendar, timeZone: TimeZone? = nil) -> DateFormatter {
+        formatter(key: "format:\(dateFormat)", locale: locale, calendar: calendar, timeZone: timeZone ?? calendar.timeZone) {
+            $0.dateFormat = dateFormat
+        }
+    }
+
+    private static func formatter(
+        key: String,
+        locale: Locale,
+        calendar: Calendar,
+        timeZone: TimeZone,
+        configure: (DateFormatter) -> Void
+    ) -> DateFormatter {
+        let cacheKey = [
+            key,
+            locale.identifier,
+            "\(calendar.identifier)",
+            "\(calendar.firstWeekday)/\(calendar.minimumDaysInFirstWeek)",
+            timeZone.identifier
+        ].joined(separator: "|")
+        return lock.withLock {
+            if let cached = formatters[cacheKey] {
+                return cached
+            }
+            let formatter = DateFormatter()
+            formatter.calendar = calendar
+            formatter.locale = locale
+            formatter.timeZone = timeZone
+            configure(formatter)
+            formatters[cacheKey] = formatter
+            return formatter
+        }
+    }
+}
+
+/// The short "19:30 - 21:30" (or localized all-day) text used in lists, conflict
+/// banners and accessibility labels.
+enum EventTimeRangeTextPlan {
+    static func text(startDate: Date, endDate: Date, isAllDay: Bool, strings: ShareCalStrings) -> String {
+        if isAllDay {
+            return strings.allDay
+        }
+        return "\(startDate.formatted(date: .omitted, time: .shortened)) - \(endDate.formatted(date: .omitted, time: .shortened))"
+    }
+
+    static func text(for event: EventMirror, strings: ShareCalStrings) -> String {
+        text(startDate: event.startDate, endDate: event.endDate, isAllDay: event.isAllDay, strings: strings)
+    }
+
+    static func text(for event: JointScheduleEvent, strings: ShareCalStrings) -> String {
+        text(startDate: event.startDate, endDate: event.endDate, isAllDay: event.isAllDay, strings: strings)
     }
 }
 

@@ -127,21 +127,8 @@ struct InvitesTabView: View {
         .ourDaysListBackground()
         .toolbar(.hidden, for: .navigationBar)
         .refreshable {
-            await performSync()
+            await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
         }
-    }
-
-    private func performSync() async {
-        // foregroundSync sets syncPhase = .syncing synchronously on entry, and
-        // everything here runs on the main actor, so this single guard already
-        // prevents overlapping/reentrant syncs from this screen.
-        guard settings.syncPhase != .syncing else { return }
-        let coordinator = SyncCoordinator(
-            calendarAccess: services.calendarAccess,
-            eventMirrorService: services.eventMirrorService,
-            cloudKit: services.cloudKitIfAvailable
-        )
-        await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
     }
 
     private func accept(_ invitation: EventInvitation) {
@@ -154,7 +141,7 @@ struct InvitesTabView: View {
                 createdEvent: createdEvent,
                 ownerMemberID: settings.currentMemberID
             )
-            try upsertAcceptedMirror(mirror)
+            try EventMirrorStore.upsert(mirror, modelContext: modelContext)
             settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
                 afterEnsuring: CalendarDescriptor(
                     id: createdEvent.calendarIdentifier,
@@ -168,33 +155,6 @@ struct InvitesTabView: View {
             saveInvitationStatusToCloudKit(invitation)
         } catch {
             errorMessage = error.localizedDescription
-        }
-    }
-
-    private func upsertAcceptedMirror(_ mirror: EventMirror) throws {
-        let mirrorKey = mirror.mirrorKey
-        let descriptor = FetchDescriptor<EventMirror>(
-            predicate: #Predicate { $0.mirrorKey == mirrorKey }
-        )
-        if let existing = try modelContext.fetch(descriptor).first {
-            existing.ownerMemberID = mirror.ownerMemberID
-            existing.sourceCalendarID = mirror.sourceCalendarID
-            existing.sourceCalendarTitle = mirror.sourceCalendarTitle
-            existing.occurrenceStartDate = mirror.occurrenceStartDate
-            existing.startDate = mirror.startDate
-            existing.endDate = mirror.endDate
-            existing.isAllDay = mirror.isAllDay
-            existing.timeZoneIdentifier = mirror.timeZoneIdentifier
-            existing.title = mirror.title
-            existing.location = mirror.location
-            existing.notes = mirror.notes
-            existing.urlString = mirror.urlString
-            existing.calendarColorHex = mirror.calendarColorHex
-            existing.visibilityRawValue = mirror.visibilityRawValue
-            existing.deletedAt = mirror.deletedAt
-            existing.cloudKitRecordName = mirror.cloudKitRecordName
-        } else {
-            modelContext.insert(mirror)
         }
     }
 

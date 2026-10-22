@@ -794,3 +794,13 @@ final class MemberDisplayNamePlanTests: XCTestCase {
         XCTAssertEqual(name, "Partner")
     }
 }
+
+final class MemberIDPlanTests: XCTestCase {
+    func testNormalizedTrimsWhitespaceAndDropsBlankValues() {
+        XCTAssertEqual(MemberIDPlan.normalized("  _owner \n"), "_owner")
+        XCTAssertNil(MemberIDPlan.normalized("   "))
+        XCTAssertNil(MemberIDPlan.normalized(""))
+        XCTAssertNil(MemberIDPlan.normalized(nil))
+        XCTAssertEqual(MemberIDPlan.normalizedList([" a ", "", "b", "\t"]), ["a", "b"])
+    }
+}

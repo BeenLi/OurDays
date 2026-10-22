@@ -29,12 +29,12 @@ There is one scheme (`CoupleCalendar`) and all unit tests live in a single file,
 
 ## Architecture
 
-Six Swift files in `CoupleCalendar/`, no SPM dependencies:
+Source lives in `CoupleCalendar/`, no SPM dependencies:
 
 - **Models.swift** — SwiftData models (`EventMirror`, `LocalEventShadow`, `EventInvitation`, `EventComment`, `CalendarAccessRequest`), `ShareCalStrings` (hand-rolled EN/ZH localization via `text(english, chinese)`), and most pure "Plan" enums.
 - **AppServices.swift** — `SettingsStore` (UserDefaults-backed, `@Observable`) and `SyncCoordinator.foregroundSync`, the single sync pipeline.
 - **CloudKitCoupleSpaceService.swift** — all CloudKit I/O: zone/root/share management, record mappers, share acceptance handler, scene delegate.
-- **RootView.swift** — entire SwiftUI UI (tabs, settings, pairing flows, conflict alerts).
+- **RootView.swift** — the tab container, sheet/alert routing, and pairing-conflict alerts. **Views/** holds the rest of the SwiftUI UI, one file per screen (`CalendarTabView`, `InvitesTabView`, `ActivityTabView`, `Settings/`, `DayTimeline/`, `EventDetail/`, …) plus `DesignSystem.swift` (`OurDaysTheme`, `OurDaysIdentity`, card/button styles, avatar views). UI files are compiled into the app target only; the unit-test target compiles the non-UI sources directly (no `@testable import`), so a new non-UI file must be added to both targets in `project.pbxproj`.
 - **CalendarAccessService.swift / EventServices.swift** — EventKit access and mirror/invitation/comment generation.
 
 ### The "Plan enum" convention

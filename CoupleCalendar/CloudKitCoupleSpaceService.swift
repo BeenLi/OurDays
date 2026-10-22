@@ -62,108 +62,6 @@ func describeCloudKitFailure(_ error: Error) -> String {
     return parts.joined(separator: " | ")
 }
 
-final class CloudKitSyncDriver: NSObject, CKSyncEngineDelegate, @unchecked Sendable {
-    private let lock = NSLock()
-    private var pendingRecords: [CKRecord.ID: CKRecord] = [:]
-    private var pendingDeletes: Set<CKRecord.ID> = []
-    private(set) var lastStateSerialization: CKSyncEngine.State.Serialization?
-    private var engine: CKSyncEngine?
-
-    func start(database: CKDatabase, stateSerialization: CKSyncEngine.State.Serialization?) {
-        var configuration = CKSyncEngine.Configuration(
-            database: database,
-            stateSerialization: stateSerialization,
-            delegate: self
-        )
-        configuration.automaticallySync = true
-        configuration.subscriptionID = "couplecalendar-database-subscription"
-        engine = CKSyncEngine(configuration)
-    }
-
-    func queue(recordsToSave: [CKRecord], recordIDsToDelete: [CKRecord.ID] = []) {
-        cloudKitSharingInfo(
-            "syncEngine queue saves=\(recordsToSave.map { "\($0.recordType):\($0.recordID.recordName)" }.joined(separator: ",")) deletes=\(recordIDsToDelete.map(\.recordName).joined(separator: ","))"
-        )
-
-        lock.withLock {
-            for record in recordsToSave {
-                pendingRecords[record.recordID] = record
-            }
-            for recordID in recordIDsToDelete {
-                pendingDeletes.insert(recordID)
-            }
-        }
-
-        let changes: [CKSyncEngine.PendingRecordZoneChange] =
-            recordsToSave.map { .saveRecord($0.recordID) } + recordIDsToDelete.map { .deleteRecord($0) }
-        engine?.state.add(pendingRecordZoneChanges: changes)
-    }
-
-    func sendChangesNow() async throws {
-        cloudKitSharingInfo("syncEngine sendChanges begin")
-        try await engine?.sendChanges()
-        cloudKitSharingInfo("syncEngine sendChanges finished")
-    }
-
-    func fetchChangesNow() async throws {
-        cloudKitSharingInfo("syncEngine fetchChanges begin")
-        try await engine?.fetchChanges()
-        cloudKitSharingInfo("syncEngine fetchChanges finished")
-    }
-
-    func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
-        switch event {
-        case .stateUpdate(let update):
-            lastStateSerialization = update.stateSerialization
-        case .sentRecordZoneChanges(let sent):
-            let failedSaves = sent.failedRecordSaves.map {
-                "\($0.record.recordType):\($0.record.recordID.recordName)=\(describeCloudKitFailure($0.error))"
-            }.joined(separator: "; ")
-            let failedDeletes = sent.failedRecordDeletes.map {
-                "\($0.key.recordName)=\(describeCloudKitFailure($0.value))"
-            }.joined(separator: "; ")
-            cloudKitSharingInfo(
-                "syncEngine sentRecordZoneChanges saved=\(sent.savedRecords.map { "\($0.recordType):\($0.recordID.recordName)" }.joined(separator: ",")) deleted=\(sent.deletedRecordIDs.map(\.recordName).joined(separator: ",")) failedSaves=\(failedSaves.isEmpty ? "none" : failedSaves) failedDeletes=\(failedDeletes.isEmpty ? "none" : failedDeletes)"
-            )
-            let savedChanges = sent.savedRecords.map { CKSyncEngine.PendingRecordZoneChange.saveRecord($0.recordID) }
-            let deletedChanges = sent.deletedRecordIDs.map { CKSyncEngine.PendingRecordZoneChange.deleteRecord($0) }
-            syncEngine.state.remove(pendingRecordZoneChanges: savedChanges + deletedChanges)
-
-            lock.withLock {
-                for record in sent.savedRecords {
-                    pendingRecords.removeValue(forKey: record.recordID)
-                }
-                for recordID in sent.deletedRecordIDs {
-                    pendingDeletes.remove(recordID)
-                }
-            }
-        default:
-            break
-        }
-    }
-
-    func nextRecordZoneChangeBatch(
-        _ context: CKSyncEngine.SendChangesContext,
-        syncEngine: CKSyncEngine
-    ) async -> CKSyncEngine.RecordZoneChangeBatch? {
-        let (records, deletes) = lock.withLock {
-            let records = pendingRecords.values.filter { context.options.scope.contains($0.recordID) }
-            let deletes = pendingDeletes.filter { context.options.scope.contains($0) }
-            return (records, deletes)
-        }
-
-        cloudKitSharingInfo(
-            "syncEngine nextBatch records=\(records.map { "\($0.recordType):\($0.recordID.recordName)" }.joined(separator: ",")) deletes=\(deletes.map(\.recordName).joined(separator: ","))"
-        )
-        guard !records.isEmpty || !deletes.isEmpty else { return nil }
-        return CKSyncEngine.RecordZoneChangeBatch(
-            recordsToSave: Array(records),
-            recordIDsToDelete: Array(deletes),
-            atomicByZone: false
-        )
-    }
-}
-
 struct PreparedCloudShare: Identifiable {
     let id = UUID()
     let rootRecord: CKRecord
@@ -209,8 +107,6 @@ final class CloudKitCoupleSpaceService {
 
     let container: CKContainer
     let zoneID: CKRecordZone.ID
-    private let syncDriver = CloudKitSyncDriver()
-    private var hasStartedSyncDriver = false
 
     init(container: CKContainer = CKContainer.default()) {
         self.container = container
@@ -267,12 +163,6 @@ final class CloudKitCoupleSpaceService {
                 continuation.resume(returning: "readable; \(zoneStatus)")
             }
         }
-    }
-
-    private func ensureSyncDriverStarted() {
-        guard !hasStartedSyncDriver else { return }
-        syncDriver.start(database: privateDatabase, stateSerialization: nil)
-        hasStartedSyncDriver = true
     }
 
     func ensureZone() async throws {
@@ -1211,12 +1101,6 @@ final class CloudKitCoupleSpaceService {
             database: database
         )
         cloudKitSharingInfo("saveCommentsForSync succeeded count=\(records.count)")
-    }
-
-    func foregroundSync() async throws {
-        ensureSyncDriverStarted()
-        try await syncDriver.sendChangesNow()
-        try await syncDriver.fetchChangesNow()
     }
 
     private static func describe(_ status: CKAccountStatus) -> String {

@@ -34,7 +34,7 @@ App 为四个 Tab 的标准 iOS 结构：
 | --- | --- |
 | UI | SwiftUI（`@Observable`），无第三方依赖 |
 | 本地存储 | SwiftData（仅作本地缓存，`cloudKitDatabase: .none`）+ UserDefaults（设置与配对状态） |
-| 云同步 | CloudKit：私有数据库自有 `CoupleSpace` zone + CKShare 层级共享；`CKSyncEngine` 推送变更 |
+| 云同步 | CloudKit：私有数据库自有 `CoupleSpace` zone + CKShare 层级共享；CKDatabaseSubscription 静默推送唤醒拉取 |
 | 系统日历 | EventKit（读取所选日历、为接受的邀请创建日程） |
 | 身份 | CloudKit `userRecordID` 作为唯一成员 ID（即共享 zone 的 ownerName，无自建账号体系） |
 | 测试 | XCTest，决策逻辑收敛在无状态 "Plan enum" 中直接单测 |

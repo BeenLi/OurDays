@@ -323,9 +323,6 @@ struct SyncCoordinator {
                     timing.mark("cloudWritesSkipped")
                 }
 
-                try await cloudKit.foregroundSync()
-                timing.mark("cloudSyncEngineFinished")
-
                 if !resolution.sharedZoneOwnerIDsToLeave.isEmpty {
                     try await cloudKit.deleteAcceptedSharedZones(ownerIDs: resolution.sharedZoneOwnerIDsToLeave)
                     try ShareCalLocalDataCleanupService.purgeSharedOwnerData(

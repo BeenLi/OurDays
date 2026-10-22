@@ -5,6 +5,7 @@
 #   - Partner simulator signed in to another team iCloud account
 #   - Both simulators booted (the script boots them if needed)
 # Usage: Scripts/dev-pairing-smoke.sh [--skip-build]
+#   SKIP_ICLOUD_PRECHECK=1 skips the cloudd AuthTokenError (2011) precheck.
 set -euo pipefail
 
 OWNER_UDID="${OWNER_UDID:-AF9A93BC-6151-4C6D-B5F7-E4F5053351E2}"   # iPhone 17
@@ -147,6 +148,33 @@ fi
 log "Booting simulators..."
 xcrun simctl bootstatus "$OWNER_UDID" -b >/dev/null
 xcrun simctl bootstatus "$PARTNER_UDID" -b >/dev/null
+
+# ---------- 0b. iCloud token precheck ----------
+# Simulator iCloud sessions expire on their own (Apple-side token policy; nothing
+# local extends them). When that happens cloudd logs `AuthTokenError (2011)` for
+# every CloudKit call and the app never logs a share URL, so the run only fails
+# after the first console-wait timeout (~5-10 min). Look at cloudd's recent log
+# first and fail fast with a re-login hint instead. The check is skipped when
+# cloudd has no recent activity (fresh boot). SKIP_ICLOUD_PRECHECK=1 bypasses it.
+ICLOUD_PRECHECK_WINDOW="${ICLOUD_PRECHECK_WINDOW:-15m}"
+icloud_precheck() { # icloud_precheck <udid> <label>
+  local udid="$1" label="$2" last
+  last=$(xcrun simctl spawn "$udid" log show --last "$ICLOUD_PRECHECK_WINDOW" \
+           --style compact --predicate 'process == "cloudd"' 2>/dev/null \
+         | grep -E 'AuthTokenError|Finished' | tail -1 || true)
+  if [ -z "$last" ]; then
+    log "$label: no cloudd activity in the last $ICLOUD_PRECHECK_WINDOW, skipping iCloud token check."
+  elif printf '%s' "$last" | grep -q AuthTokenError; then
+    fail "$label simulator's iCloud session has expired (cloudd: AuthTokenError 2011). Open Settings on the simulator, sign in to iCloud again, then rerun. Last line: $last"
+  else
+    log "$label: cloudd completed a CloudKit operation recently, iCloud token looks valid."
+  fi
+}
+if [ "${SKIP_ICLOUD_PRECHECK:-0}" != "1" ]; then
+  log "Checking simulators' iCloud tokens (cloudd log, last $ICLOUD_PRECHECK_WINDOW)..."
+  icloud_precheck "$OWNER_UDID" "Owner"
+  icloud_precheck "$PARTNER_UDID" "Partner"
+fi
 
 # The app's success markers are info-level Logger lines; without this they are
 # memory-only and invisible to `log show`.

@@ -17,6 +17,23 @@ These simulator instances preserve their iCloud sign-in state as long as the
 same UDIDs are reused. Do not erase, delete, or recreate them unless you intend
 to sign in to iCloud again.
 
+The sign-in still expires on its own after a while (Apple-side token policy;
+nothing local extends it). The symptom is `cloudd` logging
+`AuthTokenError (2011)` for every CloudKit call while the app silently never
+reaches a share URL. `Scripts/dev-pairing-smoke.sh` checks for this up front
+and fails fast; to check by hand:
+
+```bash
+xcrun simctl spawn <udid> log show --last 15m --style compact \
+  --predicate 'process == "cloudd"' | grep -c AuthTokenError
+```
+
+A non-zero count with no later `Finished` line means: open Settings on that
+simulator and sign in to iCloud again. Keeping the simulators booted and
+opening the app occasionally lets `accountsd` refresh the token in the
+background; long shutdowns and account events on other devices (password
+change, 2FA) make expiry more likely.
+
 Useful commands:
 
 ```bash

@@ -40,6 +40,14 @@ Source lives in `CoupleCalendar/`, no SPM dependencies:
 - **RootView.swift** — the tab container, sheet/alert routing, and pairing-conflict alerts. **Views/** holds the rest of the SwiftUI UI, one file per screen (`CalendarTabView`, `InvitesTabView`, `ActivityTabView`, `Settings/`, `DayTimeline/`, `EventDetail/`, …) plus `DesignSystem.swift` (`OurDaysTheme`, `OurDaysIdentity`, card/button styles, avatar views). UI files are compiled into the app target only; the unit-test target compiles the non-UI sources directly (no `@testable import`), so a new non-UI file must be added to both targets in `project.pbxproj`.
 - **CalendarAccessService.swift / EventServices.swift** — EventKit access and the `EventMirrorService` / `InvitationService` / `CommentService` mutators (no decision logic; that lives in `Plans/`).
 
+### Shared helpers (use these instead of re-rolling them)
+
+- `SyncCoordinator.syncIfIdle(services:settings:modelContext:)` — the one way a screen triggers a user-visible sync.
+- `EventMirrorStore.upsert(_:modelContext:)` — insert-or-update an `EventMirror` by `mirrorKey`.
+- `MemberIDPlan.normalized(_:)` / `normalizedList(_:)` — trim + nil-if-blank for every ID/nickname comparison.
+- `EventTimeRangeTextPlan.text(for:strings:)` — the short "19:30 - 21:30" / all-day text.
+- `DateFormatterCache.formatter(template:…)` / `formatter(dateFormat:…)` — never build a `DateFormatter()` per call.
+
 ### The "Plan enum" convention
 
 All decision logic lives in stateless `enum ...Plan` types with pure static functions (e.g. `TwoPersonPairingPlan`, `CloudKitCommentWritePlan`, `ForegroundSyncPlan`). Views and services stay thin and call into plans; unit tests target the plans directly. New logic should follow this pattern.

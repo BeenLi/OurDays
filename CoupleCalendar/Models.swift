@@ -330,6 +330,38 @@ final class EventComment: Identifiable {
     }
 }
 
+/// Insert-or-update an `EventMirror` by its `mirrorKey`. Mirrors are derived data
+/// rebuilt every sync, so an existing row is overwritten field by field rather than
+/// replaced (keeps the SwiftData identity stable for views holding a reference).
+enum EventMirrorStore {
+    static func upsert(_ mirror: EventMirror, modelContext: ModelContext) throws {
+        let mirrorKey = mirror.mirrorKey
+        let descriptor = FetchDescriptor<EventMirror>(
+            predicate: #Predicate { $0.mirrorKey == mirrorKey }
+        )
+        if let existing = try modelContext.fetch(descriptor).first {
+            existing.ownerMemberID = mirror.ownerMemberID
+            existing.sourceCalendarID = mirror.sourceCalendarID
+            existing.sourceCalendarTitle = mirror.sourceCalendarTitle
+            existing.occurrenceStartDate = mirror.occurrenceStartDate
+            existing.startDate = mirror.startDate
+            existing.endDate = mirror.endDate
+            existing.isAllDay = mirror.isAllDay
+            existing.timeZoneIdentifier = mirror.timeZoneIdentifier
+            existing.title = mirror.title
+            existing.location = mirror.location
+            existing.notes = mirror.notes
+            existing.urlString = mirror.urlString
+            existing.calendarColorHex = mirror.calendarColorHex
+            existing.visibilityRawValue = mirror.visibilityRawValue
+            existing.deletedAt = mirror.deletedAt
+            existing.cloudKitRecordName = mirror.cloudKitRecordName
+        } else {
+            modelContext.insert(mirror)
+        }
+    }
+}
+
 @MainActor
 enum ShareCalLocalDataCleanupService {
     static func purge(modelContext: ModelContext) throws {

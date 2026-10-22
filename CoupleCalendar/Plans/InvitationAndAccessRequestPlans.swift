@@ -179,7 +179,7 @@ enum PrePairingHistoryAccessPlan {
         accessRequests.compactMap { request in
             guard request.status == .pending,
                   request.source != .privateOwnerZone,
-                  normalizedID(request.requesterMemberID) == normalizedID(currentMemberID),
+                  MemberIDPlan.normalized(request.requesterMemberID) == MemberIDPlan.normalized(currentMemberID),
                   matchesOwner(request, ownerMemberID: ownerMemberID) else {
                 return nil
             }
@@ -196,7 +196,7 @@ enum PrePairingHistoryAccessPlan {
         switch direction {
         case .partnerSharedToMe:
             return request.source != .privateOwnerZone
-                && normalizedID(request.requesterMemberID) == normalizedID(currentMemberID)
+                && MemberIDPlan.normalized(request.requesterMemberID) == MemberIDPlan.normalized(currentMemberID)
                 && matchesOwner(request, ownerMemberID: ownerMemberID)
         case .meSharedToPartner:
             return request.source == .privateOwnerZone
@@ -211,12 +211,8 @@ enum PrePairingHistoryAccessPlan {
     }
 
     private static func matchesOwner(_ request: CalendarAccessRequest, ownerMemberID: String?) -> Bool {
-        guard let ownerMemberID = normalizedID(ownerMemberID), !ownerMemberID.isEmpty else { return true }
-        return normalizedID(request.ownerMemberID) == ownerMemberID
-    }
-
-    private static func normalizedID(_ value: String?) -> String? {
-        value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let ownerMemberID = MemberIDPlan.normalized(ownerMemberID) else { return true }
+        return MemberIDPlan.normalized(request.ownerMemberID) == ownerMemberID
     }
 
     private static func mergedIntervals(_ intervals: [DateInterval]) -> [DateInterval] {

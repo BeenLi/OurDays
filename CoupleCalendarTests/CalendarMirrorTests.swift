@@ -1,3 +1,4 @@
+import SwiftData
 import XCTest
 
 final class EventMirrorServiceTests: XCTestCase {
@@ -804,6 +805,46 @@ final class CloudKitMirrorSyncPlanTests: XCTestCase {
             cloudKitRecordName: "work:\(id):1800",
             lastUploadedAt: lastUploadedAt,
             isTombstone: isTombstone
+        )
+    }
+}
+
+final class EventMirrorStoreTests: XCTestCase {
+    @MainActor
+    func testUpsertInsertsThenOverwritesByMirrorKey() throws {
+        let container = try ShareCalModelContainer.make(isStoredInMemoryOnly: true)
+        let context = ModelContext(container)
+
+        try EventMirrorStore.upsert(mirror(key: "k", title: "First"), modelContext: context)
+        try EventMirrorStore.upsert(mirror(key: "k", title: "Second"), modelContext: context)
+        try EventMirrorStore.upsert(mirror(key: "other", title: "Other"), modelContext: context)
+        try context.save()
+
+        let mirrors = try context.fetch(FetchDescriptor<EventMirror>())
+        XCTAssertEqual(mirrors.count, 2)
+        XCTAssertEqual(mirrors.first { $0.mirrorKey == "k" }?.title, "Second")
+    }
+
+    private func mirror(key: String, title: String) -> EventMirror {
+        EventMirror(
+            id: key,
+            ownerMemberID: "me",
+            mirrorKey: key,
+            sourceCalendarID: "calendar",
+            sourceCalendarTitle: "Calendar",
+            occurrenceStartDate: Date(timeIntervalSince1970: 1_000),
+            startDate: Date(timeIntervalSince1970: 1_000),
+            endDate: Date(timeIntervalSince1970: 1_800),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: title,
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#FF2D55",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: key
         )
     }
 }

@@ -204,7 +204,7 @@ struct DayAlignedTimelineView: View {
                                     x: railWidth + railSpacing + leadingInset + 4 + (CGFloat(placement.columnIndex) * slotWidth),
                                     y: eventY
                                 )
-                                .accessibilityLabel("\(event.title), \(timeText(for: event)), \(event.calendarTitle), \(settings.strings.jointScheduleLabel)")
+                                .accessibilityLabel("\(event.title), \(EventTimeRangeTextPlan.text(for: event, strings: settings.strings)), \(event.calendarTitle), \(settings.strings.jointScheduleLabel)")
                             }
 
                             DayTimelineNowIndicatorOverlay(
@@ -274,14 +274,6 @@ struct DayAlignedTimelineView: View {
             hourHeight: hourHeight
         )
         return DayTimelineEventFrame(y: max(0, frame.y - offsetY), height: frame.height)
-    }
-
-    private func timeText(for event: JointScheduleEvent) -> String {
-        if event.isAllDay {
-            return settings.strings.allDay
-        }
-
-        return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
     }
 
     private func jointScrollID(for eventID: String) -> String {

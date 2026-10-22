@@ -431,16 +431,22 @@ struct ShareCalStrings {
     }
 
     func pairingDateText(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = .current
-        formatter.timeZone = .current
+        let formatter: DateFormatter
         switch language {
         case .english:
-            formatter.locale = Locale(identifier: "en_US")
-            formatter.setLocalizedDateFormatFromTemplate("MMM d, yyyy")
+            formatter = DateFormatterCache.formatter(
+                template: "MMM d, yyyy",
+                locale: Locale(identifier: "en_US"),
+                calendar: .current,
+                timeZone: .current
+            )
         case .chinese:
-            formatter.locale = Locale(identifier: "zh_Hans")
-            formatter.dateFormat = "yyyy年M月d日"
+            formatter = DateFormatterCache.formatter(
+                dateFormat: "yyyy年M月d日",
+                locale: Locale(identifier: "zh_Hans"),
+                calendar: .current,
+                timeZone: .current
+            )
         }
         return formatter.string(from: date)
     }

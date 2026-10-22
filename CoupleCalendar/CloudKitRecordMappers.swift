@@ -112,11 +112,11 @@ enum MemberProfileDisplayPlan {
         from profiles: [CloudKitMemberProfile],
         partnerID: String?
     ) -> String? {
-        guard let partnerID = normalizedID(partnerID) else { return nil }
+        guard let partnerID = MemberIDPlan.normalized(partnerID) else { return nil }
         return profiles
             .filter { profile in
-                normalizedID(profile.ownerMemberID) == partnerID
-                    && normalizedID(profile.displayName) != nil
+                MemberIDPlan.normalized(profile.ownerMemberID) == partnerID
+                    && MemberIDPlan.normalized(profile.displayName) != nil
             }
             .sorted {
                 if $0.updatedAt == $1.updatedAt {
@@ -133,17 +133,11 @@ enum MemberProfileDisplayPlan {
         from profiles: [CloudKitMemberProfile],
         partnerID: String?
     ) -> MemberAvatar? {
-        guard let partnerID = normalizedID(partnerID) else { return nil }
+        guard let partnerID = MemberIDPlan.normalized(partnerID) else { return nil }
         return profiles
-            .filter { normalizedID($0.ownerMemberID) == partnerID }
+            .filter { MemberIDPlan.normalized($0.ownerMemberID) == partnerID }
             .max { $0.updatedAt < $1.updatedAt }
             .flatMap { MemberAvatarPlan.normalized($0.avatar) }
-    }
-
-    private static func normalizedID(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedValue.isEmpty ? nil : trimmedValue
     }
 }
 

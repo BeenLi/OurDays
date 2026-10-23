@@ -21,6 +21,25 @@ enum EventCommentAnchorPlan {
         )
     }
 
+    /// My own event as the calendar shows it: a transient `display:` mirror built straight
+    /// from EventKit (see `CalendarDisplayMirrorPlan`). Its thread is keyed by the `mirrorKey`,
+    /// which is also the id *and* CloudKit record name of the persisted mirror on both devices
+    /// (`EventMirrorService.makeMirrors` and the partner's import both name the record after
+    /// it). So the key is known before the event has ever synced: a comment written now lands
+    /// in my private zone (parented to the share root, so the partner imports it) and the
+    /// mirror follows on the next sync, both carrying the same key. When a persisted twin
+    /// already exists it wins, so any legacy twin whose id is not its mirrorKey keeps its thread.
+    static func anchor(forOwnDisplayMirror mirror: EventMirror, persistedTwin: EventMirror?) -> EventCommentAnchor {
+        if let persistedTwin {
+            return anchor(forMirror: persistedTwin)
+        }
+        return EventCommentAnchor(
+            key: mirror.mirrorKey,
+            ownerMemberID: mirror.ownerMemberID,
+            recordName: mirror.mirrorKey
+        )
+    }
+
     /// Joint events are anchored to the invitation, the only id BOTH partners share
     /// (each side's own EventMirror has a different id). Routing keys off the invitation
     /// creator: on the creator's device the comment lands in their private zone; on the
@@ -32,6 +51,36 @@ enum EventCommentAnchorPlan {
             ownerMemberID: invitation.creatorMemberID,
             recordName: invitation.cloudKitRecordName ?? invitation.id
         )
+    }
+}
+
+/// Whether an event's detail screen offers a comment thread, and which anchor it uses.
+enum EventCommentAvailability: Equatable {
+    case available(EventCommentAnchor)
+    /// My own event that the partner cannot see (it sits outside the sharing windows: before
+    /// the pairing day and not covered by an approved history request). A thread on it would
+    /// have no reader on the other side, so the detail explains instead of offering a composer.
+    case notSharedWithPartner
+}
+
+/// Decides whether the event detail shows a comment thread. The partner's events (and my
+/// persisted mirrors) always do. My own events open as transient `display:` mirrors; they get
+/// a thread as soon as the event is inside the sharing windows — synced or not — so I can
+/// start the conversation on my own schedule and the partner can reply once the mirror lands.
+enum EventDetailCommentPlan {
+    static func availability(
+        for event: EventMirror,
+        mirrors: [EventMirror],
+        sharingWindows: [DateInterval]
+    ) -> EventCommentAvailability {
+        guard event.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) else {
+            return .available(EventCommentAnchorPlan.anchor(forMirror: event))
+        }
+        let twin = EventDetailMirrorResolutionPlan.persistedTwin(for: event, in: mirrors)
+        guard twin != nil || CalendarSharingWindowPlan.contains(event.occurrenceStartDate, in: sharingWindows) else {
+            return .notSharedWithPartner
+        }
+        return .available(EventCommentAnchorPlan.anchor(forOwnDisplayMirror: event, persistedTwin: twin))
     }
 }
 
@@ -64,14 +113,15 @@ enum EventCommentIndicatorPlan {
     }
 
     /// The value a mirror's comment thread is keyed by. A transient display mirror resolves to
-    /// its persisted twin's id via the shared `mirrorKey`; returns nil when no twin exists yet
-    /// (an unsynced own event can't have comments).
+    /// its persisted twin's id via the shared `mirrorKey`, falling back to the `mirrorKey`
+    /// itself — the key my own not-yet-synced events comment under
+    /// (`EventCommentAnchorPlan.anchor(forOwnDisplayMirror:persistedTwin:)`).
     private static func resolvedAnchorKey(
         for mirror: EventMirror,
         persistedIDByMirrorKey: [String: String]
     ) -> String? {
         if mirror.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) {
-            return persistedIDByMirrorKey[mirror.mirrorKey]
+            return persistedIDByMirrorKey[mirror.mirrorKey] ?? mirror.mirrorKey
         }
         return mirror.id
     }

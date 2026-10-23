@@ -70,6 +70,7 @@ struct EventDetailView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AppServices.self) private var services
     @Query(sort: \EventMirror.startDate) private var mirrors: [EventMirror]
+    @Query private var accessRequests: [CalendarAccessRequest]
     @State private var inviteError: String?
     @State private var inviteSuccessMessage: String?
     @State private var conflictMessage: String?
@@ -140,12 +141,26 @@ struct EventDetailView: View {
                     }
                 }
 
-                // `event` may be my own transient "display:" mirror; resolve to the persisted
-                // twin so the thread anchors to the real record id (where the partner's comment
-                // on my event landed) and writes route to the right zone. No twin yet (unsynced
-                // own event) ⇒ no comment section, matching the prior transient-mirror behavior.
-                if let commentMirror = EventDetailMirrorResolutionPlan.persistedTwin(for: event, in: mirrors) {
-                    EventCommentsSection(anchor: EventCommentAnchorPlan.anchor(forMirror: commentMirror))
+                // `event` may be my own transient "display:" mirror. Its thread is keyed by the
+                // mirrorKey (== the persisted record's id on both devices), so I can start a
+                // conversation on my own event before it has even synced; the partner reads the
+                // comment from my shared zone once the mirror lands. Only an event the partner
+                // can't see (outside the sharing windows) gets an explanation instead.
+                switch EventDetailCommentPlan.availability(for: event, mirrors: mirrors, sharingWindows: sharingWindows) {
+                case .available(let anchor):
+                    EventCommentsSection(anchor: anchor)
+                case .notSharedWithPartner:
+                    Section {
+                        Text(strings.commentsUnavailableNotShared)
+                            .font(.subheadline)
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                            .listRowBackground(Color.clear)
+                    } header: {
+                        Text(strings.commentsSection)
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                            .textCase(nil)
+                    }
                 }
             }
             .listSectionSpacing(16)
@@ -178,6 +193,15 @@ struct EventDetailView: View {
                 }
             }
         }
+    }
+
+    /// The same windows `SyncCoordinator.foregroundSync` mirrors with: from the pairing day
+    /// onward, plus any approved history request.
+    private var sharingWindows: [DateInterval] {
+        CalendarSharingWindowPlan.effectiveWindows(
+            now: settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(.now),
+            accessRequests: accessRequests
+        )
     }
 
     private var detailTimeText: String {

@@ -879,6 +879,20 @@ final class CloudKitSharingFailureMessageTests: XCTestCase {
 }
 
 final class ShareCalLaunchDiagnosticPlanTests: XCTestCase {
+    func testParsesEventCommentArgumentsWithSmokeTitleDefault() {
+        let arguments = ["ShareCal", "-ShareCalAddEventComment", "hello there", "-ShareCalEventCommentTitle", "Own Comment Event"]
+
+        XCTAssertEqual(ShareCalLaunchDiagnosticPlan.eventCommentBody(arguments: arguments), "hello there")
+        XCTAssertEqual(ShareCalLaunchDiagnosticPlan.eventCommentTitle(arguments: arguments), "Own Comment Event")
+        XCTAssertEqual(
+            ShareCalLaunchDiagnosticPlan.eventCommentTitle(arguments: ["ShareCal"]),
+            ShareCalSmokeTestEventPlan.title
+        )
+        XCTAssertNil(ShareCalLaunchDiagnosticPlan.eventCommentBody(arguments: ["ShareCal", "-ShareCalAddEventComment"]))
+        XCTAssertTrue(ShareCalLaunchDiagnosticPlan.shouldProbeEventComments(arguments: ["ShareCal", "-ShareCalProbeEventComments"]))
+        XCTAssertFalse(ShareCalLaunchDiagnosticPlan.shouldProbeEventComments(arguments: ["ShareCal"]))
+    }
+
     func testPreparesPairingShareOnlyWhenLaunchArgumentIsPresent() {
         XCTAssertTrue(
             ShareCalLaunchDiagnosticPlan.shouldPreparePairingShare(

@@ -36,6 +36,17 @@ enum ShareCalLaunchDiagnosticPlan {
     /// of my own, so a single simulator can show the red dot on my event + the comment thread in
     /// its `EventDetailView` (the path that joint events bypass). Inert without the argument.
     static let seedOrdinaryCommentArgument = "-ShareCalSeedOrdinaryComment"
+    /// Either side: add a comment (`<arg> <body>`) on the event titled by
+    /// `-ShareCalEventCommentTitle` (default: the smoke event). On the event's owner the
+    /// event is resolved the way the calendar opens it — as a transient display mirror
+    /// via `EventDetailCommentPlan`, synced or not — so this exercises "I start the
+    /// thread on my own event"; on the partner it resolves the imported mirror and writes
+    /// into the owner's shared zone (the reply).
+    static let addEventCommentArgument = "-ShareCalAddEventComment"
+    static let eventCommentTitleArgument = "-ShareCalEventCommentTitle"
+    /// Either side: sync, then log the comment thread of the event titled by
+    /// `-ShareCalEventCommentTitle` as `eventComments title=… count=N bodies=[…]`.
+    static let probeEventCommentsArgument = "-ShareCalProbeEventComments"
     /// Common prefix for the new diagnostics' log markers.
     static let diagnosticLogPrefix = "ShareCalDiag"
 
@@ -89,6 +100,18 @@ enum ShareCalLaunchDiagnosticPlan {
 
     static func ordinaryCommentBody(arguments: [String]) -> String? {
         value(after: seedOrdinaryCommentArgument, arguments: arguments)
+    }
+
+    static func eventCommentBody(arguments: [String]) -> String? {
+        value(after: addEventCommentArgument, arguments: arguments)
+    }
+
+    static func eventCommentTitle(arguments: [String]) -> String {
+        value(after: eventCommentTitleArgument, arguments: arguments) ?? ShareCalSmokeTestEventPlan.title
+    }
+
+    static func shouldProbeEventComments(arguments: [String]) -> Bool {
+        arguments.contains(probeEventCommentsArgument)
     }
 
     static func shouldProbeJointComments(arguments: [String]) -> Bool {

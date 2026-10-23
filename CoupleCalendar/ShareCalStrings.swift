@@ -145,6 +145,12 @@ struct ShareCalStrings {
     var commentsSection: String { text("Comments", "评论") }
     var deleteButton: String { text("Delete", "删除") }
     var addCommentPlaceholder: String { text("Add a comment", "添加评论") }
+    var commentsUnavailableNotShared: String {
+        text(
+            "Your partner can't see this event yet, so there is no one to comment with. Events from the pairing day onward are shared.",
+            "对方还看不到这条日程，所以暂时没法评论。配对日及之后的日程会共享给对方。"
+        )
+    }
     var eventTitle: String { text("Event", "日程") }
     var doneButton: String { text("Done", "完成") }
     var noInvitations: String { text("No invitations", "暂无邀请") }

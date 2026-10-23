@@ -11,13 +11,14 @@ OurDays（原名 ShareCal）是一款**严格两人配对**的情侣共享日历
 
 ## 功能特性
 
-- **两人配对**：通过 iCloud 共享链接配对，双向各建一条 CKShare。配对后若有第三人经旧链接加入、或收到陌生人的分享，App 不会悄悄踢人，而是弹出"配对冲突 / 更换配对"让你二选一；多余的历史共享 zone 自动退出。
+- **两人配对**：通过 iCloud 共享链接配对，双向各建一条 CKShare。配对后若有第三人经旧链接加入、或收到陌生人的分享，App 不会悄悄踢人，而是弹出"配对冲突 / 更换配对"让你二选一；多余的历史共享 zone 自动退出。**解除配对**会删掉我的 CKShare，并把前任留在我 zone 里的评论、邀请和历史申请一并清掉，不会带进下一段配对。
 - **日程同步**：从系统日历（EventKit）镜像所选日历的日程；每条日程四档可见性（完整详情 / 标题+地点 / 仅忙碌 / 隐藏）。本地日历的增删改在每次同步时自动收敛（删除以墓碑形式传给对方），后台由 iCloud 静默推送 + 后台刷新尽力补同步。
 - **日程邀请**：给对方发日程邀请，对方接受后自动写入其系统日历；状态（待处理 / 已接受 / 已拒绝 / 已取消）双向同步。只能为**尚未结束**的日程发邀请；日程结束仍无人回应的邀请在两端都显示为"已过期"；发起方可随时**撤销**待处理的邀请。
 - **日程评论与动态**：对任意一方的日程留言，支持编辑、删除与已读状态；自己的日程**还没同步也能先发起评论**，对方收到后接续回复。"动态" Tab 按事件聚合双方评论，气泡带各自头像，未读数显示在 Tab 角标。
 - **系统通知**：对方评论我的日程、收到 / 被回应邀请、历史申请及其回复会推送本地通知（仅这四类，纯日历改动不打扰）。
 - **历史日历申请**：默认只共享配对日之后的日程；想看配对前的历史需向对方发起申请，对方批准后按时间窗放行。
 - **昵称与头像**：对方显示为"备注名 > 对方同步的昵称 > 兜底"，头像可选图片或文字+底色并随 iCloud 同步，不展示邮箱等 iCloud 身份信息。"我们"页显示配对第 N 天。
+- **删除重装可恢复**：配对、评论、邀请都在自己的 iCloud 里。重装后首次启动若检测到已有数据，选「继续使用现有 iCloud 数据」即可找回配对日、昵称头像，不用重新配对；App 不在期间删掉的日程也会补发墓碑，对方那边不会残留。
 - **中英双语**：内置中 / 英文案，可在设置中切换。
 
 ## 产品 UI
@@ -108,9 +109,9 @@ CloudKit 里只有 6 种记录类型（schema 见 [`CloudKit/ShareCalSchema.ckdb
 3. **算出删除**：与 `LocalEventShadow` 和上次的本地 mirror 对比，消失的日程生成带 `deletedAt` 的墓碑；移出时间窗的日程做硬删除。
 4. **写本地缓存**：mirror、shadow 先落 SwiftData，UI 立刻可用；接受过但本地日程已被用户删掉的邀请标为已取消。
 5. **先裁决配对再碰云**：并行取"我的 share 有哪些参与者"和"我接受了谁的 zone"，交给 `TwoPersonPairingPlan.resolve`。有冲突（陌生人加入、多条 share）就停在这里弹窗，**一个字节也不上传、不导入**，避免把新数据泄露给即将被拒绝的人。
-6. **上传变化**：只上传 shadow 判定有变化的 mirror、墓碑、硬删除、取消的邀请和待发的历史申请；写完才给 shadow 盖 `lastUploadedAt`。根记录和 `MemberProfile` 只在字段真的变了时才保存（见下文"为什么要只写变化"）。
+6. **上传变化**：只上传 shadow 判定有变化的 mirror、墓碑、硬删除、取消的邀请和待发的历史申请；写完才给 shadow 盖 `lastUploadedAt`。根记录和 `MemberProfile` 只在字段真的变了时才保存（见下文"为什么要只写变化"）。若本机还没有任何一次确认成功的上传（刚重装），则额外把云端自己的 mirror 当作"上次状态"做一遍删除比对，补发墓碑（`OwnMirrorReconciliationPlan`）。
 7. **退出多余 zone**：裁决出的陈旧共享 zone 删掉，并清掉其本地数据。
-8. **并行导入对方 zone**：mirror、评论、邀请、历史申请、资料五路请求同时发（每路都是一次 change token 置空的 `CKFetchRecordZoneChangesOperation`，即按 zone 全量拉取、客户端按记录类型过滤，并只要 `desiredKeys` 里的字段）；导入时记录的 `ownerMemberID` 一律覆盖为 zone 的 ownerName（zone 拥有者才是权威）；对方已删的 mirror 从本地清掉。
+8. **并行导入对方 zone**：mirror、评论、邀请、历史申请、资料五路请求同时发（每路都是一次 change token 置空的 `CKFetchRecordZoneChangesOperation`，即按 zone 全量拉取、客户端按记录类型过滤，并只要 `desiredKeys` 里的字段）；导入时记录的 `ownerMemberID` 一律覆盖为 zone 的 ownerName（zone 拥有者才是权威）；对方已删的 mirror 从本地清掉。评论、邀请、历史申请在导入前经 `PartnerScopedDataPlan` 过滤：另一方既不是我也不是当前对方的记录（前任留下的）一律丢弃，本地已有的同类数据也顺手清掉。
 9. **自愈**：Tab 里"接受 / 拒绝 / 批准"是乐观写入、一次性上传，若上次上传失败，这一步把本地已决定但云端还没跟上的状态重传；新建邀请靠 `needsCloudKitUpload` 标志重传。
 10. **通知**：对比上次高水位，只为四类事件（对方评论我的日程、收到邀请、邀请被回应、历史申请及回复）发本地通知，再推进高水位。
 
@@ -173,6 +174,24 @@ CloudKit 的 `savePolicy: .changedKeys` 只跳过"没改过的字段"，但 `CKR
 - `EventMirror` 的上传由 `LocalEventShadow` 的指纹决定，未变的日程不会重复上传。
 - 新增任何写入共享记录的路径时，都应沿用"先比对再保存"的模式，否则会重新引入这个循环。
 
+### 解除配对与重装时发生什么
+
+两件事都围绕一个事实：**我的私有 zone 里不只有我的数据**。对方对我日程的评论、我们互发的邀请和历史申请，都写在我的 zone 里（见上面的记录类型表），而下一条 CKShare 会把整个 zone 原样共享给下一个人。
+
+**解除配对**（我们 Tab → 解除配对）按顺序做三步：
+
+1. 删除我的 CKShare：对方立刻失去读我 zone 的权限（对方那边的 share 不动，由对方自己解除）。
+2. `purgeExPartnerRecordsFromPrivateZone`：从我的私有 zone 删掉所有**不是我写的评论**，以及**全部**邀请和历史申请记录。两人空间里这些记录必然和前任有关，而我自己写在自己日程上的评论是我的，保留。
+3. 清本地：对方的 mirror、评论、邀请、历史申请和配对状态全部删除。
+
+即使第 2 步失败（例如离线），同步导入时的 `PartnerScopedDataPlan` 过滤仍会把前任的记录挡在 UI 之外，所以是"删一遍 + 过滤一遍"的双保险。配对冲突里选择"换成新来的人"走同一条清理路径。「删除我的 iCloud 数据」则是整 zone 全删，不在此列。
+
+**删除 App 再重装**时本地缓存全空，但 iCloud 里一切都在。首次启动完成昵称设置后，App 探测到这个 Apple ID 下已有私有 zone 数据 / 发出去的 share / 接受过的 share，就弹「继续使用现有 iCloud 数据」或「删除」二选一，在用户决定前**不自动同步**（`ExistingICloudDataRecoveryPlan`）。选择继续后：
+
+- 从根记录的创建时间恢复配对日，从自己的 `MemberProfile` 恢复昵称与头像（常规同步只读对方的 zone，不会读这两样，所以单独恢复一次）。
+- 第一次同步时本机还没有任何带 `lastUploadedAt` 的 shadow，`OwnMirrorReconciliationPlan` 据此判断"没有可信的上次状态"，改为拉取云端自己的 mirror 来做删除比对：App 不在期间从系统日历删掉的日程，由此补发墓碑，对方不会一直看到幽灵日程。
+- 配对本身不需要重做：对方的 share 还在我的共享数据库里，我的 share 参与者也没变，`TwoPersonPairingPlan` 照常裁决出对方。
+
 ### 为什么不用 CKSyncEngine
 
 早期版本曾挂过一个 `CKSyncEngine` 驱动，但它从未真正承担写入，只是额外注册了订阅、与手写管线各跑一套状态。2026-10 的重构把它删掉了，理由是：
@@ -231,9 +250,9 @@ CoupleCalendar/
 │   ├── DesignSystem.swift         OurDaysTheme、卡片/按钮样式、头像视图
 │   └── CloudSharingController.swift   UICloudSharingController 封装
 ├── Plans/                         无状态 "Plan enum"：全部决策逻辑，纯函数，直接单测
-│   ├── PairingPlans.swift         TwoPersonPairingPlan、ShareAcceptanceGuardPlan、ExistingICloudDataRecoveryPlan
-│   ├── SyncPlans.swift            ForegroundSyncPlan（节流）、CloudKitMirrorSyncPlan（哪些 mirror 要上传）、BackgroundRefreshSchedulePlan
-│   ├── CloudKitPlans.swift        写入去向、共享层级、根记录元数据、导入过滤、停止共享
+│   ├── PairingPlans.swift         TwoPersonPairingPlan、ShareAcceptanceGuardPlan、ExistingICloudDataRecoveryPlan（重装恢复）、PartnerScopedDataPlan（前任数据过滤）
+│   ├── SyncPlans.swift            ForegroundSyncPlan（节流）、CloudKitMirrorSyncPlan（哪些 mirror 要上传）、OwnMirrorReconciliationPlan（重装补墓碑）、BackgroundRefreshSchedulePlan
+│   ├── CloudKitPlans.swift        写入去向、共享层级、根记录元数据、导入过滤、停止共享、解除配对时清理前任记录
 │   ├── InvitationAndAccessRequestPlans.swift  邀请时效/撤销/合并/重传、历史申请、配对日、共享时间窗
 │   ├── CommentPlans.swift         评论线程锚点（mirrorKey / 邀请 id）、详情页是否可评论、红点
 │   ├── ActivityAndNotificationPlans.swift     动态流聚合、LocalNotificationPlan（四类通知）

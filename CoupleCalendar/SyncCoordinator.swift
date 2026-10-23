@@ -274,11 +274,30 @@ struct SyncCoordinator {
                     return
                 }
 
+                // Reinstall reconciliation: until this install has confirmed one cloud
+                // write (fresh install over existing iCloud data) the ordinary tombstone
+                // diff has no trustworthy "previous state", so events that vanished
+                // while the app was gone would stay live in the cloud for the partner.
+                // Use our own cloud mirrors as that previous state instead.
+                var reconciledTombstones: [EventMirror] = []
+                if OwnMirrorReconciliationPlan.shouldReconcileWithCloud(existingShadows: existingShadows) {
+                    let cloudOwnMirrors = try await cloudKit.fetchOwnEventMirrors(currentMemberID: settings.currentMemberID)
+                    reconciledTombstones = eventMirrorService.deletedMirrorTombstones(
+                        existingEventKeys: currentMirrorKeys,
+                        existingMirrors: cloudOwnMirrors,
+                        selectedCalendarIDs: settings.selectedCalendarIDs,
+                        syncWindow: window,
+                        deletedAt: syncedAt
+                    )
+                    timing.mark("cloudOwnMirrorsReconciled cloud=\(cloudOwnMirrors.count) tombstones=\(reconciledTombstones.count)")
+                }
+                let mirrorsToUpload = mirrorsNeedingCloudUpload + reconciledTombstones
+
                 let accessRequestsNeedingCloudUpload = CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
                     localAccessRequests,
                     currentMemberID: settings.currentMemberID
                 )
-                let hasCloudWrites = !mirrorsNeedingCloudUpload.isEmpty
+                let hasCloudWrites = !mirrorsToUpload.isEmpty
                     || !hardDeletedMirrors.isEmpty
                     || !canceledInvitations.isEmpty
                     || !accessRequestsNeedingCloudUpload.isEmpty
@@ -296,9 +315,9 @@ struct SyncCoordinator {
                         timing.mark("cloudMemberProfileChecked")
                     }
                     if hasCloudWrites {
-                        try await cloudKit.saveMirrorsForSync(mirrorsNeedingCloudUpload)
-                        try upsert(mirrors: mirrorsNeedingCloudUpload, modelContext: modelContext)
-                        timing.mark("cloudMirrorsSaved count=\(mirrorsNeedingCloudUpload.count)")
+                        try await cloudKit.saveMirrorsForSync(mirrorsToUpload)
+                        try upsert(mirrors: mirrorsToUpload, modelContext: modelContext)
+                        timing.mark("cloudMirrorsSaved count=\(mirrorsToUpload.count)")
                         try await cloudKit.deleteMirrorsForSync(hardDeletedMirrors)
                         timing.mark("cloudHardDeletesSaved count=\(hardDeletedMirrors.count)")
                         // CloudKit accepted the mirror writes — only now mark
@@ -669,6 +688,34 @@ struct SyncCoordinator {
             modelContext.delete(mirror)
         }
         try modelContext.save()
+    }
+}
+
+/// The 「继续使用现有 iCloud 数据」 path's identity step, shared by RootView and the
+/// reinstall smoke diagnostic. The regular sync only imports the partner's zone, so the
+/// pairing date and our own nickname/avatar (which the partner already knows us by) would
+/// otherwise be lost on a reinstall and overwritten by whatever the fresh install prompted
+/// for. Best-effort: anything it cannot read stays as the user entered it.
+@MainActor
+enum ExistingICloudDataIdentityRecovery {
+    static func restore(cloudKit: CloudKitCoupleSpaceService, settings: SettingsStore) async {
+        if !settings.hasSyncedMemberID {
+            guard let memberID = try? await cloudKit.fetchCurrentUserRecordID() else { return }
+            settings.currentMemberID = memberID
+        }
+        let identity = await cloudKit.fetchExistingICloudIdentity(ownerMemberID: settings.currentMemberID)
+        let recovered = ExistingICloudDataRecoveryPlan.recoveredState(
+            shareRootCreatedAt: identity.shareRootCreatedAt,
+            ownProfile: identity.ownProfile
+        )
+        if let pairingDate = recovered.pairingDate {
+            settings.pairingDate = pairingDate
+        }
+        if let displayName = recovered.displayName {
+            settings.currentDisplayName = displayName
+            settings.currentAvatar = recovered.avatar
+            settings.hasCompletedInitialProfilePrompt = true
+        }
     }
 }
 

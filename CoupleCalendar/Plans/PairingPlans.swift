@@ -103,7 +103,35 @@ struct ExistingICloudDataSnapshot: Equatable {
     }
 }
 
+/// What a fresh install can take back from the user's own private zone when they choose
+/// to keep their existing iCloud data: the pairing date (the share root's creation
+/// time) and the nickname/avatar the partner already knows them by. Neither is read by
+/// the regular sync (which only imports the partner's zone), so the recovery path
+/// restores them once, before the first forced sync runs.
+struct ExistingICloudDataRecoveredState: Equatable {
+    var pairingDate: Date?
+    var displayName: String?
+    var avatar: MemberAvatar?
+}
+
 enum ExistingICloudDataRecoveryPlan {
+    static func recoveredState(
+        shareRootCreatedAt: Date?,
+        ownProfile: CloudKitMemberProfile?,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> ExistingICloudDataRecoveredState {
+        var state = ExistingICloudDataRecoveredState()
+        if let shareRootCreatedAt, shareRootCreatedAt <= now {
+            state.pairingDate = PairingDatePlan.normalizedPairingDate(shareRootCreatedAt, calendar: calendar)
+        }
+        if let ownProfile, let displayName = MemberIDPlan.normalized(ownProfile.displayName) {
+            state.displayName = displayName
+            state.avatar = MemberAvatarPlan.normalized(ownProfile.avatar)
+        }
+        return state
+    }
+
     static func shouldPresent(
         snapshot: ExistingICloudDataSnapshot,
         hasCompletedInitialProfilePrompt: Bool,

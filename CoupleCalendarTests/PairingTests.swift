@@ -455,6 +455,50 @@ final class ExistingICloudDataRecoveryPlanTests: XCTestCase {
     }
 }
 
+final class ExistingICloudDataRecoveredStateTests: XCTestCase {
+    func testRestoresPairingDateFromShareRootCreationAndProfileFromOwnZone() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let rootCreatedAt = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8, hour: 19)))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 23, hour: 9)))
+        let avatar = MemberAvatar(text: "小鱼", background: nil, imageData: nil)
+
+        let state = ExistingICloudDataRecoveryPlan.recoveredState(
+            shareRootCreatedAt: rootCreatedAt,
+            ownProfile: CloudKitMemberProfile(ownerMemberID: "_me", displayName: "  阿狸 ", updatedAt: now, avatar: avatar),
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(state.pairingDate, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8))))
+        XCTAssertEqual(state.displayName, "阿狸")
+        XCTAssertEqual(state.avatar?.text, "小鱼")
+    }
+
+    func testLeavesEverythingUnsetWhenNothingUsableIsInTheCloud() {
+        let now = Date(timeIntervalSince1970: 1_000)
+
+        let state = ExistingICloudDataRecoveryPlan.recoveredState(
+            shareRootCreatedAt: nil,
+            ownProfile: CloudKitMemberProfile(ownerMemberID: "_me", displayName: "   ", updatedAt: now),
+            now: now
+        )
+
+        XCTAssertEqual(state, ExistingICloudDataRecoveredState())
+    }
+
+    func testIgnoresAFutureRootCreationDate() {
+        let now = Date(timeIntervalSince1970: 1_000)
+
+        let state = ExistingICloudDataRecoveryPlan.recoveredState(
+            shareRootCreatedAt: now.addingTimeInterval(86_400),
+            ownProfile: nil,
+            now: now
+        )
+
+        XCTAssertNil(state.pairingDate)
+    }
+}
+
 final class PairingSafetyEducationPlanTests: XCTestCase {
     func testShowsOneTimePairingSafetyNoticeAfterNicknameAndPartnerNoteFlow() {
         XCTAssertTrue(

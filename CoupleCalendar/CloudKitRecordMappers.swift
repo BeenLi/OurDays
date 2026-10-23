@@ -307,6 +307,22 @@ enum CloudKitRecordQueryFailurePlan {
         recordType == MemberProfileRecordMapper.recordType && isMissingRecordType(error)
     }
 
+    /// The user's own `CoupleSpace` zone does not exist yet (nothing was ever shared from
+    /// this account) or was deleted. Reading it must read as "no records", not fail.
+    static func isMissingZone(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == CKError.errorDomain else { return false }
+        switch CKError.Code(rawValue: nsError.code) {
+        case .zoneNotFound, .userDeletedZone:
+            return true
+        case .partialFailure:
+            let partialErrors = (nsError.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error]) ?? [:]
+            return !partialErrors.isEmpty && partialErrors.values.allSatisfy(isMissingZone)
+        default:
+            return false
+        }
+    }
+
     static func isMissingRecordType(_ error: Error) -> Bool {
         let nsError = error as NSError
         guard nsError.domain == CKError.errorDomain,

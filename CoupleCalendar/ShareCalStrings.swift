@@ -178,11 +178,11 @@ struct ShareCalStrings {
             "你可以为对方设置一个本地备注名，对方不会看到。"
         )
     }
-    var pairingSafetyNoticeTitle: String { text("Before You Reinstall", "卸载或重装前请先解除配对") }
+    var pairingSafetyNoticeTitle: String { text("About Your iCloud Data", "关于你的 iCloud 数据") }
     var pairingSafetyNoticeMessage: String {
         text(
-            "OurDays' iCloud sharing data is separate from your local calendars. Unpair before uninstalling or reinstalling this app. Deleting OurDays iCloud data will not delete your original calendars or events in the system Calendar app.",
-            "OurDays 的 iCloud 共享数据与本地日历是隔离的。卸载或重装本 App 前，请先解除配对。删除 OurDays 的 iCloud 数据不会删除系统日历中的原始日历或事件。"
+            "OurDays' iCloud sharing data is separate from your local calendars and lives in your own iCloud. If you ever delete and reinstall the app, choose “Keep Existing iCloud Data” on first launch and your pairing, comments and invitations come back. Deleting OurDays iCloud data never deletes your original calendars or events in the system Calendar app.",
+            "OurDays 的 iCloud 共享数据与本地日历是隔离的，存放在你自己的 iCloud 里。如果以后删除并重装了 App，首次启动时选择「继续使用现有 iCloud 数据」，配对、评论和邀请都会回来。删除 OurDays 的 iCloud 数据不会删除系统日历中的原始日历或事件。"
         )
     }
     var existingICloudDataPromptTitle: String {
@@ -190,8 +190,8 @@ struct ShareCalStrings {
     }
     var existingICloudDataPromptMessage: String {
         text(
-            "This install looks new, but previous OurDays iCloud data still exists for this Apple ID. If you no longer want to keep sharing, delete it now. OurDays' iCloud data is separate from your local calendars, and deleting it will not delete your original calendars or events in the system Calendar app.",
-            "这次安装看起来是全新的，但这个 Apple ID 之前的 OurDays iCloud 数据仍然存在。如果你不打算继续共享，建议现在删除。OurDays 的 iCloud 数据与本地日历是隔离的，删除它不会删除系统日历中的原始日历或事件。"
+            "This Apple ID already has OurDays iCloud data: your pairing, comments and invitations are still there. If you reinstalled the app, keep it and everything comes back without pairing again. Delete it only if you no longer want to share; that never deletes your original calendars or events in the system Calendar app.",
+            "这个 Apple ID 下已经有 OurDays 的 iCloud 数据：配对、评论和邀请都还在。如果你是重装了 App，选择继续使用，一切都会回来，不需要重新配对。只有不打算再共享时才删除；删除也不会影响系统日历中的原始日历或事件。"
         )
     }
     var continueExistingICloudDataButton: String {
@@ -276,14 +276,14 @@ struct ShareCalStrings {
         )
     }
     var unpairSucceeded: String { text("Unpaired.", "已解除配对。") }
-    var pairingSafetySection: String { text("Before Uninstalling", "卸载前提醒") }
+    var pairingSafetySection: String { text("If You Reinstall", "重装提醒") }
     var pairingSafetyPersistentWarningTitle: String {
-        text("Unpair before uninstalling or reinstalling this app.", "卸载或重装本 App 前，请先解除配对。")
+        text("Deleting the app does not delete your shared data.", "删除 App 不会丢失共享数据。")
     }
     var pairingSafetyPersistentWarningMessage: String {
         text(
-            "OurDays' iCloud sharing data is separate from your local calendars. Removing OurDays iCloud data will not delete your original calendars or events in the system Calendar app.",
-            "OurDays 的 iCloud 共享数据与本地日历是隔离的。删除 OurDays 的 iCloud 数据不会删除系统日历中的原始日历或事件。"
+            "Your pairing, comments and invitations live in your own iCloud. After a reinstall, choose “Keep Existing iCloud Data” on first launch to get them back. Removing OurDays iCloud data will not delete your original calendars or events in the system Calendar app.",
+            "配对、评论和邀请都保存在你自己的 iCloud 里。重装后首次启动时选择「继续使用现有 iCloud 数据」即可找回。删除 OurDays 的 iCloud 数据不会删除系统日历中的原始日历或事件。"
         )
     }
     var pairingConflictTitle: String { text("Pairing Conflict", "配对冲突") }

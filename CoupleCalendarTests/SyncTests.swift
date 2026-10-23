@@ -206,3 +206,89 @@ final class BackgroundRefreshSchedulePlanTests: XCTestCase {
         XCTAssertEqual(BackgroundRefreshSchedulePlan.taskIdentifier, "com.leeberty.CoupleCalendar.refresh")
     }
 }
+
+final class OwnMirrorReconciliationPlanTests: XCTestCase {
+    func testReconcilesUntilOneUploadHasBeenConfirmedOnThisInstall() {
+        XCTAssertTrue(OwnMirrorReconciliationPlan.shouldReconcileWithCloud(existingShadows: []))
+        // Shadows are written before the cloud step, so an unconfirmed shadow (a failed
+        // or pre-pairing sync) must not end the reconciliation window.
+        XCTAssertTrue(
+            OwnMirrorReconciliationPlan.shouldReconcileWithCloud(existingShadows: [shadow(uploadedAt: nil)])
+        )
+        XCTAssertFalse(
+            OwnMirrorReconciliationPlan.shouldReconcileWithCloud(
+                existingShadows: [shadow(uploadedAt: nil), shadow(uploadedAt: Date(timeIntervalSince1970: 1))]
+            )
+        )
+    }
+
+    func testOwnedMirrorsTakeTheCurrentMemberIDRegardlessOfTheUploadedOne() {
+        let owned = OwnMirrorReconciliationPlan.ownedMirrors(
+            [mirror(key: "k", owner: "local-user")],
+            currentMemberID: "_me"
+        )
+        XCTAssertEqual(owned.map(\.ownerMemberID), ["_me"])
+        XCTAssertEqual(owned.map(\.mirrorKey), ["k"])
+    }
+
+    /// The reinstall path feeds the cloud copies into the ordinary tombstone diff: a
+    /// cloud mirror that is not regenerated from the calendar becomes a tombstone, one
+    /// that is regenerated (same key) stays, and an already-deleted one is left alone.
+    func testCloudMirrorsMissingFromTheCalendarBecomeTombstones() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let window = DateInterval(start: Date(timeIntervalSince1970: 0), duration: 10_000)
+        let cloudMirrors = [
+            mirror(key: "kept"),
+            mirror(key: "vanished"),
+            mirror(key: "already-dead", deletedAt: Date(timeIntervalSince1970: 500))
+        ]
+
+        let tombstones = EventMirrorService().deletedMirrorTombstones(
+            existingEventKeys: ["kept"],
+            existingMirrors: cloudMirrors,
+            selectedCalendarIDs: ["sharecal"],
+            syncWindow: window,
+            deletedAt: now
+        )
+
+        XCTAssertEqual(tombstones.map(\.mirrorKey), ["vanished"])
+        XCTAssertEqual(tombstones.first?.deletedAt, now)
+        XCTAssertEqual(tombstones.first?.cloudKitRecordName, "vanished")
+    }
+
+    private func shadow(uploadedAt: Date?) -> LocalEventShadow {
+        LocalEventShadow(
+            id: "k",
+            localEventIdentifier: "e",
+            calendarIdentifier: "sharecal",
+            occurrenceStartDate: Date(timeIntervalSince1970: 0),
+            fingerprint: "f",
+            cloudKitRecordName: "k",
+            lastUploadedAt: uploadedAt,
+            isTombstone: false
+        )
+    }
+
+    private func mirror(key: String, owner: String = "_me", deletedAt: Date? = nil) -> EventMirror {
+        EventMirror(
+            id: key,
+            ownerMemberID: owner,
+            mirrorKey: key,
+            sourceCalendarID: "sharecal",
+            sourceCalendarTitle: "ShareCal",
+            occurrenceStartDate: Date(timeIntervalSince1970: 100),
+            startDate: Date(timeIntervalSince1970: 100),
+            endDate: Date(timeIntervalSince1970: 160),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Shanghai",
+            title: "Event",
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#FF2D55",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: deletedAt,
+            cloudKitRecordName: key
+        )
+    }
+}

@@ -572,6 +572,9 @@ struct RootView: View {
     private func continueUsingExistingICloudData() async throws {
         settings.lastSyncError = nil
         settings.iCloudSharingEnabled = true
+        if let cloudKit = services.cloudKitIfAvailable {
+            await ExistingICloudDataIdentityRecovery.restore(cloudKit: cloudKit, settings: settings)
+        }
         let didRun = await runForegroundSync(consumingAcceptedShareSignal: false, forceCloudKit: true)
         guard didRun else {
             let message = settings.strings.cloudKitSyncDisabledLocalBuild

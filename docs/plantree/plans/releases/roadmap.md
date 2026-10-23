@@ -1,8 +1,10 @@
 # Roadmap — releases
 
 ## In Progress
-- 🚧 **1.6 (build 35)**：#7 评论头像 + #20 头像同步乒乓修复 + #21 邀请过期/撤回 + #22 重装恢复 + #23 解除配对清理 + #24 自己日程可评论。版本号 PR #27（基于 #26 之后的 main）。schema 自 1.5 无变化，不需要部署 Production。
-  - 下一步：archive/upload → 更新 App Store 截图（[idea-003](../../ideas/inbox.md)）→ 填发布说明 → 提交审核（自动发布）。
+- ⏳ **1.6 (build 35)**：#7 评论头像 + #20 头像同步乒乓修复 + #21 邀请过期/撤回 + #22 重装恢复 + #23 解除配对清理 + #24 自己日程可评论。版本号 PR #27（基于 #26 之后的 main）。schema 自 1.5 无变化，不需要部署 Production。
+  - 2026-10-23：build 35 archive + upload 成功；App Store Connect 新建 1.6，选好构建 35，中英文发布说明已填；截图换成官网四张（日视图、评论、配对、我们），6.3" 与 6.7" 两组，见 `docs/screenshots/appstore/`，旧的 6.5" 截图已从 1.6 移除（[idea-003](../../ideas/inbox.md) ✅）。
+  - 2026-10-23：中文描述里的 ShareCal 改为 OurDays；用户确认后提交 App 审核（WAITING_FOR_REVIEW，审核通过后自动发布）。
+  - 下一步：审核通过 → 自动上架。
 
 ## Done
 - ✅ **1.5 (build 34)**（2026-10-21 上架，#6）：#3 UI 重设计 + #4 配对更换修复 + #5 日视图打磨。MemberProfile 三个头像字段已部署到 Production（cktool 核对）；archive/upload → 提交审核 → 自动发布。

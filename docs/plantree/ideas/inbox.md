@@ -35,7 +35,7 @@
 
 ## idea-003 App Store 截图换成新版 UI
 - **录入**：2026-10-22（用户）
-- **状态**：⏳ 待做，挂在 [plans/releases/](../plans/releases/) 1.6 的发布步骤里
+- **状态**：✅ 2026-10-23 完成：1.6 用官网四张渲染图（`docs/site/assets/*.webp` 居中铺到纸色画布，6.3" 1206×2622 + 6.7" 1290×2796），见 `docs/screenshots/appstore/` 与 [plans/releases/](../plans/releases/)
 - **原话**：下个版本把 App Store 的截图更新成新 UI。
 - **可行性快照**：官网 / README 已用 `docs/site/assets/*.webp`（由 promo 源页渲染）；App Store 需要按设备尺寸出图，可沿用同一渲染流程。
 

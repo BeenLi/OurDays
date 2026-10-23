@@ -21,7 +21,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 ## Active plans
 | Plan | Status | Current Phase | Last Landed | Next Target |
 |------|--------|---------------|-------------|-------------|
-| [releases](plans/releases/) | 🚧 1.6 待上传 | 1.6 (build 35) 版本号 PR 待合并 | 2026-10-21：1.5 (build 34) 上架 | archive/upload → 更新 App Store 截图 → 填发布说明 → 提交审核 |
+| [releases](plans/releases/) | 🚧 1.6 审核中 | 1.6 (build 35) 已于 2026-10-23 提交审核，过审自动发布 | 2026-10-23：#27 版本号合并；App Store 截图换成官网 4 张图 | 过审上架后刷新官网与 README 的版本说明 |
 | [docs-and-site](plans/docs-and-site/) | 🚧 In Progress | README 已对齐 main 至 #29 | 2026-10-23：#28 代码结构合成一棵树；#29 随改名更新 README / CLAUDE.md | 1.6 上架后刷新官网与 README 的版本说明 |
 
 ## Landed plans（已落地 / 已发布，只在回归时回看）
@@ -40,6 +40,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 顺序：先 activity-feed，后 notifications（用户决定，2026-06-14）。v2（上线后反馈修复）见 [decision 0002](plans/notifications/decisions/0002-silent-push-and-background-sync.md)（2026-06-16）。
 
 ## PR 索引（#1 起，按主题归档）
+每个 PR 自己那一行的合并列写「本 PR」，合并后由下一个 PR 改成日期，避免留下过期的"未合并"。
 每个 PR 的详细"原本怎样 / 为什么改 / 改成怎样"记在对应 plan 的 `decisions/`；这里只做查找表。
 
 | PR | 合并 | 主题 | 归属 plan |
@@ -64,11 +65,12 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #24 | 2026-10-23 | 自己的日程未同步也可先发起评论 | [comment-visibility](plans/comment-visibility/) |
 | #25 | 2026-10-23 | README 全面更新（同步架构、记录类型、代码结构） | [docs-and-site](plans/docs-and-site/) |
 | #26 | 2026-10-23 | README 精简同步架构、重画图、新增数据安全 | [docs-and-site](plans/docs-and-site/) |
-| #27 | 未合并 | 版本号 1.6 (35) | [releases](plans/releases/) |
+| #27 | 2026-10-23 | 版本号 1.6 (35) | [releases](plans/releases/) |
 | #28 | 2026-10-23 | README 代码结构合成一棵树 | [docs-and-site](plans/docs-and-site/) |
 | #29 | 2026-10-23 | `Plans/` → `Policies/`、`…Plan` → `…Policy`；源码按 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 分目录 | [code-structure](plans/code-structure/) |
 | #30 | 2026-10-23 | plantree 补录 PR #1–#28，归档过时的 plan | [docs-and-site](plans/docs-and-site/) |
-| #31 | 未合并 | CI 提速：文档改动不触发、PR 只跑单元测试、模拟器开机与编译并行 | [code-structure](plans/code-structure/roadmap.md) |
+| #31 | 2026-10-23 | CI 提速：文档改动不触发、PR 只跑单元测试、模拟器开机与编译并行 | [code-structure](plans/code-structure/roadmap.md) |
+| #32 | 本 PR | plantree：#27、#31 标为已合并，releases 状态改为审核中 | [code-structure](plans/code-structure/roadmap.md) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

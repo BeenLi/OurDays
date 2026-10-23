@@ -232,9 +232,13 @@ struct InvitationService {
         invitation.status = .declined
     }
 
+    /// The creator takes a pending invitation back. The record is the creator's own
+    /// (private zone), so the partner learns of it only when this status reaches
+    /// CloudKit; the upload flag keeps it queued until it does.
     func cancel(_ invitation: EventInvitation) {
         guard invitation.status == .pending else { return }
         invitation.status = .canceled
+        invitation.needsCloudKitUpload = true
     }
 
     func draft(from invitation: EventInvitation) -> LocalCalendarEventDraft {

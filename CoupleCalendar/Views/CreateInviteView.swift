@@ -278,6 +278,8 @@ struct CreateInviteView: View {
                 return settings.strings.emptyTitleError
             case .invalidDateRange:
                 return settings.strings.invalidDateRangeError
+            case .alreadyEnded:
+                return settings.strings.inviteAlreadyEndedError
             }
         }
         return error.localizedDescription

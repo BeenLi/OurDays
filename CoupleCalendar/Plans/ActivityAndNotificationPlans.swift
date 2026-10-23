@@ -39,10 +39,11 @@ enum PendingActionBadgePlan {
     static func count(
         invitations: [EventInvitation],
         accessRequests: [CalendarAccessRequest],
-        currentMemberID: String
+        currentMemberID: String,
+        now: Date = .now
     ) -> Int {
         let invitationCount = invitations.filter {
-            InvitationInteractionPlan.canRespond(to: $0, currentMemberID: currentMemberID)
+            InvitationInteractionPlan.canRespond(to: $0, currentMemberID: currentMemberID, now: now)
                 && $0.archivedAt == nil
         }.count
         return invitationCount + CalendarAccessRequestListPlan.pendingIncoming(

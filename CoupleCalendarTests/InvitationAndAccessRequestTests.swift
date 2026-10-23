@@ -688,12 +688,98 @@ final class InvitationServiceTests: XCTestCase {
             statusRawValue: InvitationStatus.pending.rawValue
         )
 
-        XCTAssertTrue(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "partner"))
-        XCTAssertFalse(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "me"))
+        let beforeEvent = Date(timeIntervalSince1970: 9_000)
+
+        XCTAssertTrue(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "partner", now: beforeEvent))
+        XCTAssertFalse(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "me", now: beforeEvent))
 
         invitation.status = .accepted
 
-        XCTAssertFalse(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "partner"))
+        XCTAssertFalse(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "partner", now: beforeEvent))
+    }
+
+    func testPendingInvitationCannotBeAnsweredOnceTheEventHasEnded() {
+        let invitation = EventInvitation(
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.pending.rawValue
+        )
+
+        // Still running: answerable right up to the end.
+        XCTAssertTrue(InvitationInteractionPlan.canRespond(
+            to: invitation, currentMemberID: "partner", now: Date(timeIntervalSince1970: 11_999)
+        ))
+        // Ended: nothing left to accept.
+        XCTAssertFalse(InvitationInteractionPlan.canRespond(
+            to: invitation, currentMemberID: "partner", now: Date(timeIntervalSince1970: 12_000)
+        ))
+    }
+
+    func testOnlyTheCreatorCanWithdrawAPendingUnexpiredInvitation() {
+        let invitation = EventInvitation(
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.pending.rawValue
+        )
+        let beforeEvent = Date(timeIntervalSince1970: 9_000)
+        let afterEvent = Date(timeIntervalSince1970: 13_000)
+
+        XCTAssertTrue(InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: "me", now: beforeEvent))
+        XCTAssertFalse(InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: "partner", now: beforeEvent))
+        XCTAssertFalse(InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: "me", now: afterEvent))
+
+        invitation.status = .declined
+        XCTAssertFalse(InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: "me", now: beforeEvent))
+    }
+
+    func testCancelMarksInvitationCanceledAndOwesACloudKitUpload() {
+        let invitation = EventInvitation(
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.pending.rawValue
+        )
+        let service = InvitationService()
+
+        service.cancel(invitation)
+
+        XCTAssertEqual(invitation.status, .canceled)
+        XCTAssertTrue(invitation.needsCloudKitUpload)
+        // The withdrawal rides the same self-heal path as an optimistic create, so a
+        // failed upload is re-pushed by the next sync instead of staying local-only.
+        XCTAssertEqual(
+            InvitationReuploadPlan.creationsNeedingReupload(local: [invitation], currentMemberID: "me").map(\.id),
+            [invitation.id]
+        )
+
+        // Already answered: nothing to take back.
+        let accepted = EventInvitation(
+            creatorMemberID: "me",
+            inviteeMemberID: "partner",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.accepted.rawValue
+        )
+        service.cancel(accepted)
+        XCTAssertEqual(accepted.status, .accepted)
+        XCTAssertFalse(accepted.needsCloudKitUpload)
     }
 
     func testCancelsAcceptedInvitationWhenCreatedLocalEventIsMissing() {
@@ -826,6 +912,46 @@ final class InvitationListPlanTests: XCTestCase {
         XCTAssertEqual(request.startDate, Date(timeIntervalSince1970: 10_000))
     }
 
+    func testExpiredPendingInvitationsMoveToHandledAndReadAsExpired() {
+        let now = Date(timeIntervalSince1970: 50_000)
+        let upcoming = invitation(id: "upcoming", status: .pending, startDate: Date(timeIntervalSince1970: 60_000))
+        let past = invitation(id: "past", status: .pending, startDate: Date(timeIntervalSince1970: 10_000))
+        let pastAccepted = invitation(id: "past-accepted", status: .accepted, startDate: Date(timeIntervalSince1970: 10_000))
+        let pastCanceled = invitation(id: "past-canceled", status: .canceled, startDate: Date(timeIntervalSince1970: 10_000))
+
+        let (pending, handled) = InvitationListPlan.partitionForDisplay(
+            [past, pastAccepted, upcoming, pastCanceled],
+            now: now
+        )
+
+        XCTAssertEqual(pending.map(\.id), ["upcoming"])
+        XCTAssertEqual(handled.map(\.id), ["past", "past-accepted", "past-canceled"])
+        XCTAssertEqual(InvitationListPlan.displayStatus(for: past, now: now), .expired)
+        XCTAssertEqual(InvitationListPlan.displayStatus(for: upcoming, now: now), .pending)
+        // A decision outlives the event: an accepted or canceled invitation never "expires".
+        XCTAssertEqual(InvitationListPlan.displayStatus(for: pastAccepted, now: now), .accepted)
+        XCTAssertEqual(InvitationListPlan.displayStatus(for: pastCanceled, now: now), .canceled)
+    }
+
+    func testExpiredIncomingInvitationDoesNotCountTowardsTheBadge() {
+        let expired = invitation(
+            id: "expired",
+            status: .pending,
+            creatorMemberID: "partner",
+            inviteeMemberID: "me",
+            startDate: Date(timeIntervalSince1970: 10_000)
+        )
+
+        let count = PendingActionBadgePlan.count(
+            invitations: [expired],
+            accessRequests: [],
+            currentMemberID: "me",
+            now: Date(timeIntervalSince1970: 50_000)
+        )
+
+        XCTAssertEqual(count, 0)
+    }
+
     func testPendingActionBadgeCountsRespondableInvitationsAndIncomingHistoryRequests() {
         let pendingInvite = invitation(
             id: "pending-invite",
@@ -862,7 +988,8 @@ final class InvitationListPlanTests: XCTestCase {
         let count = PendingActionBadgePlan.count(
             invitations: [pendingInvite, ownPendingInvite],
             accessRequests: [incomingHistory, outgoingHistory],
-            currentMemberID: "me"
+            currentMemberID: "me",
+            now: Date(timeIntervalSince1970: 9_000)
         )
 
         XCTAssertEqual(count, 2)
@@ -909,17 +1036,20 @@ final class CreateInvitePlanTests: XCTestCase {
             calendarColorHex: "#FF2D55"
         )
 
-        let localDraft = try CreateInvitePlan.localCalendarDraft(from: draft)
+        let now = Date(timeIntervalSince1970: 10_000)
+        let localDraft = try CreateInvitePlan.localCalendarDraft(from: draft, now: now)
         let mirror = try CreateInvitePlan.mirror(
             from: draft,
             createdEvent: createdEvent,
             ownerMemberID: "me",
-            timeZoneIdentifier: "Asia/Singapore"
+            timeZoneIdentifier: "Asia/Singapore",
+            now: now
         )
         let invitation = try CreateInvitePlan.invitation(
             from: draft,
             creatorMemberID: "me",
-            inviteeMemberID: "partner"
+            inviteeMemberID: "partner",
+            now: now
         )
 
         XCTAssertEqual(localDraft.title, "Weekend trip")
@@ -949,8 +1079,76 @@ final class CreateInvitePlanTests: XCTestCase {
             notes: nil
         )
 
-        XCTAssertThrowsError(try CreateInvitePlan.localCalendarDraft(from: emptyTitle))
-        XCTAssertThrowsError(try CreateInvitePlan.localCalendarDraft(from: invalidRange))
+        let now = Date(timeIntervalSince1970: 10_000)
+        XCTAssertThrowsError(try CreateInvitePlan.localCalendarDraft(from: emptyTitle, now: now)) { error in
+            XCTAssertEqual(error as? CreateInviteValidationError, .emptyTitle)
+        }
+        XCTAssertThrowsError(try CreateInvitePlan.localCalendarDraft(from: invalidRange, now: now)) { error in
+            XCTAssertEqual(error as? CreateInviteValidationError, .invalidDateRange)
+        }
+    }
+
+    func testRejectsInvitesForEventsThatHaveAlreadyEnded() {
+        let start = Date(timeIntervalSince1970: 20_000)
+        let draft = CreateInviteDraft(
+            title: "Weekend trip",
+            startDate: start,
+            endDate: start.addingTimeInterval(60 * 60),
+            isAllDay: false,
+            location: nil,
+            notes: nil
+        )
+
+        // Already started but not over: still fine to invite.
+        XCTAssertNoThrow(try CreateInvitePlan.localCalendarDraft(from: draft, now: start.addingTimeInterval(30 * 60)))
+        XCTAssertThrowsError(try CreateInvitePlan.localCalendarDraft(from: draft, now: start.addingTimeInterval(60 * 60))) { error in
+            XCTAssertEqual(error as? CreateInviteValidationError, .alreadyEnded)
+        }
+    }
+}
+
+final class InvitationTimingPlanTests: XCTestCase {
+    func testTimedEventEndsAtItsEndDate() {
+        let end = Date(timeIntervalSince1970: 12_000)
+
+        XCTAssertFalse(InvitationTimingPlan.hasEnded(endDate: end, isAllDay: false, now: Date(timeIntervalSince1970: 11_999)))
+        XCTAssertTrue(InvitationTimingPlan.hasEnded(endDate: end, isAllDay: false, now: end))
+        XCTAssertTrue(InvitationTimingPlan.canInvite(endDate: end, isAllDay: false, now: Date(timeIntervalSince1970: 5_000)))
+        XCTAssertFalse(InvitationTimingPlan.canInvite(endDate: end, isAllDay: false, now: Date(timeIntervalSince1970: 20_000)))
+    }
+
+    func testAllDayEventEndsAtTheMidnightAfterItsLastDay() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        // EventKit stores an all-day end inside the last day (23:59:59).
+        let lastDay = calendar.date(from: DateComponents(year: 2026, month: 10, day: 15, hour: 23, minute: 59, second: 59))!
+        let lateThatNight = calendar.date(from: DateComponents(year: 2026, month: 10, day: 15, hour: 23, minute: 59, second: 59, nanosecond: 500_000_000))!
+        let nextMidnight = calendar.date(from: DateComponents(year: 2026, month: 10, day: 16))!
+
+        XCTAssertFalse(InvitationTimingPlan.hasEnded(endDate: lastDay, isAllDay: true, now: lateThatNight, calendar: calendar))
+        XCTAssertTrue(InvitationTimingPlan.hasEnded(endDate: lastDay, isAllDay: true, now: nextMidnight, calendar: calendar))
+    }
+
+    func testOnlyPendingInvitationsExpire() {
+        let make: (InvitationStatus) -> EventInvitation = { status in
+            EventInvitation(
+                creatorMemberID: "me",
+                inviteeMemberID: "partner",
+                title: "Dinner",
+                startDate: Date(timeIntervalSince1970: 10_000),
+                endDate: Date(timeIntervalSince1970: 12_000),
+                location: nil,
+                notes: nil,
+                statusRawValue: status.rawValue
+            )
+        }
+        let after = Date(timeIntervalSince1970: 20_000)
+
+        XCTAssertTrue(InvitationTimingPlan.isExpired(make(.pending), now: after))
+        XCTAssertFalse(InvitationTimingPlan.isExpired(make(.pending), now: Date(timeIntervalSince1970: 11_000)))
+        XCTAssertFalse(InvitationTimingPlan.isExpired(make(.accepted), now: after))
+        XCTAssertFalse(InvitationTimingPlan.isExpired(make(.declined), now: after))
+        XCTAssertFalse(InvitationTimingPlan.isExpired(make(.canceled), now: after))
     }
 }
 

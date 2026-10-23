@@ -107,33 +107,37 @@ struct EventDetailView: View {
                     }
                 }
 
-                Section {
-                    Button {
-                        createInviteAfterConflictCheck()
-                    } label: {
-                        Label(strings.invitePartnerButton, systemImage: "person.badge.plus")
-                            .foregroundStyle(OurDaysTheme.ink)
-                    }
-                    // Optimistic send shows success instantly; disable to prevent a
-                    // double-tap creating a duplicate invitation within this sheet.
-                    .disabled(inviteSuccessMessage != nil)
+                // An invitation proposes something still to come: once the event has
+                // ended there is nothing to invite the partner to, so the section is gone.
+                if InvitationTimingPlan.canInvite(endDate: event.endDate, isAllDay: event.isAllDay, now: .now) {
+                    Section {
+                        Button {
+                            createInviteAfterConflictCheck()
+                        } label: {
+                            Label(strings.invitePartnerButton, systemImage: "person.badge.plus")
+                                .foregroundStyle(OurDaysTheme.ink)
+                        }
+                        // Optimistic send shows success instantly; disable to prevent a
+                        // double-tap creating a duplicate invitation within this sheet.
+                        .disabled(inviteSuccessMessage != nil)
 
-                    if let inviteSuccessMessage {
-                        Text(inviteSuccessMessage)
-                            .font(.caption)
-                            .foregroundStyle(OurDaysIdentity.me.onTint)
-                    }
+                        if let inviteSuccessMessage {
+                            Text(inviteSuccessMessage)
+                                .font(.caption)
+                                .foregroundStyle(OurDaysIdentity.me.onTint)
+                        }
 
-                    if let inviteError {
-                        Text(inviteError)
-                            .font(.caption)
-                            .foregroundStyle(OurDaysTheme.destructive)
+                        if let inviteError {
+                            Text(inviteError)
+                                .font(.caption)
+                                .foregroundStyle(OurDaysTheme.destructive)
+                        }
+                    } header: {
+                        Text(strings.inviteSection)
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                            .textCase(nil)
                     }
-                } header: {
-                    Text(strings.inviteSection)
-                        .font(.footnote.weight(.bold))
-                        .foregroundStyle(OurDaysTheme.secondaryInk)
-                        .textCase(nil)
                 }
 
                 // `event` may be my own transient "display:" mirror; resolve to the persisted

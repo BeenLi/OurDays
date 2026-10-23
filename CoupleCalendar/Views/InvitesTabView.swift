@@ -21,12 +21,7 @@ struct InvitesTabView: View {
     var body: some View {
         let strings = settings.strings
         let visibleInvitations = InvitationListPlan.visibleInvitations(invitations)
-        let pendingInvitations = InvitationListPlan.sortedForDisplay(
-            visibleInvitations.filter { $0.status == .pending }
-        )
-        let handledInvitations = InvitationListPlan.sortedForDisplay(
-            visibleInvitations.filter { $0.status != .pending }
-        )
+        let (pendingInvitations, handledInvitations) = InvitationListPlan.partitionForDisplay(visibleInvitations)
         let answerableCount = pendingInvitations.filter {
             InvitationInteractionPlan.canRespond(to: $0, currentMemberID: settings.currentMemberID)
         }.count
@@ -66,6 +61,8 @@ struct InvitesTabView: View {
                             accept(invitation)
                         } decline: {
                             decline(invitation)
+                        } withdraw: {
+                            withdraw(invitation)
                         }
                         .invitesRowStyle()
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -165,6 +162,30 @@ struct InvitesTabView: View {
             saveInvitationStatusToCloudKit(invitation)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Creator takes back a pending invitation. The status flips locally first (the
+    /// ticket leaves "pending" at once); the upload is owed until it lands, and
+    /// `InvitationReuploadPlan.creationsNeedingReupload` re-pushes it on the next sync
+    /// if this one fails, so the partner's copy always catches up.
+    private func withdraw(_ invitation: EventInvitation) {
+        services.invitationService.cancel(invitation)
+        do {
+            try modelContext.save()
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+        guard let cloudKit = services.cloudKitIfAvailable else { return }
+        Task {
+            do {
+                try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                invitation.needsCloudKitUpload = false
+                try? modelContext.save()
+            } catch {
+                errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+            }
         }
     }
 
@@ -285,6 +306,7 @@ struct InvitationTicket: View {
     let currentMemberID: String
     let accept: () -> Void
     let decline: () -> Void
+    let withdraw: () -> Void
 
     private var isFromMe: Bool { invitation.creatorMemberID == currentMemberID }
     private var senderIdentity: OurDaysIdentity { isFromMe ? .me : .partner }
@@ -293,6 +315,7 @@ struct InvitationTicket: View {
         let strings = settings.strings
         let locale = settings.appLanguage.locale
         let canRespond = InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: currentMemberID)
+        let canWithdraw = InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: currentMemberID)
 
         VStack(spacing: 0) {
             HStack(spacing: 0) {
@@ -353,6 +376,18 @@ struct InvitationTicket: View {
                         Button(strings.acceptAndAddButton, action: accept)
                             .buttonStyle(OurDaysPrimaryButtonStyle())
                     }
+                } else if canWithdraw {
+                    // The sender's stub: still waiting, with the one thing a sender can
+                    // do about an unanswered ticket — take it back.
+                    HStack(spacing: 10) {
+                        Text(strings.waitingForReplyLine(settings.partnerDisplayName))
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                        Button(strings.withdrawInvitationButton, action: withdraw)
+                            .buttonStyle(OurDaysSecondaryButtonStyle())
+                            .fixedSize()
+                    }
                 } else {
                     Text(strings.waitingForReplyLine(settings.partnerDisplayName))
                         .font(.footnote.weight(.medium))
@@ -403,7 +438,7 @@ struct TicketTearLine: View {
     }
 }
 
-/// A handled (accepted / declined / canceled) invitation: a compact row with its status.
+/// A handled (accepted / declined / canceled / expired) invitation: a compact row with its status.
 struct InvitationRow: View {
     @Environment(SettingsStore.self) private var settings
     let invitation: EventInvitation
@@ -416,6 +451,7 @@ struct InvitationRow: View {
         let strings = settings.strings
         let canOpenInCalendar = InvitationListPlan.canOpenInCalendar(invitation)
         let isFromMe = invitation.creatorMemberID == currentMemberID
+        let displayStatus = InvitationListPlan.displayStatus(for: invitation)
 
         HStack(spacing: 12) {
             Text(invitation.startDate.formatted(.dateTime.day()))
@@ -438,7 +474,7 @@ struct InvitationRow: View {
             Spacer(minLength: 8)
 
             OurDaysChip(
-                title: strings.invitationStatusTitle(for: invitation.status),
+                title: strings.invitationStatusTitle(for: displayStatus),
                 foreground: invitation.status == .accepted ? OurDaysTheme.ink : OurDaysTheme.secondaryInk,
                 background: invitation.status == .accepted ? OurDaysTheme.sunken : OurDaysTheme.paper
             )

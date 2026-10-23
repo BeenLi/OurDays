@@ -1,7 +1,7 @@
 import Foundation
 
 /// One line of "when" for an event detail header: "Jun 16, Tue · 19:30 – 21:30".
-enum EventDetailTimePlan {
+enum EventDetailTimePolicy {
     static func text(
         startDate: Date,
         endDate: Date,
@@ -27,7 +27,7 @@ enum EventDetailTimePlan {
     }
 }
 
-/// `DateFormatter()` costs milliseconds to build; the display plans format every visible
+/// `DateFormatter()` costs milliseconds to build; the display policies format every visible
 /// event, so configured formatters are kept per (format, locale, calendar, time zone).
 /// A formatter is never mutated after it is cached, which makes it safe to share.
 enum DateFormatterCache {
@@ -79,7 +79,7 @@ enum DateFormatterCache {
 
 /// The short "19:30 - 21:30" (or localized all-day) text used in lists, conflict
 /// banners and accessibility labels.
-enum EventTimeRangeTextPlan {
+enum EventTimeRangeTextPolicy {
     static func text(startDate: Date, endDate: Date, isAllDay: Bool, strings: ShareCalStrings) -> String {
         if isAllDay {
             return strings.allDay
@@ -96,7 +96,7 @@ enum EventTimeRangeTextPlan {
     }
 }
 
-enum CalendarSharingWindowPlan {
+enum CalendarSharingWindowPolicy {
     static let defaultEndDate = Date.distantFuture
 
     static func defaultWindows(now: Date = .now) -> [DateInterval] {
@@ -137,7 +137,7 @@ enum CalendarSharingWindowPlan {
     }
 }
 
-enum CalendarMirrorVisibilityPlan {
+enum CalendarMirrorVisibilityPolicy {
     static func memberMirrors(
         _ mirrors: [EventMirror],
         currentMemberID: String,
@@ -154,7 +154,7 @@ enum CalendarSetupGuidanceStep: Equatable {
     case pairing
 }
 
-enum CalendarSetupGuidancePlan {
+enum CalendarSetupGuidancePolicy {
     static func step(
         hasCompletedInitialProfilePrompt: Bool,
         currentDisplayName: String,
@@ -163,7 +163,7 @@ enum CalendarSetupGuidancePlan {
         pairingStatus: PairingStatus
     ) -> CalendarSetupGuidanceStep? {
         guard hasCompletedInitialProfilePrompt else { return nil }
-        guard PairingSettingsPlan.normalizedDisplayName(currentDisplayName) != nil else { return nil }
+        guard PairingSettingsPolicy.normalizedDisplayName(currentDisplayName) != nil else { return nil }
         guard authorizationState.canReadEvents && !selectedCalendarIDs.isEmpty else {
             return .calendarAccess
         }
@@ -177,7 +177,7 @@ enum CalendarSetupGuidancePlan {
     }
 }
 
-enum CalendarDisplayMirrorPlan {
+enum CalendarDisplayMirrorPolicy {
     static let transientIDPrefix = "display:"
 
     static func displayMirrors(
@@ -185,8 +185,8 @@ enum CalendarDisplayMirrorPlan {
         ownerMemberID: String
     ) -> [EventMirror] {
         events.map { event in
-            let fingerprint = EventMirrorKeyPlan.fingerprint(for: event)
-            let mirrorKey = EventMirrorKeyPlan.makeMirrorKey(
+            let fingerprint = EventMirrorKeyPolicy.fingerprint(for: event)
+            let mirrorKey = EventMirrorKeyPolicy.makeMirrorKey(
                 calendarIdentifier: event.calendarIdentifier,
                 eventIdentifier: event.eventIdentifier,
                 occurrenceStartDate: event.occurrenceStartDate,
@@ -216,18 +216,18 @@ enum CalendarDisplayMirrorPlan {
     }
 }
 
-enum EventDetailMirrorResolutionPlan {
+enum EventDetailMirrorResolutionPolicy {
     /// Resolves a possibly-transient display mirror (my own events render as `display:` mirrors,
-    /// see `CalendarDisplayMirrorPlan`) to its persisted twin, matched by the shared `mirrorKey`,
+    /// see `CalendarDisplayMirrorPolicy`) to its persisted twin, matched by the shared `mirrorKey`,
     /// so the detail's comment thread anchors to the real record id and routes writes correctly.
     /// A real mirror resolves to itself; a display mirror with no synced twin yet resolves to nil
     /// (nothing to comment on — and the partner couldn't have commented on an unsynced event).
     static func persistedTwin(for event: EventMirror, in mirrors: [EventMirror]) -> EventMirror? {
-        guard event.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) else {
+        guard event.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix) else {
             return event
         }
         return mirrors.first {
-            !$0.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) && $0.mirrorKey == event.mirrorKey
+            !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix) && $0.mirrorKey == event.mirrorKey
         }
     }
 }

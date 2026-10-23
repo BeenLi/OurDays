@@ -1,15 +1,15 @@
 import XCTest
 
-final class DayTimelineLayoutPlanTests: XCTestCase {
+final class DayTimelineLayoutPolicyTests: XCTestCase {
     func testProvidesTwentyFourAlignedHourMarks() {
-        let marks = DayTimelineLayoutPlan.hourMarks(hourHeight: 60)
+        let marks = DayTimelineLayoutPolicy.hourMarks(hourHeight: 60)
 
         XCTAssertEqual(marks.count, 24)
         XCTAssertEqual(marks.first?.hour, 0)
         XCTAssertEqual(marks.first?.y, 0)
         XCTAssertEqual(marks.last?.hour, 23)
         XCTAssertEqual(marks.last?.y, 23 * 60)
-        XCTAssertEqual(DayTimelineLayoutPlan.dayHeight(hourHeight: 60), 24 * 60)
+        XCTAssertEqual(DayTimelineLayoutPolicy.dayHeight(hourHeight: 60), 24 * 60)
     }
 
     func testPositionsEventByMinutesSinceStartOfDay() throws {
@@ -18,7 +18,7 @@ final class DayTimelineLayoutPlanTests: XCTestCase {
         let start = try XCTUnwrap(calendar.date(bySettingHour: 9, minute: 30, second: 0, of: dayStart))
         let end = try XCTUnwrap(calendar.date(bySettingHour: 10, minute: 45, second: 0, of: dayStart))
 
-        let frame = DayTimelineLayoutPlan.eventFrame(
+        let frame = DayTimelineLayoutPolicy.eventFrame(
             startDate: start,
             endDate: end,
             dayStart: dayStart,
@@ -35,7 +35,7 @@ final class DayTimelineLayoutPlanTests: XCTestCase {
         let start = dayStart.addingTimeInterval(-30 * 60)
         let end = dayStart.addingTimeInterval(90 * 60)
 
-        let frame = DayTimelineLayoutPlan.eventFrame(
+        let frame = DayTimelineLayoutPolicy.eventFrame(
             startDate: start,
             endDate: end,
             dayStart: dayStart,
@@ -47,7 +47,7 @@ final class DayTimelineLayoutPlanTests: XCTestCase {
     }
 }
 
-final class DayTimelineNowIndicatorPlanTests: XCTestCase {
+final class DayTimelineNowIndicatorPolicyTests: XCTestCase {
     private let calendar = Calendar(identifier: .gregorian)
 
     func testPositionsLineByMinutesSinceStartOfDayWhenViewingToday() throws {
@@ -55,7 +55,7 @@ final class DayTimelineNowIndicatorPlanTests: XCTestCase {
         let now = try XCTUnwrap(calendar.date(bySettingHour: 9, minute: 30, second: 0, of: dayStart))
 
         let indicator = try XCTUnwrap(
-            DayTimelineNowIndicatorPlan.indicator(now: now, dayStart: dayStart, hourHeight: 48, calendar: calendar)
+            DayTimelineNowIndicatorPolicy.indicator(now: now, dayStart: dayStart, hourHeight: 48, calendar: calendar)
         )
 
         XCTAssertEqual(indicator.y, 9.5 * 48, accuracy: 0.001)
@@ -67,29 +67,29 @@ final class DayTimelineNowIndicatorPlanTests: XCTestCase {
         let nowYesterday = dayStart.addingTimeInterval(-60)
         let nowTomorrow = dayStart.addingTimeInterval(24 * 60 * 60 + 60)
 
-        XCTAssertNil(DayTimelineNowIndicatorPlan.indicator(now: nowYesterday, dayStart: dayStart, hourHeight: 58, calendar: calendar))
-        XCTAssertNil(DayTimelineNowIndicatorPlan.indicator(now: nowTomorrow, dayStart: dayStart, hourHeight: 58, calendar: calendar))
+        XCTAssertNil(DayTimelineNowIndicatorPolicy.indicator(now: nowYesterday, dayStart: dayStart, hourHeight: 58, calendar: calendar))
+        XCTAssertNil(DayTimelineNowIndicatorPolicy.indicator(now: nowTomorrow, dayStart: dayStart, hourHeight: 58, calendar: calendar))
     }
 
     func testKeepsLineWithinTheDayAtBoundaries() throws {
         let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 20)))
-        let dayHeight = DayTimelineLayoutPlan.dayHeight(hourHeight: 58)
+        let dayHeight = DayTimelineLayoutPolicy.dayHeight(hourHeight: 58)
 
         let atMidnight = try XCTUnwrap(
-            DayTimelineNowIndicatorPlan.indicator(now: dayStart, dayStart: dayStart, hourHeight: 58, calendar: calendar)
+            DayTimelineNowIndicatorPolicy.indicator(now: dayStart, dayStart: dayStart, hourHeight: 58, calendar: calendar)
         )
         XCTAssertEqual(atMidnight.y, 0, accuracy: 0.001)
 
         let lastMinute = dayStart.addingTimeInterval(24 * 60 * 60 - 60)
         let nearEnd = try XCTUnwrap(
-            DayTimelineNowIndicatorPlan.indicator(now: lastMinute, dayStart: dayStart, hourHeight: 58, calendar: calendar)
+            DayTimelineNowIndicatorPolicy.indicator(now: lastMinute, dayStart: dayStart, hourHeight: 58, calendar: calendar)
         )
         XCTAssertLessThanOrEqual(nearEnd.y, dayHeight)
         XCTAssertGreaterThan(nearEnd.y, 0)
     }
 }
 
-final class DayTimelineJointLayoutPlanTests: XCTestCase {
+final class DayTimelineJointLayoutPolicyTests: XCTestCase {
     func testAssignsOverlappingJointEventsToSeparateColumns() {
         let first = jointEvent(
             id: "first",
@@ -107,7 +107,7 @@ final class DayTimelineJointLayoutPlanTests: XCTestCase {
             endDate: Date(timeIntervalSince1970: 14_000)
         )
 
-        let placements = DayTimelineJointLayoutPlan.placements(for: [first, second, third])
+        let placements = DayTimelineJointLayoutPolicy.placements(for: [first, second, third])
 
         XCTAssertEqual(placements["first"], DayTimelineJointPlacement(columnIndex: 0, columnCount: 2))
         XCTAssertEqual(placements["second"], DayTimelineJointPlacement(columnIndex: 1, columnCount: 2))
@@ -127,9 +127,9 @@ final class DayTimelineJointLayoutPlanTests: XCTestCase {
     }
 }
 
-final class DayTimelineScrollTargetPlanTests: XCTestCase {
+final class DayTimelineScrollTargetPolicyTests: XCTestCase {
     func testDefaultsInitialScrollTargetToEightAM() {
-        let targetY = DayTimelineScrollTargetPlan.defaultTargetY(hourHeight: 58)
+        let targetY = DayTimelineScrollTargetPolicy.defaultTargetY(hourHeight: 58)
 
         XCTAssertEqual(targetY, 464, accuracy: 0.001)
     }
@@ -148,7 +148,7 @@ final class DayTimelineScrollTargetPlanTests: XCTestCase {
             notes: nil
         )
 
-        let targetY = DayTimelineScrollTargetPlan.targetY(
+        let targetY = DayTimelineScrollTargetPolicy.targetY(
             for: event,
             dayStart: dayStart,
             hourHeight: 58,
@@ -163,7 +163,7 @@ final class DayTimelineScrollTargetPlanTests: XCTestCase {
         let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
         let now = dayStart.addingTimeInterval(20 * 60 * 60 + 15 * 60) // 20:15
 
-        let targetY = DayTimelineScrollTargetPlan.initialTargetY(
+        let targetY = DayTimelineScrollTargetPolicy.initialTargetY(
             now: now,
             dayStart: dayStart,
             eventStartDates: [dayStart.addingTimeInterval(9 * 60 * 60)],
@@ -180,7 +180,7 @@ final class DayTimelineScrollTargetPlanTests: XCTestCase {
         let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
         let otherDay = dayStart.addingTimeInterval(3 * 24 * 60 * 60)
 
-        let targetY = DayTimelineScrollTargetPlan.initialTargetY(
+        let targetY = DayTimelineScrollTargetPolicy.initialTargetY(
             now: otherDay,
             dayStart: dayStart,
             eventStartDates: [
@@ -201,7 +201,7 @@ final class DayTimelineScrollTargetPlanTests: XCTestCase {
         let otherDay = dayStart.addingTimeInterval(3 * 24 * 60 * 60)
 
         XCTAssertEqual(
-            DayTimelineScrollTargetPlan.initialTargetY(
+            DayTimelineScrollTargetPolicy.initialTargetY(
                 now: otherDay,
                 dayStart: dayStart,
                 eventStartDates: [dayStart.addingTimeInterval(10 * 60)],
@@ -212,7 +212,7 @@ final class DayTimelineScrollTargetPlanTests: XCTestCase {
             accuracy: 0.001
         )
         XCTAssertEqual(
-            DayTimelineScrollTargetPlan.initialTargetY(
+            DayTimelineScrollTargetPolicy.initialTargetY(
                 now: otherDay,
                 dayStart: dayStart,
                 eventStartDates: [],
@@ -225,7 +225,7 @@ final class DayTimelineScrollTargetPlanTests: XCTestCase {
     }
 }
 
-final class DayTimelineOverlapPlanTests: XCTestCase {
+final class DayTimelineOverlapPolicyTests: XCTestCase {
     private func span(_ id: String, _ start: TimeInterval, _ end: TimeInterval) -> DayTimelineTimedSpan {
         DayTimelineTimedSpan(
             id: id,
@@ -239,7 +239,7 @@ final class DayTimelineOverlapPlanTests: XCTestCase {
         let partnerCall = span("call", 19_500, 20_000)
         let myMorning = span("gym", 8_000, 9_000)
 
-        let spans = DayTimelineOverlapPlan.jointSpans(
+        let spans = DayTimelineOverlapPolicy.jointSpans(
             jointEvents: [dinner],
             myEvents: [myMorning],
             partnerEvents: [partnerCall]
@@ -251,7 +251,7 @@ final class DayTimelineOverlapPlanTests: XCTestCase {
     func testJointBlockKeepsFullWidthWhenLaneEventsOnlyTouchItsEdges() {
         let dinner = span("dinner", 19_000, 21_000)
 
-        let spans = DayTimelineOverlapPlan.jointSpans(
+        let spans = DayTimelineOverlapPolicy.jointSpans(
             jointEvents: [dinner],
             myEvents: [span("before", 18_000, 19_000)],
             partnerEvents: [span("after", 21_000, 22_000)]
@@ -261,7 +261,7 @@ final class DayTimelineOverlapPlanTests: XCTestCase {
     }
 
     func testOnlyLaneEventsOverlappingAJointBlockAreNarrowed() {
-        let narrowed = DayTimelineOverlapPlan.narrowedLaneEventIDs(
+        let narrowed = DayTimelineOverlapPolicy.narrowedLaneEventIDs(
             laneEvents: [span("call", 19_500, 20_000), span("gym", 8_000, 9_000)],
             jointEvents: [span("dinner", 19_000, 21_000)]
         )
@@ -270,17 +270,17 @@ final class DayTimelineOverlapPlanTests: XCTestCase {
     }
 }
 
-final class CalendarDateNavigationPlanTests: XCTestCase {
+final class CalendarDateNavigationPolicyTests: XCTestCase {
     func testMovesByDayOrWeekAndBuildsStripAroundSelectedDate() throws {
         let calendar = Calendar(identifier: .gregorian)
         let selected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7)))
 
         XCTAssertEqual(
-            CalendarDateNavigationPlan.date(afterMoving: selected, mode: .day, direction: .previous, calendar: calendar),
+            CalendarDateNavigationPolicy.date(afterMoving: selected, mode: .day, direction: .previous, calendar: calendar),
             try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 6)))
         )
         XCTAssertEqual(
-            CalendarDateNavigationPlan.date(afterMoving: selected, mode: .week, direction: .next, calendar: calendar),
+            CalendarDateNavigationPolicy.date(afterMoving: selected, mode: .week, direction: .next, calendar: calendar),
             try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 14)))
         )
     }
@@ -289,7 +289,7 @@ final class CalendarDateNavigationPlanTests: XCTestCase {
         let calendar = Calendar(identifier: .gregorian)
         let selected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 15)))
 
-        let result = CalendarDateNavigationPlan.selectionResult(for: selected)
+        let result = CalendarDateNavigationPolicy.selectionResult(for: selected)
 
         XCTAssertEqual(result.selectedDate, selected)
         XCTAssertEqual(result.mode, .day)
@@ -301,13 +301,13 @@ final class CalendarDateNavigationPlanTests: XCTestCase {
         let locale = Locale(identifier: "en_US_POSIX")
         let selected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 25)))
 
-        let dayTitle = CalendarDateNavigationPlan.compactTitle(
+        let dayTitle = CalendarDateNavigationPolicy.compactTitle(
             for: selected,
             mode: .day,
             calendar: calendar,
             locale: locale
         )
-        let weekTitle = CalendarDateNavigationPlan.compactTitle(
+        let weekTitle = CalendarDateNavigationPolicy.compactTitle(
             for: selected,
             mode: .week,
             calendar: calendar,
@@ -319,38 +319,38 @@ final class CalendarDateNavigationPlanTests: XCTestCase {
     }
 }
 
-final class CalendarSwipeNavigationPlanTests: XCTestCase {
+final class CalendarSwipeNavigationPolicyTests: XCTestCase {
     func testLeftSwipeMovesToNextAndRightSwipeMovesToPrevious() {
         XCTAssertEqual(
-            CalendarSwipeNavigationPlan.direction(horizontalTranslation: -80, verticalTranslation: 10),
+            CalendarSwipeNavigationPolicy.direction(horizontalTranslation: -80, verticalTranslation: 10),
             .next
         )
         XCTAssertEqual(
-            CalendarSwipeNavigationPlan.direction(horizontalTranslation: 80, verticalTranslation: -10),
+            CalendarSwipeNavigationPolicy.direction(horizontalTranslation: 80, verticalTranslation: -10),
             .previous
         )
     }
 
     func testMostlyVerticalDragDoesNotNavigate() {
         XCTAssertNil(
-            CalendarSwipeNavigationPlan.direction(horizontalTranslation: -60, verticalTranslation: 50)
+            CalendarSwipeNavigationPolicy.direction(horizontalTranslation: -60, verticalTranslation: 50)
         )
     }
 
     func testDragShorterThanMinimumDistanceDoesNotNavigate() {
         XCTAssertNil(
-            CalendarSwipeNavigationPlan.direction(horizontalTranslation: -30, verticalTranslation: 0)
+            CalendarSwipeNavigationPolicy.direction(horizontalTranslation: -30, verticalTranslation: 0)
         )
     }
 }
 
-final class HierarchicalDatePickerPlanTests: XCTestCase {
+final class HierarchicalDatePickerPolicyTests: XCTestCase {
     func testMonthGridIncludesLeadingAndTrailingDays() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 1
         let month = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 15)))
 
-        let days = HierarchicalDatePickerPlan.monthGrid(containing: month, calendar: calendar)
+        let days = HierarchicalDatePickerPolicy.monthGrid(containing: month, calendar: calendar)
 
         XCTAssertEqual(days.count, 42)
         XCTAssertEqual(days.first?.date, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 31))))
@@ -363,9 +363,9 @@ final class HierarchicalDatePickerPlanTests: XCTestCase {
         let selectedYear = try XCTUnwrap(calendar.date(from: DateComponents(year: 2030, month: 1, day: 1)))
         let selectedMonth = try XCTUnwrap(calendar.date(from: DateComponents(year: 2030, month: 11, day: 1)))
 
-        let yearNavigation = HierarchicalDatePickerPlan.selectYear(selectedYear, calendar: calendar)
-        let monthNavigation = HierarchicalDatePickerPlan.selectMonth(selectedMonth, calendar: calendar)
-        let days = HierarchicalDatePickerPlan.months(inYearContaining: visibleMonth, calendar: calendar)
+        let yearNavigation = HierarchicalDatePickerPolicy.selectYear(selectedYear, calendar: calendar)
+        let monthNavigation = HierarchicalDatePickerPolicy.selectMonth(selectedMonth, calendar: calendar)
+        let days = HierarchicalDatePickerPolicy.months(inYearContaining: visibleMonth, calendar: calendar)
 
         XCTAssertEqual(yearNavigation.level, .months)
         XCTAssertEqual(calendar.component(.year, from: yearNavigation.visibleMonth), 2030)
@@ -377,7 +377,7 @@ final class HierarchicalDatePickerPlanTests: XCTestCase {
     }
 }
 
-final class WeekAgendaPlanTests: XCTestCase {
+final class WeekAgendaPolicyTests: XCTestCase {
     func testBuildsSevenDayAgendaAndSortsMixedItemsByTime() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 2
@@ -407,7 +407,7 @@ final class WeekAgendaPlanTests: XCTestCase {
             notes: nil
         )
 
-        let days = WeekAgendaPlan.days(
+        let days = WeekAgendaPolicy.days(
             containing: selected,
             mirrors: [myEvent, partnerEvent],
             jointEvents: [jointEvent],
@@ -451,18 +451,18 @@ final class WeekAgendaPlanTests: XCTestCase {
     }
 }
 
-final class EventTimeRangeTextPlanTests: XCTestCase {
+final class EventTimeRangeTextPolicyTests: XCTestCase {
     func testAllDayUsesLocalizedLabelAndTimedEventsShowStartEnd() {
         let strings = ShareCalStrings(language: .english)
         let start = Date(timeIntervalSince1970: 1_000)
         let end = Date(timeIntervalSince1970: 4_600)
 
         XCTAssertEqual(
-            EventTimeRangeTextPlan.text(startDate: start, endDate: end, isAllDay: true, strings: strings),
+            EventTimeRangeTextPolicy.text(startDate: start, endDate: end, isAllDay: true, strings: strings),
             strings.allDay
         )
         XCTAssertEqual(
-            EventTimeRangeTextPlan.text(startDate: start, endDate: end, isAllDay: false, strings: strings),
+            EventTimeRangeTextPolicy.text(startDate: start, endDate: end, isAllDay: false, strings: strings),
             "\(start.formatted(date: .omitted, time: .shortened)) - \(end.formatted(date: .omitted, time: .shortened))"
         )
     }

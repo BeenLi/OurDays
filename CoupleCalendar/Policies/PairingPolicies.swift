@@ -1,9 +1,9 @@
 import Foundation
 
-enum ICloudSharingTeardownPlan {
+enum ICloudSharingTeardownPolicy {
     static func localOwnerIDsToPurge(partnerShareOwnerID: String?) -> Set<String> {
-        var ownerIDs = Set([partnerShareOwnerID].compactMap { MemberIDPlan.normalized($0) })
-        ownerIDs.insert(MemberIDPlan.unknownPartnerID)
+        var ownerIDs = Set([partnerShareOwnerID].compactMap { MemberIDPolicy.normalized($0) })
+        ownerIDs.insert(MemberIDPolicy.unknownPartnerID)
         return ownerIDs
     }
 }
@@ -16,14 +16,14 @@ enum PairingStatus: Equatable {
     case paired
 }
 
-enum PairingSettingsPlan {
+enum PairingSettingsPolicy {
     static func status(
         hasStartedPairing: Bool,
         outgoingParticipantIDs: [String],
         incomingOwnerID: String?
     ) -> PairingStatus {
-        let hasAcceptedOutgoingShare = !MemberIDPlan.normalizedList(outgoingParticipantIDs).isEmpty
-        let hasIncomingShare = MemberIDPlan.normalized(incomingOwnerID) != nil
+        let hasAcceptedOutgoingShare = !MemberIDPolicy.normalizedList(outgoingParticipantIDs).isEmpty
+        let hasIncomingShare = MemberIDPolicy.normalized(incomingOwnerID) != nil
         if hasAcceptedOutgoingShare && hasIncomingShare {
             return .paired
         }
@@ -44,10 +44,10 @@ enum PairingSettingsPlan {
         partnerSyncedDisplayName: String?,
         fallback: String
     ) -> String {
-        if let noteName = MemberIDPlan.normalized(partnerNoteName) {
+        if let noteName = MemberIDPolicy.normalized(partnerNoteName) {
             return noteName
         }
-        if let syncedDisplayName = MemberIDPlan.normalized(partnerSyncedDisplayName) {
+        if let syncedDisplayName = MemberIDPolicy.normalized(partnerSyncedDisplayName) {
             return syncedDisplayName
         }
         return fallback
@@ -59,8 +59,8 @@ enum PairingSettingsPlan {
         fallback: String,
         language: AppLanguage
     ) -> String {
-        let displayName = MemberIDPlan.normalized(partnerSyncedDisplayName) ?? fallback
-        guard let noteName = MemberIDPlan.normalized(partnerNoteName),
+        let displayName = MemberIDPolicy.normalized(partnerSyncedDisplayName) ?? fallback
+        guard let noteName = MemberIDPolicy.normalized(partnerNoteName),
               noteName != displayName else {
             return displayName
         }
@@ -76,7 +76,7 @@ enum PairingSettingsPlan {
     }
 
     static func normalizedDisplayName(_ displayName: String?) -> String? {
-        MemberIDPlan.normalized(displayName)
+        MemberIDPolicy.normalized(displayName)
     }
 }
 
@@ -114,7 +114,7 @@ struct ExistingICloudDataRecoveredState: Equatable {
     var avatar: MemberAvatar?
 }
 
-enum ExistingICloudDataRecoveryPlan {
+enum ExistingICloudDataRecoveryPolicy {
     static func recoveredState(
         shareRootCreatedAt: Date?,
         ownProfile: CloudKitMemberProfile?,
@@ -123,11 +123,11 @@ enum ExistingICloudDataRecoveryPlan {
     ) -> ExistingICloudDataRecoveredState {
         var state = ExistingICloudDataRecoveredState()
         if let shareRootCreatedAt, shareRootCreatedAt <= now {
-            state.pairingDate = PairingDatePlan.normalizedPairingDate(shareRootCreatedAt, calendar: calendar)
+            state.pairingDate = PairingDatePolicy.normalizedPairingDate(shareRootCreatedAt, calendar: calendar)
         }
-        if let ownProfile, let displayName = MemberIDPlan.normalized(ownProfile.displayName) {
+        if let ownProfile, let displayName = MemberIDPolicy.normalized(ownProfile.displayName) {
             state.displayName = displayName
-            state.avatar = MemberAvatarPlan.normalized(ownProfile.avatar)
+            state.avatar = MemberAvatarPolicy.normalized(ownProfile.avatar)
         }
         return state
     }
@@ -175,13 +175,13 @@ enum ExistingICloudDataRecoveryPlan {
         lastSyncAt: Date?
     ) -> Bool {
         guard !hasStartedPairing else { return false }
-        guard MemberIDPlan.normalized(partnerShareOwnerID) == nil else { return false }
-        guard !outgoingShareParticipantIDs.contains(where: { MemberIDPlan.normalized($0) != nil }) else { return false }
+        guard MemberIDPolicy.normalized(partnerShareOwnerID) == nil else { return false }
+        guard !outgoingShareParticipantIDs.contains(where: { MemberIDPolicy.normalized($0) != nil }) else { return false }
         return lastSyncAt == nil
     }
 }
 
-enum PairingSafetyEducationPlan {
+enum PairingSafetyEducationPolicy {
     static func shouldPresentNotice(
         pairingStatus: PairingStatus,
         hasPromptedPartnerNoteForCurrentPairing: Bool,
@@ -197,7 +197,7 @@ enum PairingSafetyEducationPlan {
     }
 }
 
-enum SharedPeoplePresentationPlan {
+enum SharedPeoplePresentationPolicy {
     static func canOpenOfficialSharing(
         isCloudKitEnabled: Bool,
         isPreparingShare: Bool,
@@ -216,7 +216,7 @@ enum TwoPersonPairingConflict: Equatable, Codable {
 /// The single decision point for two-person pairing. The partner is the iCloud
 /// user (CloudKit userRecordID) who owns the accepted shared zone, verified
 /// against the accepted participant of my outgoing share.
-enum TwoPersonPairingPlan {
+enum TwoPersonPairingPolicy {
     struct Resolution: Equatable {
         /// Owner of the active incoming shared zone; nil while waiting for the
         /// partner to share back (or when unpaired).
@@ -238,7 +238,7 @@ enum TwoPersonPairingPlan {
         outgoingAcceptedParticipantIDs: [String],
         sharedZoneOwnerIDs: [String]
     ) -> Resolution {
-        let storedPartnerID = MemberIDPlan.normalized(storedPartnerID)
+        let storedPartnerID = MemberIDPolicy.normalized(storedPartnerID)
         // Only CloudKit user record names (always "_"-prefixed) can be compared
         // against zone owner names; other identifier forms are display-only.
         let outgoingIDs = uniqueSorted(outgoingAcceptedParticipantIDs).filter { $0.hasPrefix("_") }
@@ -285,11 +285,11 @@ enum TwoPersonPairingPlan {
     }
 
     private static func uniqueSorted(_ ids: [String]) -> [String] {
-        Array(Set(ids.compactMap(MemberIDPlan.normalized))).sorted()
+        Array(Set(ids.compactMap(MemberIDPolicy.normalized))).sorted()
     }
 }
 
-enum TwoPersonPairingConflictPresentationPlan {
+enum TwoPersonPairingConflictPresentationPolicy {
     /// The people the user can choose between when resolving a conflict, in
     /// stable display order.
     static func candidateIDs(_ conflict: TwoPersonPairingConflict) -> [String] {
@@ -306,7 +306,7 @@ enum TwoPersonPairingConflictPresentationPlan {
     }
 }
 
-enum ShareAcceptanceGuardPlan {
+enum ShareAcceptanceGuardPolicy {
     static func requiresReplacementConfirmation(
         incomingOwnerID: String,
         storedPartnerID: String?,
@@ -314,10 +314,10 @@ enum ShareAcceptanceGuardPlan {
     ) -> Bool {
         let incomingOwnerID = incomingOwnerID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !incomingOwnerID.isEmpty else { return false }
-        if let storedPartnerID = MemberIDPlan.normalized(storedPartnerID) {
+        if let storedPartnerID = MemberIDPolicy.normalized(storedPartnerID) {
             return storedPartnerID != incomingOwnerID
         }
-        let outgoingIDs = Set(outgoingParticipantIDs.compactMap(MemberIDPlan.normalized).filter { $0.hasPrefix("_") })
+        let outgoingIDs = Set(outgoingParticipantIDs.compactMap(MemberIDPolicy.normalized).filter { $0.hasPrefix("_") })
         return !outgoingIDs.isEmpty && !outgoingIDs.contains(incomingOwnerID)
     }
 }
@@ -329,16 +329,16 @@ enum ShareAcceptanceGuardPlan {
 /// is not mine as "the partner", so on the new partner's device the old partner's words
 /// would read as mine, and my old pending invitations would be answerable by them.
 /// Two layers: delete the ex-partner's records from my zone when the partner leaves
-/// (`CloudKitExPartnerCleanupPlan`), and never import or keep a record whose other
+/// (`CloudKitExPartnerCleanupPolicy`), and never import or keep a record whose other
 /// party is neither me nor the current partner.
-enum PartnerScopedDataPlan {
+enum PartnerScopedDataPolicy {
     /// Only a real CloudKit userRecordID (`_`-prefixed) can be "someone else". The
     /// placeholders used before identities are known ("local-user", "partner") name
     /// nobody and are never treated as foreign.
     static func isForeign(_ memberID: String, currentMemberID: String, partnerID: String?) -> Bool {
-        guard let id = MemberIDPlan.normalized(memberID), id.hasPrefix("_") else { return false }
-        if id == MemberIDPlan.normalized(currentMemberID) { return false }
-        if let partnerID = MemberIDPlan.normalized(partnerID), id == partnerID { return false }
+        guard let id = MemberIDPolicy.normalized(memberID), id.hasPrefix("_") else { return false }
+        if id == MemberIDPolicy.normalized(currentMemberID) { return false }
+        if let partnerID = MemberIDPolicy.normalized(partnerID), id == partnerID { return false }
         return true
     }
 

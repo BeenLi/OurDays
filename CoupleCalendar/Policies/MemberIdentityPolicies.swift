@@ -28,7 +28,7 @@ struct MemberAvatar: Codable, Equatable {
     }
 }
 
-enum MemberAvatarPlan {
+enum MemberAvatarPolicy {
     /// Longest edge of a stored avatar photo, in pixels. Keeps the synced record small.
     static let imagePixelSize: CGFloat = 256
 
@@ -67,7 +67,7 @@ enum MemberAvatarPlan {
 }
 
 /// Placeholder member IDs used before the CloudKit identities are known.
-enum MemberIDPlan {
+enum MemberIDPolicy {
     /// Placeholder member ID used until the CloudKit userRecordID is known
     /// (and permanently in LOCAL_SIGNING builds without CloudKit).
     static let unsyncedMemberID = "local-user"
@@ -90,7 +90,7 @@ enum MemberIDPlan {
 
 /// Resolves a member ID (the CloudKit `_`-prefixed userRecordID) to a
 /// human-readable nickname. Member IDs must never be shown raw in the UI.
-enum MemberDisplayNamePlan {
+enum MemberDisplayNamePolicy {
     static func displayName(
         forMemberID memberID: String,
         currentMemberID: String,
@@ -99,7 +99,7 @@ enum MemberDisplayNamePlan {
         partnerDisplayName: String
     ) -> String {
         if memberID == currentMemberID {
-            return PairingSettingsPlan.normalizedDisplayName(currentDisplayName) ?? selfFallback
+            return PairingSettingsPolicy.normalizedDisplayName(currentDisplayName) ?? selfFallback
         }
         return partnerDisplayName
     }

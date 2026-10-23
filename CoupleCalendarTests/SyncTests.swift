@@ -1,10 +1,10 @@
 import SwiftData
 import XCTest
 
-final class ForegroundSyncPlanTests: XCTestCase {
+final class ForegroundSyncPolicyTests: XCTestCase {
     func testAllowsAutomaticSyncWhenThereIsNoPreviousSync() {
         XCTAssertTrue(
-            ForegroundSyncPlan.shouldRunAutomaticSync(
+            ForegroundSyncPolicy.shouldRunAutomaticSync(
                 lastSyncAt: nil,
                 now: Date(timeIntervalSince1970: 1_000),
                 syncPhase: .idle,
@@ -15,10 +15,10 @@ final class ForegroundSyncPlanTests: XCTestCase {
 
     func testSkipsAutomaticSyncWhenLastSyncIsWithinThrottleWindow() {
         let now = Date(timeIntervalSince1970: 1_000)
-        let lastSyncAt = now.addingTimeInterval(-(ForegroundSyncPlan.automaticThrottleInterval - 1))
+        let lastSyncAt = now.addingTimeInterval(-(ForegroundSyncPolicy.automaticThrottleInterval - 1))
 
         XCTAssertFalse(
-            ForegroundSyncPlan.shouldRunAutomaticSync(
+            ForegroundSyncPolicy.shouldRunAutomaticSync(
                 lastSyncAt: lastSyncAt,
                 now: now,
                 syncPhase: .idle,
@@ -31,15 +31,15 @@ final class ForegroundSyncPlanTests: XCTestCase {
         // Tester feedback flagged the previous 5-minute throttle as "too slow";
         // keep automatic refreshes within a minute so a partner's change shows up
         // shortly after re-foregrounding or switching tabs.
-        XCTAssertLessThanOrEqual(ForegroundSyncPlan.automaticThrottleInterval, 60)
+        XCTAssertLessThanOrEqual(ForegroundSyncPolicy.automaticThrottleInterval, 60)
     }
 
     func testAllowsAutomaticSyncWhenThrottleWindowHasElapsed() {
         let now = Date(timeIntervalSince1970: 1_000)
-        let lastSyncAt = now.addingTimeInterval(-ForegroundSyncPlan.automaticThrottleInterval)
+        let lastSyncAt = now.addingTimeInterval(-ForegroundSyncPolicy.automaticThrottleInterval)
 
         XCTAssertTrue(
-            ForegroundSyncPlan.shouldRunAutomaticSync(
+            ForegroundSyncPolicy.shouldRunAutomaticSync(
                 lastSyncAt: lastSyncAt,
                 now: now,
                 syncPhase: .idle,
@@ -50,7 +50,7 @@ final class ForegroundSyncPlanTests: XCTestCase {
 
     func testSkipsAutomaticSyncWhileSyncing() {
         XCTAssertFalse(
-            ForegroundSyncPlan.shouldRunAutomaticSync(
+            ForegroundSyncPolicy.shouldRunAutomaticSync(
                 lastSyncAt: nil,
                 now: Date(timeIntervalSince1970: 1_000),
                 syncPhase: .syncing,
@@ -64,7 +64,7 @@ final class ForegroundSyncPlanTests: XCTestCase {
         let lastSyncAt = now.addingTimeInterval(-1)
 
         XCTAssertTrue(
-            ForegroundSyncPlan.shouldRunAutomaticSync(
+            ForegroundSyncPolicy.shouldRunAutomaticSync(
                 lastSyncAt: lastSyncAt,
                 now: now,
                 syncPhase: .idle,
@@ -75,7 +75,7 @@ final class ForegroundSyncPlanTests: XCTestCase {
 
     func testPendingAcceptedShareDoesNotStartDuplicateSync() {
         XCTAssertFalse(
-            ForegroundSyncPlan.shouldRunAutomaticSync(
+            ForegroundSyncPolicy.shouldRunAutomaticSync(
                 lastSyncAt: nil,
                 now: Date(timeIntervalSince1970: 1_000),
                 syncPhase: .syncing,
@@ -85,10 +85,10 @@ final class ForegroundSyncPlanTests: XCTestCase {
     }
 }
 
-final class CloudKitForegroundSyncPlanTests: XCTestCase {
+final class CloudKitForegroundSyncPolicyTests: XCTestCase {
     func testSkipsCloudKitWhenSharingDisabledEvenIfForced() {
         XCTAssertFalse(
-            CloudKitForegroundSyncPlan.shouldRunCloudKit(
+            CloudKitForegroundSyncPolicy.shouldRunCloudKit(
                 iCloudSharingEnabled: false,
                 hasStartedPairing: true,
                 partnerShareOwnerID: "partner-owner",
@@ -100,7 +100,7 @@ final class CloudKitForegroundSyncPlanTests: XCTestCase {
 
     func testSkipsCloudKitBeforePairingWhenThereIsNoAcceptedShareSignal() {
         XCTAssertFalse(
-            CloudKitForegroundSyncPlan.shouldRunCloudKit(
+            CloudKitForegroundSyncPolicy.shouldRunCloudKit(
                 iCloudSharingEnabled: true,
                 hasStartedPairing: false,
                 partnerShareOwnerID: nil,
@@ -112,7 +112,7 @@ final class CloudKitForegroundSyncPlanTests: XCTestCase {
 
     func testRunsCloudKitForPairingSignalsOrAcceptedShareSignal() {
         XCTAssertTrue(
-            CloudKitForegroundSyncPlan.shouldRunCloudKit(
+            CloudKitForegroundSyncPolicy.shouldRunCloudKit(
                 iCloudSharingEnabled: true,
                 hasStartedPairing: true,
                 partnerShareOwnerID: nil,
@@ -121,7 +121,7 @@ final class CloudKitForegroundSyncPlanTests: XCTestCase {
             )
         )
         XCTAssertTrue(
-            CloudKitForegroundSyncPlan.shouldRunCloudKit(
+            CloudKitForegroundSyncPolicy.shouldRunCloudKit(
                 iCloudSharingEnabled: true,
                 hasStartedPairing: false,
                 partnerShareOwnerID: "partner-owner",
@@ -130,7 +130,7 @@ final class CloudKitForegroundSyncPlanTests: XCTestCase {
             )
         )
         XCTAssertTrue(
-            CloudKitForegroundSyncPlan.shouldRunCloudKit(
+            CloudKitForegroundSyncPolicy.shouldRunCloudKit(
                 iCloudSharingEnabled: true,
                 hasStartedPairing: false,
                 partnerShareOwnerID: nil,
@@ -139,7 +139,7 @@ final class CloudKitForegroundSyncPlanTests: XCTestCase {
             )
         )
         XCTAssertTrue(
-            CloudKitForegroundSyncPlan.shouldRunCloudKit(
+            CloudKitForegroundSyncPolicy.shouldRunCloudKit(
                 iCloudSharingEnabled: true,
                 hasStartedPairing: false,
                 partnerShareOwnerID: nil,
@@ -159,25 +159,25 @@ final class ShareCalModelContainerTests: XCTestCase {
     }
 }
 
-final class BackgroundRefreshSchedulePlanTests: XCTestCase {
+final class BackgroundRefreshSchedulePolicyTests: XCTestCase {
     func testSchedulesOnlyWhenCloudKitEnabledAndPairingActive() {
         // Unpaired install has nothing to fetch — don't spend background budget.
-        XCTAssertFalse(BackgroundRefreshSchedulePlan.shouldSchedule(
+        XCTAssertFalse(BackgroundRefreshSchedulePolicy.shouldSchedule(
             isCloudKitEnabled: true, hasStartedPairing: false,
             partnerShareOwnerID: nil, outgoingShareParticipantIDs: []
         ))
         // Pairing started (outgoing share created) — schedule.
-        XCTAssertTrue(BackgroundRefreshSchedulePlan.shouldSchedule(
+        XCTAssertTrue(BackgroundRefreshSchedulePolicy.shouldSchedule(
             isCloudKitEnabled: true, hasStartedPairing: true,
             partnerShareOwnerID: nil, outgoingShareParticipantIDs: []
         ))
         // Has a confirmed partner — schedule.
-        XCTAssertTrue(BackgroundRefreshSchedulePlan.shouldSchedule(
+        XCTAssertTrue(BackgroundRefreshSchedulePolicy.shouldSchedule(
             isCloudKitEnabled: true, hasStartedPairing: false,
             partnerShareOwnerID: "_partner", outgoingShareParticipantIDs: []
         ))
         // Outgoing participants present — schedule.
-        XCTAssertTrue(BackgroundRefreshSchedulePlan.shouldSchedule(
+        XCTAssertTrue(BackgroundRefreshSchedulePolicy.shouldSchedule(
             isCloudKitEnabled: true, hasStartedPairing: false,
             partnerShareOwnerID: nil, outgoingShareParticipantIDs: ["_p"]
         ))
@@ -185,7 +185,7 @@ final class BackgroundRefreshSchedulePlanTests: XCTestCase {
 
     func testNeverSchedulesWhenCloudKitDisabled() {
         // LOCAL_SIGNING / CloudKit-off builds must never arm a background sync.
-        XCTAssertFalse(BackgroundRefreshSchedulePlan.shouldSchedule(
+        XCTAssertFalse(BackgroundRefreshSchedulePolicy.shouldSchedule(
             isCloudKitEnabled: false, hasStartedPairing: true,
             partnerShareOwnerID: "_partner", outgoingShareParticipantIDs: ["_p"]
         ))
@@ -194,36 +194,36 @@ final class BackgroundRefreshSchedulePlanTests: XCTestCase {
     func testEarliestBeginDateClampsToFifteenMinuteFloor() {
         let now = Date(timeIntervalSince1970: 10_000)
         // iOS won't run BGAppRefresh more than ~once/15min; a smaller ask is clamped up.
-        let clamped = BackgroundRefreshSchedulePlan.earliestBeginDate(from: now, requestedInterval: 60)
-        XCTAssertEqual(clamped, now.addingTimeInterval(BackgroundRefreshSchedulePlan.minimumInterval))
+        let clamped = BackgroundRefreshSchedulePolicy.earliestBeginDate(from: now, requestedInterval: 60)
+        XCTAssertEqual(clamped, now.addingTimeInterval(BackgroundRefreshSchedulePolicy.minimumInterval))
         // A larger interval is respected verbatim.
-        let large = BackgroundRefreshSchedulePlan.earliestBeginDate(from: now, requestedInterval: 3_600)
+        let large = BackgroundRefreshSchedulePolicy.earliestBeginDate(from: now, requestedInterval: 3_600)
         XCTAssertEqual(large, now.addingTimeInterval(3_600))
-        XCTAssertEqual(BackgroundRefreshSchedulePlan.minimumInterval, 15 * 60)
+        XCTAssertEqual(BackgroundRefreshSchedulePolicy.minimumInterval, 15 * 60)
     }
 
     func testTaskIdentifierMatchesBundlePrefix() {
-        XCTAssertEqual(BackgroundRefreshSchedulePlan.taskIdentifier, "com.leeberty.CoupleCalendar.refresh")
+        XCTAssertEqual(BackgroundRefreshSchedulePolicy.taskIdentifier, "com.leeberty.CoupleCalendar.refresh")
     }
 }
 
-final class OwnMirrorReconciliationPlanTests: XCTestCase {
+final class OwnMirrorReconciliationPolicyTests: XCTestCase {
     func testReconcilesUntilOneUploadHasBeenConfirmedOnThisInstall() {
-        XCTAssertTrue(OwnMirrorReconciliationPlan.shouldReconcileWithCloud(existingShadows: []))
+        XCTAssertTrue(OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(existingShadows: []))
         // Shadows are written before the cloud step, so an unconfirmed shadow (a failed
         // or pre-pairing sync) must not end the reconciliation window.
         XCTAssertTrue(
-            OwnMirrorReconciliationPlan.shouldReconcileWithCloud(existingShadows: [shadow(uploadedAt: nil)])
+            OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(existingShadows: [shadow(uploadedAt: nil)])
         )
         XCTAssertFalse(
-            OwnMirrorReconciliationPlan.shouldReconcileWithCloud(
+            OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(
                 existingShadows: [shadow(uploadedAt: nil), shadow(uploadedAt: Date(timeIntervalSince1970: 1))]
             )
         )
     }
 
     func testOwnedMirrorsTakeTheCurrentMemberIDRegardlessOfTheUploadedOne() {
-        let owned = OwnMirrorReconciliationPlan.ownedMirrors(
+        let owned = OwnMirrorReconciliationPolicy.ownedMirrors(
             [mirror(key: "k", owner: "local-user")],
             currentMemberID: "_me"
         )

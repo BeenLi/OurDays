@@ -16,7 +16,7 @@ struct HierarchicalDatePickerSheet: View {
         _selectedDate = selectedDate
         _mode = mode
         _visibleMonth = State(
-            initialValue: HierarchicalDatePickerPlan.normalizedMonth(containing: selectedDate.wrappedValue)
+            initialValue: HierarchicalDatePickerPolicy.normalizedMonth(containing: selectedDate.wrappedValue)
         )
     }
 
@@ -90,7 +90,7 @@ struct HierarchicalDatePickerSheet: View {
                         .frame(maxWidth: .infinity)
                 }
 
-                ForEach(HierarchicalDatePickerPlan.monthGrid(containing: visibleMonth)) { day in
+                ForEach(HierarchicalDatePickerPolicy.monthGrid(containing: visibleMonth)) { day in
                     let isSelected = Calendar.current.isDate(day.date, inSameDayAs: selectedDate)
                     Button {
                         selectDay(day.date)
@@ -122,9 +122,9 @@ struct HierarchicalDatePickerSheet: View {
             }
 
             LazyVGrid(columns: monthColumns, spacing: 10) {
-                ForEach(HierarchicalDatePickerPlan.months(inYearContaining: visibleMonth), id: \.self) { month in
+                ForEach(HierarchicalDatePickerPolicy.months(inYearContaining: visibleMonth), id: \.self) { month in
                     Button {
-                        let navigation = HierarchicalDatePickerPlan.selectMonth(month)
+                        let navigation = HierarchicalDatePickerPolicy.selectMonth(month)
                         visibleMonth = navigation.visibleMonth
                         level = navigation.level
                     } label: {
@@ -141,7 +141,7 @@ struct HierarchicalDatePickerSheet: View {
     }
 
     private var yearsView: some View {
-        let years = HierarchicalDatePickerPlan.years(centeredOn: visibleMonth)
+        let years = HierarchicalDatePickerPolicy.years(centeredOn: visibleMonth)
 
         return VStack(spacing: 14) {
             HStack {
@@ -172,7 +172,7 @@ struct HierarchicalDatePickerSheet: View {
             LazyVGrid(columns: yearColumns, spacing: 10) {
                 ForEach(years, id: \.self) { year in
                     Button {
-                        let navigation = HierarchicalDatePickerPlan.selectYear(year)
+                        let navigation = HierarchicalDatePickerPolicy.selectYear(year)
                         visibleMonth = navigation.visibleMonth
                         level = navigation.level
                     } label: {
@@ -196,8 +196,8 @@ struct HierarchicalDatePickerSheet: View {
     }
 
     private func selectDay(_ date: Date) {
-        let navigation = HierarchicalDatePickerPlan.selectDay(date)
-        let selection = CalendarDateNavigationPlan.selectionResult(for: navigation.selectedDate ?? date)
+        let navigation = HierarchicalDatePickerPolicy.selectDay(date)
+        let selection = CalendarDateNavigationPolicy.selectionResult(for: navigation.selectedDate ?? date)
         selectedDate = selection.selectedDate
         mode = selection.mode
         dismiss()

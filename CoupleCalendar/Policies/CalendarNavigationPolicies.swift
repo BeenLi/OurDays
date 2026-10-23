@@ -12,7 +12,7 @@ struct WeekStripDay: Identifiable, Equatable {
 
 /// The seven days of the selected week, each flagged with whose schedules fall on it,
 /// so the week strip can show "who is busy that day" without opening the day.
-enum WeekStripPlan {
+enum WeekStripPolicy {
     static func days(
         containing selectedDate: Date,
         mine: [DateInterval],
@@ -52,7 +52,7 @@ struct CalendarDateSelectionResult: Equatable {
     let mode: CalendarMode
 }
 
-enum CalendarDateNavigationPlan {
+enum CalendarDateNavigationPolicy {
     static func date(
         afterMoving selectedDate: Date,
         mode: CalendarMode,
@@ -123,7 +123,7 @@ enum CalendarDateNavigationPlan {
     }
 }
 
-enum CalendarSwipeNavigationPlan {
+enum CalendarSwipeNavigationPolicy {
     static func direction(
         horizontalTranslation: CGFloat,
         verticalTranslation: CGFloat,
@@ -156,7 +156,7 @@ struct HierarchicalDatePickerNavigation: Equatable {
     let selectedDate: Date?
 }
 
-enum HierarchicalDatePickerPlan {
+enum HierarchicalDatePickerPolicy {
     static func normalizedMonth(containing date: Date, calendar: Calendar = .current) -> Date {
         let components = calendar.dateComponents([.year, .month], from: date)
         return calendar.date(from: components) ?? calendar.startOfDay(for: date)

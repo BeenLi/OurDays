@@ -83,7 +83,7 @@ struct EventCommentsSection: View {
     }
 
     private func authorDisplayName(_ authorMemberID: String) -> String {
-        MemberDisplayNamePlan.displayName(
+        MemberDisplayNamePolicy.displayName(
             forMemberID: authorMemberID,
             currentMemberID: settings.currentMemberID,
             currentDisplayName: settings.currentDisplayName,

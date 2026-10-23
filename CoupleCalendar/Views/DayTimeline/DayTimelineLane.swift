@@ -27,7 +27,7 @@ struct DayTimelineLane: View {
     }
 
     var dayHeight: CGFloat {
-        DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight) - offsetY
+        DayTimelineLayoutPolicy.dayHeight(hourHeight: hourHeight) - offsetY
     }
 
     var body: some View {
@@ -46,7 +46,7 @@ struct DayTimelineLane: View {
                     DayTimelineEventBlock(
                         event: event,
                         identity: identity,
-                        hasComments: EventCommentIndicatorPlan.hasComments(
+                        hasComments: EventCommentIndicatorPolicy.hasComments(
                             mirror: event,
                             commentedKeys: commentedAnchorKeys,
                             persistedIDByMirrorKey: persistedMirrorIDByKey
@@ -56,7 +56,7 @@ struct DayTimelineLane: View {
                 .buttonStyle(.plain)
                 .frame(width: blockWidth(isNarrowed: isNarrowed), height: eventHeight, alignment: .top)
                 .offset(x: blockX(isNarrowed: isNarrowed), y: eventY)
-                .accessibilityLabel("\(event.title), \(EventTimeRangeTextPlan.text(for: event, strings: settings.strings))")
+                .accessibilityLabel("\(event.title), \(EventTimeRangeTextPolicy.text(for: event, strings: settings.strings))")
             }
         }
         .frame(width: width, height: dayHeight, alignment: .topLeading)
@@ -67,7 +67,7 @@ struct DayTimelineLane: View {
             return DayTimelineEventFrame(y: 0, height: hourHeight)
         }
 
-        let frame = DayTimelineLayoutPlan.eventFrame(
+        let frame = DayTimelineLayoutPolicy.eventFrame(
             startDate: event.startDate,
             endDate: event.endDate,
             dayStart: dayStart,
@@ -80,7 +80,7 @@ struct DayTimelineLane: View {
 
 /// Small dot marking a calendar event that has at least one comment. Decorative
 /// (`accessibilityHidden`) so it doesn't disturb the buttons' existing accessibility labels;
-/// the visibility decision comes from `EventCommentIndicatorPlan`.
+/// the visibility decision comes from `EventCommentIndicatorPolicy`.
 struct CommentIndicatorDot: View {
     let isVisible: Bool
     var color: Color = OurDaysTheme.ink

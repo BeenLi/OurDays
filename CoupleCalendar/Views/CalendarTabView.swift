@@ -48,7 +48,7 @@ struct CalendarTabView: View {
     // Anchor keys that currently have at least one live comment. Leaf calendar views compare
     // an event's resolved anchor against this set to show the "has comments" red dot.
     var commentedAnchorKeys: Set<String> {
-        EventCommentIndicatorPlan.commentedAnchorKeys(comments)
+        EventCommentIndicatorPolicy.commentedAnchorKeys(comments)
     }
 
     // My own events render as transient "display:" mirrors whose id is not what comments are
@@ -56,14 +56,14 @@ struct CalendarTabView: View {
     // (and its resolution) also fires for "partner commented on my event".
     var persistedMirrorIDByKey: [String: String] {
         var map: [String: String] = [:]
-        for mirror in mirrors where !mirror.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) {
+        for mirror in mirrors where !mirror.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix) {
             map[mirror.mirrorKey] = mirror.id
         }
         return map
     }
 
     var isPaired: Bool {
-        PairingSettingsPlan.status(
+        PairingSettingsPolicy.status(
             hasStartedPairing: settings.hasStartedPairing,
             outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
             incomingOwnerID: settings.partnerShareOwnerID
@@ -71,7 +71,7 @@ struct CalendarTabView: View {
     }
 
     var visibleMirrors: [EventMirror] {
-        CalendarMirrorVisibilityPlan.memberMirrors(
+        CalendarMirrorVisibilityPolicy.memberMirrors(
             activeMirrors,
             currentMemberID: settings.currentMemberID,
             partnerShareOwnerID: settings.partnerShareOwnerID
@@ -81,7 +81,7 @@ struct CalendarTabView: View {
     }
 
     var acceptedJointEvents: [JointScheduleEvent] {
-        JointSchedulePlan.jointEvents(
+        JointSchedulePolicy.jointEvents(
             from: invitations,
             currentMemberID: settings.currentMemberID,
             partnerMemberID: settings.partnerOwnerIDForLocalData
@@ -95,7 +95,7 @@ struct CalendarTabView: View {
     }
 
     var visibleOrdinaryMirrors: [EventMirror] {
-        JointSchedulePlan.ordinaryMirrors(
+        JointSchedulePolicy.ordinaryMirrors(
             visibleLocalDisplayMirrors + visiblePartnerMirrors,
             excluding: visibleJointEvents
         )
@@ -103,7 +103,7 @@ struct CalendarTabView: View {
 
     var visibleLocalDisplayMirrors: [EventMirror] {
         localDisplayMirrors.filter { mirror in
-            WeekStripPlan.overlaps(
+            WeekStripPolicy.overlaps(
                 DateInterval(start: mirror.startDate, end: max(mirror.endDate, mirror.startDate)),
                 visibleInterval
             )
@@ -119,12 +119,12 @@ struct CalendarTabView: View {
         func interval(_ start: Date, _ end: Date) -> DateInterval {
             DateInterval(start: start, end: max(end, start))
         }
-        let partnerWeekMirrors = CalendarMirrorVisibilityPlan.memberMirrors(
+        let partnerWeekMirrors = CalendarMirrorVisibilityPolicy.memberMirrors(
             activeMirrors,
             currentMemberID: settings.currentMemberID,
             partnerShareOwnerID: settings.partnerShareOwnerID
         ).filter { $0.ownerMemberID == settings.partnerShareOwnerID }
-        return WeekStripPlan.days(
+        return WeekStripPolicy.days(
             containing: selectedDate,
             mine: localDisplayMirrors.map { interval($0.startDate, $0.endDate) },
             partner: partnerWeekMirrors.map { interval($0.startDate, $0.endDate) },
@@ -135,7 +135,7 @@ struct CalendarTabView: View {
     /// "配对第 N 天": the pairing day is day 1.
     var pairingDayCount: Int? {
         guard isPaired, let pairingDate = settings.pairingDate else { return nil }
-        return PairingDatePlan.ordinalDayNumber(since: pairingDate)
+        return PairingDatePolicy.ordinalDayNumber(since: pairingDate)
     }
 
     var myEvents: [EventMirror] {
@@ -156,7 +156,7 @@ struct CalendarTabView: View {
     }
 
     var weekAgendaDays: [WeekAgendaDay] {
-        WeekAgendaPlan.days(
+        WeekAgendaPolicy.days(
             containing: selectedDate,
             mirrors: visibleOrdinaryMirrors,
             jointEvents: visibleJointEvents,
@@ -186,12 +186,12 @@ struct CalendarTabView: View {
     }
 
     var setupGuidanceStep: CalendarSetupGuidanceStep? {
-        CalendarSetupGuidancePlan.step(
+        CalendarSetupGuidancePolicy.step(
             hasCompletedInitialProfilePrompt: settings.hasCompletedInitialProfilePrompt,
             currentDisplayName: settings.currentDisplayName,
             authorizationState: authorizationState,
             selectedCalendarIDs: settings.selectedCalendarIDs,
-            pairingStatus: PairingSettingsPlan.status(
+            pairingStatus: PairingSettingsPolicy.status(
                 hasStartedPairing: settings.hasStartedPairing,
                 outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
                 incomingOwnerID: settings.partnerShareOwnerID
@@ -206,7 +206,7 @@ struct CalendarTabView: View {
             CompactCalendarTopBar(
                 selectedDate: $selectedDate,
                 mode: $mode,
-                title: CalendarDateNavigationPlan.compactTitle(for: selectedDate, mode: mode, locale: settings.appLanguage.locale),
+                title: CalendarDateNavigationPolicy.compactTitle(for: selectedDate, mode: mode, locale: settings.appLanguage.locale),
                 subtitle: strings.calendarHeaderSubtitle(
                     weekdayText: selectedDate.formatted(.dateTime.weekday(.wide).locale(settings.appLanguage.locale)),
                     pairingDayCount: pairingDayCount
@@ -350,7 +350,7 @@ struct CalendarTabView: View {
     private var swipeNavigationGesture: some Gesture {
         DragGesture(minimumDistance: 20)
             .onEnded { value in
-                guard let direction = CalendarSwipeNavigationPlan.direction(
+                guard let direction = CalendarSwipeNavigationPolicy.direction(
                     horizontalTranslation: value.translation.width,
                     verticalTranslation: value.translation.height
                 ) else { return }
@@ -360,7 +360,7 @@ struct CalendarTabView: View {
 
     private func moveSelectedDate(_ direction: CalendarNavigationDirection) {
         withAnimation(.easeInOut(duration: 0.16)) {
-            selectedDate = CalendarDateNavigationPlan.date(
+            selectedDate = CalendarDateNavigationPolicy.date(
                 afterMoving: selectedDate,
                 mode: mode,
                 direction: direction
@@ -374,7 +374,7 @@ struct CalendarTabView: View {
             to: weekInterval.end
         )
         let selectedCalendarIDs = settings.selectedCalendarIDs
-        localDisplayMirrors = CalendarDisplayMirrorPlan.displayMirrors(
+        localDisplayMirrors = CalendarDisplayMirrorPolicy.displayMirrors(
             from: sourceEvents.filter { selectedCalendarIDs.contains($0.calendarIdentifier) },
             ownerMemberID: settings.currentMemberID
         )

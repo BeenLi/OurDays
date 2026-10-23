@@ -40,7 +40,7 @@ enum MemberProfileRecordMapper {
             zoneID: zoneID
         )
         let record = existingRecord ?? CKRecord(recordType: recordType, recordID: recordID)
-        CloudKitShareHierarchyPlan.attach(record, toShareRoot: parentRecordID)
+        CloudKitShareHierarchyPolicy.attach(record, toShareRoot: parentRecordID)
         apply(profile, to: record)
         return record
     }
@@ -81,7 +81,7 @@ enum MemberProfileRecordMapper {
     @discardableResult
     static func applyAvatar(_ avatar: MemberAvatar?, to record: CKRecord) -> Bool {
         var didChange = false
-        let avatar = MemberAvatarPlan.normalized(avatar)
+        let avatar = MemberAvatarPolicy.normalized(avatar)
         let imageData = avatar?.imageData
         if (record[Key.avatarImage] as? Data) != imageData {
             record[Key.avatarImage] = imageData.map { $0 as NSData }
@@ -101,7 +101,7 @@ enum MemberProfileRecordMapper {
     }
 
     static func avatar(from record: CKRecord) -> MemberAvatar? {
-        MemberAvatarPlan.normalized(
+        MemberAvatarPolicy.normalized(
             MemberAvatar(
                 text: record[Key.avatarText] as? String,
                 background: (record[Key.avatarBackground] as? String).flatMap(AvatarBackground.init(rawValue:)),
@@ -139,16 +139,16 @@ enum MemberProfileRecordMapper {
     }
 }
 
-enum MemberProfileDisplayPlan {
+enum MemberProfileDisplayPolicy {
     static func partnerSyncedDisplayName(
         from profiles: [CloudKitMemberProfile],
         partnerID: String?
     ) -> String? {
-        guard let partnerID = MemberIDPlan.normalized(partnerID) else { return nil }
+        guard let partnerID = MemberIDPolicy.normalized(partnerID) else { return nil }
         return profiles
             .filter { profile in
-                MemberIDPlan.normalized(profile.ownerMemberID) == partnerID
-                    && MemberIDPlan.normalized(profile.displayName) != nil
+                MemberIDPolicy.normalized(profile.ownerMemberID) == partnerID
+                    && MemberIDPolicy.normalized(profile.displayName) != nil
             }
             .sorted {
                 if $0.updatedAt == $1.updatedAt {
@@ -165,19 +165,19 @@ enum MemberProfileDisplayPlan {
         from profiles: [CloudKitMemberProfile],
         partnerID: String?
     ) -> MemberAvatar? {
-        guard let partnerID = MemberIDPlan.normalized(partnerID) else { return nil }
+        guard let partnerID = MemberIDPolicy.normalized(partnerID) else { return nil }
         return profiles
-            .filter { MemberIDPlan.normalized($0.ownerMemberID) == partnerID }
+            .filter { MemberIDPolicy.normalized($0.ownerMemberID) == partnerID }
             .max { $0.updatedAt < $1.updatedAt }
-            .flatMap { MemberAvatarPlan.normalized($0.avatar) }
+            .flatMap { MemberAvatarPolicy.normalized($0.avatar) }
     }
 }
 
-enum MemberProfileAvatarSchemaFallbackPlan {
+enum MemberProfileAvatarSchemaFallbackPolicy {
     /// CloudKit rejects a write that introduces a field the Production schema doesn't have
     /// with `invalidArguments` (possibly wrapped in a `partialFailure`).
     static func shouldRetryWithoutAvatar(error: Error, profile: CloudKitMemberProfile) -> Bool {
-        guard MemberAvatarPlan.normalized(profile.avatar) != nil else { return false }
+        guard MemberAvatarPolicy.normalized(profile.avatar) != nil else { return false }
         guard let ckError = error as? CKError else { return false }
         if ckError.code == .invalidArguments { return true }
         if ckError.code == .partialFailure {
@@ -189,7 +189,7 @@ enum MemberProfileAvatarSchemaFallbackPlan {
     }
 }
 
-enum CloudKitBatchUpsertPlan {
+enum CloudKitBatchUpsertPolicy {
     static func recordIDs(forMirrors mirrors: [EventMirror], zoneID: CKRecordZone.ID) -> [CKRecord.ID] {
         uniqued(
             mirrors.map { mirror in
@@ -243,7 +243,7 @@ enum CloudKitBatchUpsertPlan {
     }
 }
 
-enum CloudKitForegroundQueryPlan {
+enum CloudKitForegroundQueryPolicy {
     static func desiredKeys(forRecordType recordType: String) -> [String]? {
         switch recordType {
         case EventMirrorRecordMapper.recordType:
@@ -302,7 +302,7 @@ enum CloudKitForegroundQueryPlan {
     }
 }
 
-enum CloudKitRecordQueryFailurePlan {
+enum CloudKitRecordQueryFailurePolicy {
     static func canTreatMissingRecordTypeAsEmpty(recordType: String, error: Error) -> Bool {
         recordType == MemberProfileRecordMapper.recordType && isMissingRecordType(error)
     }
@@ -371,7 +371,7 @@ enum EventMirrorRecordMapper {
     ) -> CKRecord {
         let recordName = mirror.cloudKitRecordName ?? mirror.mirrorKey
         let record = existingRecord ?? CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
-        CloudKitShareHierarchyPlan.attach(record, toShareRoot: parentRecordID)
+        CloudKitShareHierarchyPolicy.attach(record, toShareRoot: parentRecordID)
         record[Key.ownerMemberID] = mirror.ownerMemberID as CKRecordValue
         record[Key.mirrorKey] = mirror.mirrorKey as CKRecordValue
         record[Key.sourceCalendarID] = mirror.sourceCalendarID as CKRecordValue
@@ -453,7 +453,7 @@ enum InvitationRecordMapper {
     ) -> CKRecord {
         let recordName = invitation.cloudKitRecordName ?? invitation.id
         let record = existingRecord ?? CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
-        CloudKitShareHierarchyPlan.attach(record, toShareRoot: parentRecordID)
+        CloudKitShareHierarchyPolicy.attach(record, toShareRoot: parentRecordID)
         record[Key.creatorMemberID] = invitation.creatorMemberID as CKRecordValue
         record[Key.inviteeMemberID] = invitation.inviteeMemberID as CKRecordValue
         record[Key.title] = invitation.title as CKRecordValue
@@ -529,7 +529,7 @@ enum CalendarAccessRequestRecordMapper {
     ) -> CKRecord {
         let recordName = recordName(for: request)
         let record = existingRecord ?? CKRecord(recordType: transportRecordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
-        CloudKitShareHierarchyPlan.attach(record, toShareRoot: parentRecordID)
+        CloudKitShareHierarchyPolicy.attach(record, toShareRoot: parentRecordID)
         record[InvitationRecordMapper.Key.creatorMemberID] = request.requesterMemberID as CKRecordValue
         record[InvitationRecordMapper.Key.inviteeMemberID] = request.ownerMemberID as CKRecordValue
         record[InvitationRecordMapper.Key.title] = "ShareCal History Access Request" as CKRecordValue
@@ -600,7 +600,7 @@ enum CommentRecordMapper {
     ) -> CKRecord {
         let recordName = comment.cloudKitRecordName ?? comment.id
         let record = existingRecord ?? CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
-        CloudKitShareHierarchyPlan.attach(record, toShareRoot: parentRecordID)
+        CloudKitShareHierarchyPolicy.attach(record, toShareRoot: parentRecordID)
         record[Key.eventMirrorID] = comment.eventMirrorID as CKRecordValue
         record[Key.authorMemberID] = comment.authorMemberID as CKRecordValue
         record[Key.body] = comment.body as CKRecordValue

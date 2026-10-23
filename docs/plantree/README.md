@@ -67,6 +67,8 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #27 | 未合并 | 版本号 1.6 (35) | [releases](plans/releases/) |
 | #28 | 2026-10-23 | README 代码结构合成一棵树 | [docs-and-site](plans/docs-and-site/) |
 | #29 | 2026-10-23 | `Plans/` → `Policies/`、`…Plan` → `…Policy`；源码按 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 分目录 | [code-structure](plans/code-structure/) |
+| #30 | 2026-10-23 | plantree 补录 PR #1–#28，归档过时的 plan | [docs-and-site](plans/docs-and-site/) |
+| #31 | 未合并 | CI 提速：文档改动不触发、PR 只跑单元测试、模拟器开机与编译并行 | [code-structure](plans/code-structure/roadmap.md) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

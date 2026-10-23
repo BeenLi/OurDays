@@ -76,7 +76,7 @@ struct InvitesTabView: View {
                         }
                     }
                 } header: {
-                    OurDaysSectionLabel(title: strings.invitationStatusTitle(for: .pending)).textCase(nil)
+                    OurDaysSectionLabel(title: strings.invitationStatusTitle(for: InvitationStatus.pending)).textCase(nil)
                 }
             }
 

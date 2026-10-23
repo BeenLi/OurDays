@@ -60,7 +60,7 @@ launch_app() { # launch_app <udid> <console-log-name> [args...]
   CONSOLE_LOG="$CONSOLE_DIR/$logname.log"
   : > "$CONSOLE_LOG"
   (xcrun simctl launch --console-pty "$udid" "$BUNDLE_ID" \
-     "${seed_args[@]}" "$@" > "$CONSOLE_LOG" 2>&1 &)
+     ${seed_args[@]+"${seed_args[@]}"} "$@" > "$CONSOLE_LOG" 2>&1 &)
 }
 
 wait_for_console() { # wait_for_console <console-log> <pattern> <timeout-seconds> <description>
@@ -131,7 +131,14 @@ seed_defaults() { # skip first-run sheets that would otherwise block automation
 read_default() { # read_default <udid> <key>
   local plist
   plist="$(xcrun simctl get_app_container "$1" "$BUNDLE_ID" data 2>/dev/null)/Library/Preferences/$BUNDLE_ID.plist"
-  plutil -extract "$2" raw "$plist" 2>/dev/null || echo "(none)"
+  # plutil prints "missing file/key" errors on *stdout*, so test the exit code
+  # instead of relying on `|| echo`.
+  local value
+  if value="$(plutil -extract "$2" raw "$plist" 2>/dev/null)"; then
+    echo "$value"
+  else
+    echo "(none)"
+  fi
 }
 
 # ---------- 0. Build & install ----------
@@ -432,7 +439,14 @@ log "Owner: deleting and reinstalling the app (fresh install, no seeded defaults
 xcrun simctl uninstall "$OWNER_UDID" "$BUNDLE_ID"
 xcrun simctl install "$OWNER_UDID" "$APP_PATH"
 xcrun simctl privacy "$OWNER_UDID" grant calendar "$BUNDLE_ID" 2>/dev/null || true
-[ "$(read_default "$OWNER_UDID" partnerShareOwnerID)" = "(none)" ] || fail "uninstall did not clear the owner's UserDefaults"
+# get_app_container can still point at the old container for a moment after
+# uninstall; give it a few seconds before concluding the defaults survived.
+for _ in $(seq 1 30); do
+  [ "$(read_default "$OWNER_UDID" partnerShareOwnerID)" = "(none)" ] && break
+  sleep 1
+done
+[ "$(read_default "$OWNER_UDID" partnerShareOwnerID)" = "(none)" ] \
+  || fail "uninstall did not clear the owner's UserDefaults (partnerShareOwnerID=$(read_default "$OWNER_UDID" partnerShareOwnerID))"
 
 log "Owner: recovering from existing iCloud data (the 「继续使用现有 iCloud 数据」 path)..."
 SMOKE_FRESH_INSTALL=1 launch_app "$OWNER_UDID" "owner-recover" -ShareCalRecoverExistingICloudData

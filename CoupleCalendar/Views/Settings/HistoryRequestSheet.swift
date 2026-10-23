@@ -16,7 +16,7 @@ struct HistoryRequestSheet: View {
     ) {
         self.pairingDate = pairingDate
         self.onSend = onSend
-        let range = initialRange ?? PairingDatePlan.defaultHistoryRequestRange(pairingDate: pairingDate)
+        let range = initialRange ?? PairingDatePolicy.defaultHistoryRequestRange(pairingDate: pairingDate)
         _startDate = State(initialValue: range.start)
         _endDate = State(initialValue: range.end)
     }
@@ -74,15 +74,15 @@ struct HistoryRequestSheet: View {
     }
 
     private var maxSelectableDate: Date {
-        PairingDatePlan.displayedEndDate(
-            forExclusiveEndDate: PairingDatePlan.normalizedPairingDate(pairingDate)
+        PairingDatePolicy.displayedEndDate(
+            forExclusiveEndDate: PairingDatePolicy.normalizedPairingDate(pairingDate)
         )
     }
 
     private func send() {
         let calendar = Calendar.current
         let normalizedStartDate = calendar.startOfDay(for: startDate)
-        let exclusiveEndDate = PairingDatePlan.exclusiveEndDate(forDisplayedEndDate: endDate, calendar: calendar)
+        let exclusiveEndDate = PairingDatePolicy.exclusiveEndDate(forDisplayedEndDate: endDate, calendar: calendar)
         guard exclusiveEndDate > normalizedStartDate else {
             validationMessage = settings.strings.invalidAccessRequestRangeMessage
             return

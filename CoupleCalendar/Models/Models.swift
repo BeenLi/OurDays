@@ -146,7 +146,7 @@ final class LocalEventShadow {
     var isTombstone: Bool
 
     var mirrorKey: String {
-        EventMirrorKeyPlan.makeMirrorKey(
+        EventMirrorKeyPolicy.makeMirrorKey(
             calendarIdentifier: calendarIdentifier,
             eventIdentifier: localEventIdentifier,
             occurrenceStartDate: occurrenceStartDate,
@@ -441,7 +441,7 @@ enum ShareCalLocalDataCleanupService {
     }
 
     /// Drops every cached comment / invitation / access request whose other party is
-    /// neither me nor the current partner (`PartnerScopedDataPlan`). Self-healing: runs
+    /// neither me nor the current partner (`PartnerScopedDataPolicy`). Self-healing: runs
     /// after each import so stale ex-partner rows never outlive a partner change.
     static func purgeForeignPartnerData(
         currentMemberID: String,
@@ -450,17 +450,17 @@ enum ShareCalLocalDataCleanupService {
     ) throws {
         var didDelete = false
         for comment in try modelContext.fetch(FetchDescriptor<EventComment>())
-            where PartnerScopedDataPlan.isForeign(comment, currentMemberID: currentMemberID, partnerID: partnerID) {
+            where PartnerScopedDataPolicy.isForeign(comment, currentMemberID: currentMemberID, partnerID: partnerID) {
             modelContext.delete(comment)
             didDelete = true
         }
         for invitation in try modelContext.fetch(FetchDescriptor<EventInvitation>())
-            where PartnerScopedDataPlan.isForeign(invitation, currentMemberID: currentMemberID, partnerID: partnerID) {
+            where PartnerScopedDataPolicy.isForeign(invitation, currentMemberID: currentMemberID, partnerID: partnerID) {
             modelContext.delete(invitation)
             didDelete = true
         }
         for request in try modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())
-            where PartnerScopedDataPlan.isForeign(request, currentMemberID: currentMemberID, partnerID: partnerID) {
+            where PartnerScopedDataPolicy.isForeign(request, currentMemberID: currentMemberID, partnerID: partnerID) {
             modelContext.delete(request)
             didDelete = true
         }

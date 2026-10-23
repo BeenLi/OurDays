@@ -9,10 +9,10 @@ enum ShareCalLaunchDiagnostics {
         modelContext: ModelContext,
         arguments: [String] = ProcessInfo.processInfo.arguments
     ) async {
-        if ShareCalLaunchDiagnosticPlan.shouldSeedCalendarEvent(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldSeedCalendarEvent(arguments: arguments) {
             do {
                 let eventID = try services.calendarAccess.ensureShareCalSmokeTestEvent(
-                    draft: ShareCalLaunchDiagnosticPlan.seedCalendarEventDraft(arguments: arguments)
+                    draft: ShareCalLaunchDiagnosticPolicy.seedCalendarEventDraft(arguments: arguments)
                 )
                 NSLog("ShareCal seeded calendar event: \(eventID)")
             } catch {
@@ -20,7 +20,7 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
-        if let title = ShareCalLaunchDiagnosticPlan.deleteCalendarEventTitle(arguments: arguments) {
+        if let title = ShareCalLaunchDiagnosticPolicy.deleteCalendarEventTitle(arguments: arguments) {
             do {
                 let count = try services.calendarAccess.deleteShareCalEvents(titled: title)
                 NSLog("%@ deleteCalendarEvent succeeded title=%@ count=%d", diag, title, count)
@@ -29,17 +29,17 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
-        if ShareCalLaunchDiagnosticPlan.shouldRunCloudKitWriteProbe(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldRunCloudKitWriteProbe(arguments: arguments) {
             await services.cloudKit.runPrivateDatabaseWriteProbe()
         }
 
-        if ShareCalLaunchDiagnosticPlan.shouldRunSharedReadProbe(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldRunSharedReadProbe(arguments: arguments) {
             let diagnostic = await services.cloudKit.sharedReadDiagnostic()
             NSLog("ShareCal shared read probe:\n\(diagnostic.displayText)")
             NSLog("ShareCal shared read probe proves no access: \(diagnostic.provesNoSharedCalendarReadAccess)")
         }
 
-        if ShareCalLaunchDiagnosticPlan.shouldRunStopSharingProbe(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldRunStopSharingProbe(arguments: arguments) {
             do {
                 try await services.cloudKit.stopSharing(ownerMemberID: settings.currentMemberID)
                 NSLog("ShareCal stop sharing probe succeeded")
@@ -48,13 +48,13 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
-        if ShareCalLaunchDiagnosticPlan.shouldPreparePairingShare(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldPreparePairingShare(arguments: arguments) {
             do {
                 if !settings.hasSyncedMemberID {
                     settings.currentMemberID = try await services.cloudKit.fetchCurrentUserRecordID()
                 }
-                if PairingSettingsPlan.normalizedDisplayName(settings.currentDisplayName) == nil {
-                    settings.currentDisplayName = PairingSettingsPlan.randomDisplayName()
+                if PairingSettingsPolicy.normalizedDisplayName(settings.currentDisplayName) == nil {
+                    settings.currentDisplayName = PairingSettingsPolicy.randomDisplayName()
                     settings.hasCompletedInitialProfilePrompt = true
                 }
                 let preparedShare = try await services.cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
@@ -67,7 +67,7 @@ enum ShareCalLaunchDiagnostics {
                 settings.markPairingDateIfNeeded()
                 NSLog(
                     "%@ %@",
-                    ShareCalLaunchDiagnosticPlan.pairingShareURLLogPrefix,
+                    ShareCalLaunchDiagnosticPolicy.pairingShareURLLogPrefix,
                     preparedShare.share.url?.absoluteString ?? "missing"
                 )
             } catch {
@@ -75,7 +75,7 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
-        if let shareURL = ShareCalLaunchDiagnosticPlan.acceptShareURL(arguments: arguments) {
+        if let shareURL = ShareCalLaunchDiagnosticPolicy.acceptShareURL(arguments: arguments) {
             do {
                 let metadata = try await services.cloudKit.fetchShareMetadata(from: shareURL)
                 ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
@@ -85,7 +85,7 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
-        if ShareCalLaunchDiagnosticPlan.shouldForceSync(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldForceSync(arguments: arguments) {
             // Reuses the accepted-share signal channel: RootView consumes it and
             // runs a foreground sync that bypasses the automatic-sync throttle.
             ShareCalAcceptedShareSignal.markAccepted(partnerOwnerID: nil)
@@ -94,46 +94,46 @@ enum ShareCalLaunchDiagnostics {
         // Joint-event / comment smoke flow. Each handler that needs current data runs
         // its own direct foreground sync (the force-sync signal above is consumed by
         // RootView asynchronously, so it can't be relied on within this task).
-        if ShareCalLaunchDiagnosticPlan.shouldRecoverExistingICloudData(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldRecoverExistingICloudData(arguments: arguments) {
             await recoverExistingICloudData(services: services, settings: settings, modelContext: modelContext)
         }
-        if ShareCalLaunchDiagnosticPlan.shouldSeedInvitation(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldSeedInvitation(arguments: arguments) {
             await seedInvitation(services: services, settings: settings, modelContext: modelContext, arguments: arguments)
         }
-        if ShareCalLaunchDiagnosticPlan.shouldAcceptInvitation(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldAcceptInvitation(arguments: arguments) {
             await acceptInvitation(services: services, settings: settings, modelContext: modelContext)
         }
-        if let invitationID = ShareCalLaunchDiagnosticPlan.withdrawInvitationID(arguments: arguments) {
+        if let invitationID = ShareCalLaunchDiagnosticPolicy.withdrawInvitationID(arguments: arguments) {
             await withdrawInvitation(id: invitationID, services: services, settings: settings, modelContext: modelContext)
         }
-        if ShareCalLaunchDiagnosticPlan.shouldProbeInvitations(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldProbeInvitations(arguments: arguments) {
             await probeInvitations(services: services, settings: settings, modelContext: modelContext)
         }
-        if let body = ShareCalLaunchDiagnosticPlan.jointCommentBody(arguments: arguments) {
+        if let body = ShareCalLaunchDiagnosticPolicy.jointCommentBody(arguments: arguments) {
             await addJointComment(body: body, services: services, settings: settings, modelContext: modelContext)
         }
-        if ShareCalLaunchDiagnosticPlan.shouldProbeJointComments(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldProbeJointComments(arguments: arguments) {
             await probeJointComments(services: services, settings: settings, modelContext: modelContext)
         }
-        if let body = ShareCalLaunchDiagnosticPlan.ordinaryCommentBody(arguments: arguments) {
+        if let body = ShareCalLaunchDiagnosticPolicy.ordinaryCommentBody(arguments: arguments) {
             await seedOrdinaryComment(body: body, services: services, settings: settings, modelContext: modelContext)
         }
-        if let body = ShareCalLaunchDiagnosticPlan.eventCommentBody(arguments: arguments) {
+        if let body = ShareCalLaunchDiagnosticPolicy.eventCommentBody(arguments: arguments) {
             await addEventComment(
                 body: body,
-                title: ShareCalLaunchDiagnosticPlan.eventCommentTitle(arguments: arguments),
+                title: ShareCalLaunchDiagnosticPolicy.eventCommentTitle(arguments: arguments),
                 services: services, settings: settings, modelContext: modelContext
             )
         }
-        if ShareCalLaunchDiagnosticPlan.shouldProbeEventComments(arguments: arguments) {
+        if ShareCalLaunchDiagnosticPolicy.shouldProbeEventComments(arguments: arguments) {
             await probeEventComments(
-                title: ShareCalLaunchDiagnosticPlan.eventCommentTitle(arguments: arguments),
+                title: ShareCalLaunchDiagnosticPolicy.eventCommentTitle(arguments: arguments),
                 services: services, settings: settings, modelContext: modelContext
             )
         }
     }
 
-    private static let diag = ShareCalLaunchDiagnosticPlan.diagnosticLogPrefix
+    private static let diag = ShareCalLaunchDiagnosticPolicy.diagnosticLogPrefix
 
     private static func runForegroundSync(
         services: AppServices, settings: SettingsStore, modelContext: ModelContext
@@ -159,8 +159,8 @@ enum ShareCalLaunchDiagnostics {
     ) async {
         do {
             _ = try? services.calendarAccess.ensureShareCalSmokeTestEvent()
-            let title = ShareCalLaunchDiagnosticPlan.seedInvitationTitle(arguments: arguments)
-                ?? ShareCalSmokeTestEventPlan.title
+            let title = ShareCalLaunchDiagnosticPolicy.seedInvitationTitle(arguments: arguments)
+                ?? ShareCalSmokeTestEventPolicy.title
             let window = services.calendarAccess.authorizedEvents(
                 from: Date().addingTimeInterval(-2 * 24 * 3600),
                 to: Date().addingTimeInterval(8 * 24 * 3600)
@@ -270,7 +270,7 @@ enum ShareCalLaunchDiagnostics {
             NSLog("%@ withdrawInvitation failed: no invitation id=%@", diag, id)
             return
         }
-        guard InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: settings.currentMemberID) else {
+        guard InvitationInteractionPolicy.canWithdraw(invitation, currentMemberID: settings.currentMemberID) else {
             NSLog("%@ withdrawInvitation failed: not withdrawable id=%@ status=%@ creator=%@ me=%@",
                   diag, id, invitation.statusRawValue, invitation.creatorMemberID, settings.currentMemberID)
             return
@@ -302,7 +302,7 @@ enum ShareCalLaunchDiagnostics {
     }
 
     /// Either side: sync, find the joint (accepted) invitation, add a comment anchored to
-    /// it (routed by `EventCommentAnchorPlan`), and upload.
+    /// it (routed by `EventCommentAnchorPolicy`), and upload.
     private static func addJointComment(
         body: String, services: AppServices, settings: SettingsStore, modelContext: ModelContext
     ) async {
@@ -311,7 +311,7 @@ enum ShareCalLaunchDiagnostics {
             NSLog("%@ addJointComment failed: no accepted invitation", diag)
             return
         }
-        let anchor = EventCommentAnchorPlan.anchor(forInvitation: invitation)
+        let anchor = EventCommentAnchorPolicy.anchor(forInvitation: invitation)
         let comment = services.commentService.createComment(
             eventMirrorID: anchor.key,
             authorMemberID: settings.currentMemberID,
@@ -344,7 +344,7 @@ enum ShareCalLaunchDiagnostics {
             NSLog("%@ jointComments count=0 (no accepted invitation)", diag)
             return
         }
-        let anchor = EventCommentAnchorPlan.anchor(forInvitation: invitation)
+        let anchor = EventCommentAnchorPolicy.anchor(forInvitation: invitation)
         let comments = ((try? modelContext.fetch(FetchDescriptor<EventComment>())) ?? [])
             .filter { $0.eventMirrorID == anchor.key && $0.deletedAt == nil }
             .sorted { $0.createdAt < $1.createdAt }
@@ -354,7 +354,7 @@ enum ShareCalLaunchDiagnostics {
 
     /// Either side: comment on the event with the given title. On the owner the event is
     /// found in EventKit and opened exactly like the calendar does — as a transient display
-    /// mirror run through `EventDetailCommentPlan` — so the comment is keyed by the mirrorKey
+    /// mirror run through `EventDetailCommentPolicy` — so the comment is keyed by the mirrorKey
     /// whether or not the mirror has synced yet (that is the "start a thread on my own event"
     /// path). On the partner there is no such EventKit event, so the imported persisted mirror
     /// is used and the write routes into the owner's shared zone. A sync follows the upload so
@@ -369,30 +369,30 @@ enum ShareCalLaunchDiagnostics {
             from: now.addingTimeInterval(-7 * 86_400),
             to: now.addingTimeInterval(7 * 86_400)
         ).filter { selectedCalendarIDs.contains($0.calendarIdentifier) && $0.title == title }
-        let displayMirrors = CalendarDisplayMirrorPlan.displayMirrors(
+        let displayMirrors = CalendarDisplayMirrorPolicy.displayMirrors(
             from: ownEvents, ownerMemberID: settings.currentMemberID
         )
 
         let anchor: EventCommentAnchor
         let resolution: String
         if let display = displayMirrors.first {
-            let sharingWindows = CalendarSharingWindowPlan.effectiveWindows(
-                now: settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(now),
+            let sharingWindows = CalendarSharingWindowPolicy.effectiveWindows(
+                now: settings.pairingDate ?? PairingDatePolicy.normalizedPairingDate(now),
                 accessRequests: (try? modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())) ?? []
             )
-            switch EventDetailCommentPlan.availability(for: display, mirrors: persisted, sharingWindows: sharingWindows) {
+            switch EventDetailCommentPolicy.availability(for: display, mirrors: persisted, sharingWindows: sharingWindows) {
             case .available(let resolved):
                 anchor = resolved
-                let twin = EventDetailMirrorResolutionPlan.persistedTwin(for: display, in: persisted)
+                let twin = EventDetailMirrorResolutionPolicy.persistedTwin(for: display, in: persisted)
                 resolution = "own twin=\(twin?.id ?? "none")"
             case .notSharedWithPartner:
                 NSLog("%@ addEventComment failed: own event '%@' is outside the sharing windows", diag, title)
                 return
             }
         } else if let mirror = persisted.first(where: {
-            $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix)
+            $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
         }) {
-            anchor = EventCommentAnchorPlan.anchor(forMirror: mirror)
+            anchor = EventCommentAnchorPolicy.anchor(forMirror: mirror)
             resolution = "persisted owner=\(mirror.ownerMemberID)"
         } else {
             NSLog("%@ addEventComment failed: no event titled '%@' (EventKit or persisted)", diag, title)
@@ -433,12 +433,12 @@ enum ShareCalLaunchDiagnostics {
         await runForegroundSync(services: services, settings: settings, modelContext: modelContext)
         let mirrors = (try? modelContext.fetch(FetchDescriptor<EventMirror>())) ?? []
         guard let mirror = mirrors.first(where: {
-            $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix)
+            $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
         }) else {
             NSLog("%@ eventComments title=%@ count=0 (no persisted mirror)", diag, title)
             return
         }
-        let anchor = EventCommentAnchorPlan.anchor(forMirror: mirror)
+        let anchor = EventCommentAnchorPolicy.anchor(forMirror: mirror)
         let comments = ((try? modelContext.fetch(FetchDescriptor<EventComment>())) ?? [])
             .filter { $0.eventMirrorID == anchor.key && $0.deletedAt == nil }
             .sorted { $0.createdAt < $1.createdAt }
@@ -464,12 +464,12 @@ enum ShareCalLaunchDiagnostics {
             $0.deletedAt == nil
                 && $0.ownerMemberID == settings.currentMemberID
                 && $0.title == ordinaryCommentEventTitle
-                && !$0.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix)
+                && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
         }) else {
             NSLog("%@ seedOrdinaryComment failed: no persisted mirror titled %@", diag, ordinaryCommentEventTitle)
             return
         }
-        let anchor = EventCommentAnchorPlan.anchor(forMirror: mine)
+        let anchor = EventCommentAnchorPolicy.anchor(forMirror: mine)
         // Author as the partner (any non-self id renders as "Partner") so it reads as
         // "partner commented on my event".
         let comment = services.commentService.createComment(

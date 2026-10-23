@@ -214,7 +214,7 @@ final class EventMirrorServiceTests: XCTestCase {
 
     func testFiltersMirrorsAndShadowsToAllowedSharingWindows() {
         let pairingDate = Date(timeIntervalSince1970: 100_000)
-        let window = CalendarSharingWindowPlan.defaultWindows(now: pairingDate)[0]
+        let window = CalendarSharingWindowPolicy.defaultWindows(now: pairingDate)[0]
         let oldEvent = calendarEvent(id: "old", startDate: pairingDate.addingTimeInterval(-60))
         let pairedDayEvent = calendarEvent(id: "paired-day", startDate: pairingDate.addingTimeInterval(60))
         let futureEvent = calendarEvent(id: "future", startDate: pairingDate.addingTimeInterval(10 * 24 * 60 * 60))
@@ -239,7 +239,7 @@ final class EventMirrorServiceTests: XCTestCase {
 
     func testBuildsHardDeleteRecordNamesForOutOfWindowMirrorsWithoutTombstones() {
         let pairingDate = Date(timeIntervalSince1970: 100_000)
-        let allowed = CalendarSharingWindowPlan.defaultWindows(now: pairingDate)
+        let allowed = CalendarSharingWindowPolicy.defaultWindows(now: pairingDate)
         let oldMirror = eventMirror(
             id: "old",
             ownerMemberID: "me",
@@ -310,7 +310,7 @@ final class EventMirrorServiceTests: XCTestCase {
     }
 }
 
-final class CalendarDisplayMirrorPlanTests: XCTestCase {
+final class CalendarDisplayMirrorPolicyTests: XCTestCase {
     func testTransientDisplayMirrorsDoNotCarryCloudKitRecordNames() {
         let event = CalendarSourceEvent(
             eventIdentifier: "local-event",
@@ -328,7 +328,7 @@ final class CalendarDisplayMirrorPlanTests: XCTestCase {
             url: nil
         )
 
-        let mirrors = CalendarDisplayMirrorPlan.displayMirrors(
+        let mirrors = CalendarDisplayMirrorPolicy.displayMirrors(
             from: [event],
             ownerMemberID: "me"
         )
@@ -339,21 +339,21 @@ final class CalendarDisplayMirrorPlanTests: XCTestCase {
         XCTAssertEqual(mirrors[0].title, "Older local event")
         XCTAssertNil(mirrors[0].cloudKitRecordName)
         // A lone transient display mirror has no persisted twin, so it can't be commented on.
-        XCTAssertNil(EventDetailMirrorResolutionPlan.persistedTwin(for: mirrors[0], in: []))
+        XCTAssertNil(EventDetailMirrorResolutionPolicy.persistedTwin(for: mirrors[0], in: []))
     }
 }
 
-final class CalendarSharingWindowPlanTests: XCTestCase {
+final class CalendarSharingWindowPolicyTests: XCTestCase {
     func testDefaultWindowSharesFromPairingDateToDistantFuture() {
         let pairingDate = Date(timeIntervalSince1970: 1_000_000)
 
-        let windows = CalendarSharingWindowPlan.defaultWindows(now: pairingDate)
+        let windows = CalendarSharingWindowPolicy.defaultWindows(now: pairingDate)
 
         XCTAssertEqual(windows.count, 1)
         XCTAssertEqual(windows[0].start, pairingDate)
         XCTAssertEqual(windows[0].end, Date.distantFuture)
-        XCTAssertFalse(CalendarSharingWindowPlan.contains(pairingDate.addingTimeInterval(-60), in: windows))
-        XCTAssertTrue(CalendarSharingWindowPlan.contains(pairingDate.addingTimeInterval(60), in: windows))
+        XCTAssertFalse(CalendarSharingWindowPolicy.contains(pairingDate.addingTimeInterval(-60), in: windows))
+        XCTAssertTrue(CalendarSharingWindowPolicy.contains(pairingDate.addingTimeInterval(60), in: windows))
     }
 
     func testApprovedPrivateOwnerRequestsExpandEffectiveWindows() {
@@ -386,16 +386,16 @@ final class CalendarSharingWindowPlanTests: XCTestCase {
             sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
         )
 
-        let windows = CalendarSharingWindowPlan.effectiveWindows(
+        let windows = CalendarSharingWindowPolicy.effectiveWindows(
             now: pairingDate,
             accessRequests: [approved, pending, sharedCopy]
         )
 
-        XCTAssertTrue(CalendarSharingWindowPlan.contains(approvedStart.addingTimeInterval(60), in: windows))
-        XCTAssertFalse(CalendarSharingWindowPlan.contains(now.addingTimeInterval(-55 * 24 * 60 * 60), in: windows))
-        XCTAssertFalse(CalendarSharingWindowPlan.contains(now.addingTimeInterval(-85 * 24 * 60 * 60), in: windows))
-        XCTAssertTrue(CalendarSharingWindowPlan.contains(now.addingTimeInterval(30 * 24 * 60 * 60), in: windows))
-        XCTAssertFalse(CalendarSharingWindowPlan.contains(pairingDate.addingTimeInterval(-60), in: windows))
+        XCTAssertTrue(CalendarSharingWindowPolicy.contains(approvedStart.addingTimeInterval(60), in: windows))
+        XCTAssertFalse(CalendarSharingWindowPolicy.contains(now.addingTimeInterval(-55 * 24 * 60 * 60), in: windows))
+        XCTAssertFalse(CalendarSharingWindowPolicy.contains(now.addingTimeInterval(-85 * 24 * 60 * 60), in: windows))
+        XCTAssertTrue(CalendarSharingWindowPolicy.contains(now.addingTimeInterval(30 * 24 * 60 * 60), in: windows))
+        XCTAssertFalse(CalendarSharingWindowPolicy.contains(pairingDate.addingTimeInterval(-60), in: windows))
     }
 
     func testOnlyApprovedPrivateOwnerHistoryRequestsExpandOwnerUploadWindow() {
@@ -421,33 +421,33 @@ final class CalendarSharingWindowPlanTests: XCTestCase {
             sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
         )
 
-        let windows = CalendarSharingWindowPlan.effectiveWindows(
+        let windows = CalendarSharingWindowPolicy.effectiveWindows(
             now: pairingDate,
             accessRequests: [privateOwnerRequest, sharedOutgoingCopy]
         )
 
-        XCTAssertTrue(CalendarSharingWindowPlan.contains(approvedStart.addingTimeInterval(60), in: windows))
-        XCTAssertFalse(CalendarSharingWindowPlan.contains(pairingDate.addingTimeInterval(-55 * 24 * 60 * 60), in: windows))
+        XCTAssertTrue(CalendarSharingWindowPolicy.contains(approvedStart.addingTimeInterval(60), in: windows))
+        XCTAssertFalse(CalendarSharingWindowPolicy.contains(pairingDate.addingTimeInterval(-55 * 24 * 60 * 60), in: windows))
     }
 
     func testEnclosingIntervalUsesEarliestStartAndLatestEnd() {
         let first = DateInterval(start: Date(timeIntervalSince1970: 10), end: Date(timeIntervalSince1970: 20))
         let second = DateInterval(start: Date(timeIntervalSince1970: -10), end: Date(timeIntervalSince1970: 30))
 
-        let enclosing = CalendarSharingWindowPlan.enclosingInterval(for: [first, second])
+        let enclosing = CalendarSharingWindowPolicy.enclosingInterval(for: [first, second])
 
         XCTAssertEqual(enclosing.start, Date(timeIntervalSince1970: -10))
         XCTAssertEqual(enclosing.end, Date(timeIntervalSince1970: 30))
     }
 }
 
-final class ShareCalCalendarBootstrapPlanTests: XCTestCase {
+final class ShareCalCalendarBootstrapPolicyTests: XCTestCase {
     func testOffersCreationWhenShareCalCalendarIsMissing() {
         let calendars = [
             CalendarDescriptor(id: "work", title: "Work", colorHex: "#3A86FF", allowsContentModifications: true)
         ]
 
-        XCTAssertTrue(ShareCalCalendarBootstrapPlan.shouldOfferCreation(calendars: calendars))
+        XCTAssertTrue(ShareCalCalendarBootstrapPolicy.shouldOfferCreation(calendars: calendars))
     }
 
     func testDoesNotOfferCreationWhenWritableShareCalCalendarExists() {
@@ -455,11 +455,11 @@ final class ShareCalCalendarBootstrapPlanTests: XCTestCase {
             CalendarDescriptor(id: "sharecal", title: "ShareCal", colorHex: "#FF2D55", allowsContentModifications: true)
         ]
 
-        XCTAssertFalse(ShareCalCalendarBootstrapPlan.shouldOfferCreation(calendars: calendars))
+        XCTAssertFalse(ShareCalCalendarBootstrapPolicy.shouldOfferCreation(calendars: calendars))
     }
 
     func testSelectsEnsuredShareCalCalendar() {
-        let selected = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
+        let selected = ShareCalCalendarBootstrapPolicy.selectedCalendarIDs(
             afterEnsuring: CalendarDescriptor(id: "sharecal", title: "ShareCal", colorHex: "#FF2D55", allowsContentModifications: true),
             currentSelection: ["work"]
         )
@@ -468,7 +468,7 @@ final class ShareCalCalendarBootstrapPlanTests: XCTestCase {
     }
 }
 
-final class CalendarMirrorVisibilityPlanTests: XCTestCase {
+final class CalendarMirrorVisibilityPolicyTests: XCTestCase {
     func testShowsOnlyCurrentMemberAndStablePartnerOwnerMirrors() {
         let current = mirror(owner: "me", key: "current")
         let sharedOwner = mirror(owner: "icloud-owner", key: "shared-owner")
@@ -476,7 +476,7 @@ final class CalendarMirrorVisibilityPlanTests: XCTestCase {
         let staleNickname = mirror(owner: "partner", key: "stale-nickname")
         let stranger = mirror(owner: "someone-else", key: "stranger")
 
-        let visible = CalendarMirrorVisibilityPlan.memberMirrors(
+        let visible = CalendarMirrorVisibilityPolicy.memberMirrors(
             [current, sharedOwner, partnerNickname, staleNickname, stranger],
             currentMemberID: "me",
             partnerShareOwnerID: "icloud-owner"
@@ -489,7 +489,7 @@ final class CalendarMirrorVisibilityPlanTests: XCTestCase {
         let current = mirror(owner: "me", key: "current")
         let partnerNickname = mirror(owner: "yoki", key: "partner-nickname")
 
-        let visible = CalendarMirrorVisibilityPlan.memberMirrors(
+        let visible = CalendarMirrorVisibilityPolicy.memberMirrors(
             [current, partnerNickname],
             currentMemberID: "me",
             partnerShareOwnerID: nil
@@ -526,9 +526,9 @@ final class CalendarMirrorVisibilityPlanTests: XCTestCase {
     }
 }
 
-final class CalendarSetupGuidancePlanTests: XCTestCase {
+final class CalendarSetupGuidancePolicyTests: XCTestCase {
     func testHidesGuidanceUntilInitialProfileIsComplete() {
-        XCTAssertNil(CalendarSetupGuidancePlan.step(
+        XCTAssertNil(CalendarSetupGuidancePolicy.step(
             hasCompletedInitialProfilePrompt: false,
             currentDisplayName: "",
             authorizationState: .notDetermined,
@@ -538,7 +538,7 @@ final class CalendarSetupGuidancePlanTests: XCTestCase {
     }
 
     func testShowsCalendarAccessGuidanceWhenCalendarPermissionIsMissing() {
-        XCTAssertEqual(CalendarSetupGuidancePlan.step(
+        XCTAssertEqual(CalendarSetupGuidancePolicy.step(
             hasCompletedInitialProfilePrompt: true,
             currentDisplayName: "Yoki",
             authorizationState: .notDetermined,
@@ -548,7 +548,7 @@ final class CalendarSetupGuidancePlanTests: XCTestCase {
     }
 
     func testShowsCalendarAccessGuidanceWhenNoCalendarsAreSelected() {
-        XCTAssertEqual(CalendarSetupGuidancePlan.step(
+        XCTAssertEqual(CalendarSetupGuidancePolicy.step(
             hasCompletedInitialProfilePrompt: true,
             currentDisplayName: "Yoki",
             authorizationState: .fullAccess,
@@ -558,7 +558,7 @@ final class CalendarSetupGuidancePlanTests: XCTestCase {
     }
 
     func testShowsPairingGuidanceAfterCalendarSetupBeforePairingStarts() {
-        XCTAssertEqual(CalendarSetupGuidancePlan.step(
+        XCTAssertEqual(CalendarSetupGuidancePolicy.step(
             hasCompletedInitialProfilePrompt: true,
             currentDisplayName: "Yoki",
             authorizationState: .fullAccess,
@@ -568,7 +568,7 @@ final class CalendarSetupGuidancePlanTests: XCTestCase {
     }
 
     func testShowsPairingGuidanceWhenWaitingForYouToShareBack() {
-        XCTAssertEqual(CalendarSetupGuidancePlan.step(
+        XCTAssertEqual(CalendarSetupGuidancePolicy.step(
             hasCompletedInitialProfilePrompt: true,
             currentDisplayName: "Yoki",
             authorizationState: .fullAccess,
@@ -579,7 +579,7 @@ final class CalendarSetupGuidancePlanTests: XCTestCase {
 
     func testHidesGuidanceAfterOutgoingPairingStartsOrCompletes() {
         for status in [PairingStatus.waitingForPartner, .waitingForPartnerToShare, .paired] {
-            XCTAssertNil(CalendarSetupGuidancePlan.step(
+            XCTAssertNil(CalendarSetupGuidancePolicy.step(
                 hasCompletedInitialProfilePrompt: true,
                 currentDisplayName: "Yoki",
                 authorizationState: .fullAccess,
@@ -590,10 +590,10 @@ final class CalendarSetupGuidancePlanTests: XCTestCase {
     }
 }
 
-final class ShareCalSmokeTestEventPlanTests: XCTestCase {
+final class ShareCalSmokeTestEventPolicyTests: XCTestCase {
     func testBuildsStableShortEventDraftNearNow() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let draft = ShareCalSmokeTestEventPlan.draft(now: now)
+        let draft = ShareCalSmokeTestEventPolicy.draft(now: now)
 
         XCTAssertEqual(draft.title, "ShareCal E2E Smoke Test")
         XCTAssertEqual(draft.startDate, now.addingTimeInterval(15 * 60))
@@ -603,7 +603,7 @@ final class ShareCalSmokeTestEventPlanTests: XCTestCase {
     }
 
     func testUsesCustomLaunchSeedTitleWhenProvided() {
-        let title = ShareCalLaunchDiagnosticPlan.seedCalendarEventTitle(
+        let title = ShareCalLaunchDiagnosticPolicy.seedCalendarEventTitle(
             arguments: [
                 "ShareCal",
                 "-ShareCalSeedCalendarEvent",
@@ -616,11 +616,11 @@ final class ShareCalSmokeTestEventPlanTests: XCTestCase {
     }
 }
 
-final class EventDetailMirrorResolutionPlanTests: XCTestCase {
+final class EventDetailMirrorResolutionPolicyTests: XCTestCase {
     func testRealMirrorResolvesToItself() {
         let real = mirror(id: "real-1", mirrorKey: "key-1", recordName: "real-1")
 
-        let twin = EventDetailMirrorResolutionPlan.persistedTwin(for: real, in: [real])
+        let twin = EventDetailMirrorResolutionPolicy.persistedTwin(for: real, in: [real])
 
         XCTAssertEqual(twin?.id, "real-1")
     }
@@ -631,7 +631,7 @@ final class EventDetailMirrorResolutionPlanTests: XCTestCase {
         let display = mirror(id: "display:key-1", mirrorKey: "key-1", recordName: nil)
         let persisted = mirror(id: "real-1", mirrorKey: "key-1", recordName: "real-1")
 
-        let twin = EventDetailMirrorResolutionPlan.persistedTwin(for: display, in: [persisted])
+        let twin = EventDetailMirrorResolutionPolicy.persistedTwin(for: display, in: [persisted])
 
         XCTAssertEqual(twin?.id, "real-1")
     }
@@ -639,7 +639,7 @@ final class EventDetailMirrorResolutionPlanTests: XCTestCase {
     func testDisplayMirrorWithoutTwinResolvesToNil() {
         let display = mirror(id: "display:key-2", mirrorKey: "key-2", recordName: nil)
 
-        XCTAssertNil(EventDetailMirrorResolutionPlan.persistedTwin(for: display, in: []))
+        XCTAssertNil(EventDetailMirrorResolutionPolicy.persistedTwin(for: display, in: []))
     }
 
     private func mirror(id: String, mirrorKey: String, recordName: String?) -> EventMirror {
@@ -666,13 +666,13 @@ final class EventDetailMirrorResolutionPlanTests: XCTestCase {
     }
 }
 
-final class CloudKitMirrorSyncPlanTests: XCTestCase {
+final class CloudKitMirrorSyncPolicyTests: XCTestCase {
     func testSkipsUnchangedActiveMirrors() {
         let existing = eventMirror(id: "event-1", title: "Planning")
         let current = eventMirror(id: "event-1", title: "Planning")
         let shadow = localShadow(id: "event-1", fingerprint: "same", isTombstone: false)
 
-        let mirrors = CloudKitMirrorSyncPlan.mirrorsNeedingUpload(
+        let mirrors = CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
             [current],
             activeShadows: [shadow],
             existingShadows: [shadow],
@@ -686,7 +686,7 @@ final class CloudKitMirrorSyncPlanTests: XCTestCase {
         let current = eventMirror(id: "event-1", title: "Planning")
         let shadow = localShadow(id: "event-1", fingerprint: "same", isTombstone: false)
 
-        let mirrors = CloudKitMirrorSyncPlan.mirrorsNeedingUpload(
+        let mirrors = CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
             [current],
             activeShadows: [shadow],
             existingShadows: [],
@@ -704,7 +704,7 @@ final class CloudKitMirrorSyncPlanTests: XCTestCase {
         let activeShadow = localShadow(id: "event-1", fingerprint: "same", isTombstone: false, lastUploadedAt: nil)
         let existingShadow = localShadow(id: "event-1", fingerprint: "same", isTombstone: false, lastUploadedAt: nil)
 
-        let mirrors = CloudKitMirrorSyncPlan.mirrorsNeedingUpload(
+        let mirrors = CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
             [current],
             activeShadows: [activeShadow],
             existingShadows: [existingShadow],
@@ -720,7 +720,7 @@ final class CloudKitMirrorSyncPlanTests: XCTestCase {
         let activeShadow = localShadow(id: "event-1", fingerprint: "new", isTombstone: false)
         let existingShadow = localShadow(id: "event-1", fingerprint: "old", isTombstone: false)
 
-        let mirrors = CloudKitMirrorSyncPlan.mirrorsNeedingUpload(
+        let mirrors = CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
             [current],
             activeShadows: [activeShadow],
             existingShadows: [existingShadow],
@@ -735,7 +735,7 @@ final class CloudKitMirrorSyncPlanTests: XCTestCase {
         let current = eventMirror(id: "event-1", title: "Busy", visibility: .busyOnly)
         let shadow = localShadow(id: "event-1", fingerprint: "same", isTombstone: false)
 
-        let mirrors = CloudKitMirrorSyncPlan.mirrorsNeedingUpload(
+        let mirrors = CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
             [current],
             activeShadows: [shadow],
             existingShadows: [shadow],
@@ -751,7 +751,7 @@ final class CloudKitMirrorSyncPlanTests: XCTestCase {
         let deleted = eventMirror(id: "event-1", title: "Planning", deletedAt: deletedAt)
         let existingShadow = localShadow(id: "event-1", fingerprint: "same", isTombstone: false)
 
-        let mirrors = CloudKitMirrorSyncPlan.mirrorsNeedingUpload(
+        let mirrors = CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
             [deleted],
             activeShadows: [],
             existingShadows: [existingShadow],

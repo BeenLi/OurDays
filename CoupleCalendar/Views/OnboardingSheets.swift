@@ -39,11 +39,11 @@ struct InitialProfilePromptSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(settings.strings.saveButton) {
-                        guard let normalizedNickname = PairingSettingsPlan.normalizedDisplayName(nickname) else { return }
+                        guard let normalizedNickname = PairingSettingsPolicy.normalizedDisplayName(nickname) else { return }
                         onSave(normalizedNickname)
                         dismiss()
                     }
-                    .disabled(PairingSettingsPlan.normalizedDisplayName(nickname) == nil)
+                    .disabled(PairingSettingsPolicy.normalizedDisplayName(nickname) == nil)
                 }
             }
         }
@@ -90,7 +90,7 @@ struct PartnerNotePromptSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(settings.strings.saveButton) {
-                        let normalizedNote = PairingSettingsPlan.normalizedDisplayName(note) ?? ""
+                        let normalizedNote = PairingSettingsPolicy.normalizedDisplayName(note) ?? ""
                         onSave(normalizedNote)
                         dismiss()
                     }

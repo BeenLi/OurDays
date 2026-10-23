@@ -1,6 +1,6 @@
 import Foundation
 
-enum ShareCalLaunchDiagnosticPlan {
+enum ShareCalLaunchDiagnosticPolicy {
     static let cloudKitWriteProbeArgument = "-ShareCalCloudKitWriteProbe"
     static let seedCalendarEventArgument = "-ShareCalSeedCalendarEvent"
     static let seedCalendarEventTitleArgument = "-ShareCalSeedCalendarEventTitle"
@@ -39,7 +39,7 @@ enum ShareCalLaunchDiagnosticPlan {
     /// Either side: add a comment (`<arg> <body>`) on the event titled by
     /// `-ShareCalEventCommentTitle` (default: the smoke event). On the event's owner the
     /// event is resolved the way the calendar opens it — as a transient display mirror
-    /// via `EventDetailCommentPlan`, synced or not — so this exercises "I start the
+    /// via `EventDetailCommentPolicy`, synced or not — so this exercises "I start the
     /// thread on my own event"; on the partner it resolves the imported mirror and writes
     /// into the owner's shared zone (the reply).
     static let addEventCommentArgument = "-ShareCalAddEventComment"
@@ -114,7 +114,7 @@ enum ShareCalLaunchDiagnosticPlan {
     }
 
     static func eventCommentTitle(arguments: [String]) -> String {
-        value(after: eventCommentTitleArgument, arguments: arguments) ?? ShareCalSmokeTestEventPlan.title
+        value(after: eventCommentTitleArgument, arguments: arguments) ?? ShareCalSmokeTestEventPolicy.title
     }
 
     static func shouldProbeEventComments(arguments: [String]) -> Bool {
@@ -149,11 +149,11 @@ enum ShareCalLaunchDiagnosticPlan {
     }
 
     static func seedCalendarEventDraft(arguments: [String], now: Date = .now) -> LocalCalendarEventDraft {
-        let title = seedCalendarEventTitle(arguments: arguments) ?? ShareCalSmokeTestEventPlan.title
+        let title = seedCalendarEventTitle(arguments: arguments) ?? ShareCalSmokeTestEventPolicy.title
         guard let startDate = dateValue(after: seedCalendarEventStartDateArgument, arguments: arguments),
               let endDate = dateValue(after: seedCalendarEventEndDateArgument, arguments: arguments),
               endDate > startDate else {
-            return ShareCalSmokeTestEventPlan.draft(now: now, title: title)
+            return ShareCalSmokeTestEventPolicy.draft(now: now, title: title)
         }
 
         return LocalCalendarEventDraft(
@@ -162,7 +162,7 @@ enum ShareCalLaunchDiagnosticPlan {
             endDate: endDate,
             isAllDay: false,
             location: nil,
-            notes: ShareCalSmokeTestEventPlan.notes
+            notes: ShareCalSmokeTestEventPolicy.notes
         )
     }
 

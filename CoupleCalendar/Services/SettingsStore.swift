@@ -91,19 +91,19 @@ final class SettingsStore {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         Self.resetLegacyPairingStateIfNeeded(defaults: defaults)
-        currentMemberID = MemberIDPlan.normalized(defaults.string(forKey: Key.currentMemberID)) ?? MemberIDPlan.unsyncedMemberID
-        let resolvedCurrentDisplayName = MemberIDPlan.normalized(defaults.string(forKey: Key.currentDisplayName)) ?? ""
+        currentMemberID = MemberIDPolicy.normalized(defaults.string(forKey: Key.currentMemberID)) ?? MemberIDPolicy.unsyncedMemberID
+        let resolvedCurrentDisplayName = MemberIDPolicy.normalized(defaults.string(forKey: Key.currentDisplayName)) ?? ""
         currentDisplayName = resolvedCurrentDisplayName
         currentICloudEmailAddress = defaults.string(forKey: Key.currentICloudEmailAddress) ?? ""
-        partnerNoteName = MemberIDPlan.normalized(defaults.string(forKey: Key.partnerNoteName)) ?? ""
+        partnerNoteName = MemberIDPolicy.normalized(defaults.string(forKey: Key.partnerNoteName)) ?? ""
         partnerShareOwnerID = defaults.string(forKey: Key.partnerShareOwnerID)
-        partnerSyncedDisplayName = MemberIDPlan.normalized(defaults.string(forKey: Key.partnerSyncedDisplayName))
+        partnerSyncedDisplayName = MemberIDPolicy.normalized(defaults.string(forKey: Key.partnerSyncedDisplayName))
         currentAvatar = Self.storedAvatar(defaults: defaults, forKey: Key.currentAvatar)
         partnerSyncedAvatar = Self.storedAvatar(defaults: defaults, forKey: Key.partnerSyncedAvatar)
         partnerAvatarOverride = Self.storedAvatar(defaults: defaults, forKey: Key.partnerAvatarOverride)
         let storedHasCompletedInitialProfilePrompt = defaults.object(forKey: Key.hasCompletedInitialProfilePrompt) as? Bool ?? false
         if storedHasCompletedInitialProfilePrompt,
-           MemberIDPlan.normalized(resolvedCurrentDisplayName) == nil {
+           MemberIDPolicy.normalized(resolvedCurrentDisplayName) == nil {
             hasCompletedInitialProfilePrompt = false
             defaults.set(false, forKey: Key.hasCompletedInitialProfilePrompt)
         } else {
@@ -128,7 +128,7 @@ final class SettingsStore {
     }
 
     var hasSyncedMemberID: Bool {
-        currentMemberID != MemberIDPlan.unsyncedMemberID
+        currentMemberID != MemberIDPolicy.unsyncedMemberID
     }
 
     /// One-time reset for pre-userRecordID installs: the legacy local-owner-UUID
@@ -165,7 +165,7 @@ final class SettingsStore {
     }
 
     static func storedPartnerShareOwnerID(defaults: UserDefaults = .standard) -> String? {
-        MemberIDPlan.normalized(defaults.string(forKey: Key.partnerShareOwnerID))
+        MemberIDPolicy.normalized(defaults.string(forKey: Key.partnerShareOwnerID))
     }
 
     static func storedOutgoingShareParticipantIDs(defaults: UserDefaults = .standard) -> [String] {
@@ -199,7 +199,7 @@ final class SettingsStore {
     }
 
     private func saveAvatar(_ avatar: MemberAvatar?, forKey key: String) {
-        if let avatar = MemberAvatarPlan.normalized(avatar), let data = try? JSONEncoder().encode(avatar) {
+        if let avatar = MemberAvatarPolicy.normalized(avatar), let data = try? JSONEncoder().encode(avatar) {
             defaults.set(data, forKey: key)
         } else {
             defaults.removeObject(forKey: key)
@@ -212,7 +212,7 @@ final class SettingsStore {
 
     func markPairingDateIfNeeded(at date: Date = .now, calendar: Calendar = .current) {
         guard pairingDate == nil else { return }
-        pairingDate = PairingDatePlan.normalizedPairingDate(date, calendar: calendar)
+        pairingDate = PairingDatePolicy.normalizedPairingDate(date, calendar: calendar)
     }
 
     func clearPairingDate() {
@@ -280,7 +280,7 @@ extension SettingsStore {
     }
 
     var partnerDisplayName: String {
-        PairingSettingsPlan.partnerDisplayName(
+        PairingSettingsPolicy.partnerDisplayName(
             partnerNoteName: partnerNoteName,
             partnerSyncedDisplayName: partnerSyncedDisplayName,
             fallback: strings.partnerTitle
@@ -288,7 +288,7 @@ extension SettingsStore {
     }
 
     var partnerStatusDisplayName: String {
-        PairingSettingsPlan.partnerStatusDisplayName(
+        PairingSettingsPolicy.partnerStatusDisplayName(
             partnerNoteName: partnerNoteName,
             partnerSyncedDisplayName: partnerSyncedDisplayName,
             fallback: strings.partnerTitle,
@@ -297,10 +297,10 @@ extension SettingsStore {
     }
 
     var partnerOwnerIDForLocalData: String {
-        partnerShareOwnerID ?? MemberIDPlan.unknownPartnerID
+        partnerShareOwnerID ?? MemberIDPolicy.unknownPartnerID
     }
 
     var partnerAvatar: MemberAvatar? {
-        MemberAvatarPlan.resolvedPartnerAvatar(override: partnerAvatarOverride, synced: partnerSyncedAvatar)
+        MemberAvatarPolicy.resolvedPartnerAvatar(override: partnerAvatarOverride, synced: partnerSyncedAvatar)
     }
 }

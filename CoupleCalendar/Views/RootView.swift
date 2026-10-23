@@ -54,7 +54,7 @@ struct RootView: View {
     @Query(sort: \EventMirror.startDate) private var mirrors: [EventMirror]
 
     private var pairingStatus: PairingStatus {
-        PairingSettingsPlan.status(
+        PairingSettingsPolicy.status(
             hasStartedPairing: settings.hasStartedPairing,
             outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
             incomingOwnerID: settings.partnerShareOwnerID
@@ -62,7 +62,7 @@ struct RootView: View {
     }
 
     private var pendingInviteBadgeCount: Int {
-        PendingActionBadgePlan.count(
+        PendingActionBadgePolicy.count(
             invitations: invitations,
             accessRequests: accessRequests,
             currentMemberID: settings.currentMemberID
@@ -70,7 +70,7 @@ struct RootView: View {
     }
 
     private var unreadActivityCount: Int {
-        ActivityFeedPlan.unreadCount(
+        ActivityFeedPolicy.unreadCount(
             comments: comments,
             mirrors: mirrors,
             invitations: invitations,
@@ -83,7 +83,7 @@ struct RootView: View {
     /// Nothing else writes the icon badge after the silent-push migration, so this both
     /// clears a badge orphaned by an older visible push and makes the badge self-clearing.
     private func syncAppIconBadge() {
-        let count = AppIconBadgePlan.badgeCount(
+        let count = AppIconBadgePolicy.badgeCount(
             unreadActivityCount: unreadActivityCount,
             pendingInviteCount: pendingInviteBadgeCount
         )
@@ -117,7 +117,7 @@ struct RootView: View {
 
             NavigationStack {
                 InvitesTabView { invitation in
-                    guard let request = CalendarFocusPlan.request(for: invitation) else { return }
+                    guard let request = CalendarFocusPolicy.request(for: invitation) else { return }
                     calendarFocusRequest = request
                     selectedTab = .calendar
                 }
@@ -203,7 +203,7 @@ struct RootView: View {
                         settings.hasCompletedInitialProfilePrompt = true
                     },
                     onSkip: {
-                        settings.currentDisplayName = PairingSettingsPlan.randomDisplayName()
+                        settings.currentDisplayName = PairingSettingsPolicy.randomDisplayName()
                         settings.hasCompletedInitialProfilePrompt = true
                     }
                 )
@@ -252,7 +252,7 @@ struct RootView: View {
         }
         .alert(settings.strings.pairingConflictTitle, isPresented: $showPairingConflictAlert) {
             if let conflict = settings.pairingConflict {
-                ForEach(TwoPersonPairingConflictPresentationPlan.candidateIDs(conflict), id: \.self) { candidateID in
+                ForEach(TwoPersonPairingConflictPresentationPolicy.candidateIDs(conflict), id: \.self) { candidateID in
                     Button(settings.strings.keepPartnerButton(conflictCandidateDisplayName(candidateID))) {
                         Task { await resolvePairingConflict(keeping: candidateID, conflict: conflict) }
                     }
@@ -320,7 +320,7 @@ struct RootView: View {
         guard let cloudKit = services.cloudKitIfAvailable else { return }
 
         do {
-            let ownerIDsToPurge = ICloudSharingTeardownPlan.localOwnerIDsToPurge(
+            let ownerIDsToPurge = ICloudSharingTeardownPolicy.localOwnerIDsToPurge(
                 partnerShareOwnerID: settings.partnerShareOwnerID
             )
             if let oldPartnerID = settings.partnerShareOwnerID {
@@ -378,7 +378,7 @@ struct RootView: View {
                 clearPartnerPairingState()
                 try await cloudKit.purgeExPartnerRecordsFromPrivateZone(currentMemberID: settings.currentMemberID)
                 try ShareCalLocalDataCleanupService.purgeSharedOwnerData(
-                    ownerMemberIDs: ICloudSharingTeardownPlan.localOwnerIDsToPurge(partnerShareOwnerID: previousPartnerID),
+                    ownerMemberIDs: ICloudSharingTeardownPolicy.localOwnerIDsToPurge(partnerShareOwnerID: previousPartnerID),
                     modelContext: modelContext
                 )
             }
@@ -419,7 +419,7 @@ struct RootView: View {
     /// unresolved and the local state looks fresh, so an automatic sync would risk
     /// merging before the user decides. Independent of whether the prompt is on screen.
     private var hasUnresolvedExistingICloudRecoveryDecision: Bool {
-        ExistingICloudDataRecoveryPlan.shouldDeferAutomaticSync(
+        ExistingICloudDataRecoveryPolicy.shouldDeferAutomaticSync(
             hasResolvedPrompt: settings.hasResolvedExistingICloudDataPrompt,
             hasStartedPairing: settings.hasStartedPairing,
             partnerShareOwnerID: settings.partnerShareOwnerID,
@@ -431,7 +431,7 @@ struct RootView: View {
 
     private func presentInitialProfilePromptIfNeeded() {
         guard activeRootSheet == nil else { return }
-        if PairingSettingsPlan.normalizedDisplayName(settings.currentDisplayName) != nil {
+        if PairingSettingsPolicy.normalizedDisplayName(settings.currentDisplayName) != nil {
             if !settings.hasCompletedInitialProfilePrompt {
                 settings.hasCompletedInitialProfilePrompt = true
             }
@@ -452,7 +452,7 @@ struct RootView: View {
 
     private func presentPairingSafetyNoticeIfNeeded() {
         guard activeRootSheet == nil else { return }
-        guard PairingSafetyEducationPlan.shouldPresentNotice(
+        guard PairingSafetyEducationPolicy.shouldPresentNotice(
             pairingStatus: pairingStatus,
             hasPromptedPartnerNoteForCurrentPairing: settings.hasPromptedPartnerNoteForCurrentPairing,
             hasShownPairingSafetyNoticeForCurrentPairing: settings.hasShownPairingSafetyNoticeForCurrentPairing
@@ -468,7 +468,7 @@ struct RootView: View {
             return
         }
 
-        let shouldProbe = ExistingICloudDataRecoveryPlan.shouldDeferAutomaticSync(
+        let shouldProbe = ExistingICloudDataRecoveryPolicy.shouldDeferAutomaticSync(
             hasResolvedPrompt: settings.hasResolvedExistingICloudDataPrompt,
             hasStartedPairing: settings.hasStartedPairing,
             partnerShareOwnerID: settings.partnerShareOwnerID,
@@ -491,7 +491,7 @@ struct RootView: View {
             return
         }
         hasEvaluatedExistingICloudDataPrompt = true
-        if ExistingICloudDataRecoveryPlan.shouldPresent(
+        if ExistingICloudDataRecoveryPolicy.shouldPresent(
             snapshot: snapshot,
             hasCompletedInitialProfilePrompt: settings.hasCompletedInitialProfilePrompt,
             hasResolvedPrompt: settings.hasResolvedExistingICloudDataPrompt,
@@ -531,7 +531,7 @@ struct RootView: View {
         // regardless of whether the prompt is currently on screen.
         guard !hasUnresolvedExistingICloudRecoveryDecision else { return }
         let hasPendingAcceptedShare = ShareCalAcceptedShareSignal.hasPending()
-        guard ForegroundSyncPlan.shouldRunAutomaticSync(
+        guard ForegroundSyncPolicy.shouldRunAutomaticSync(
             lastSyncAt: settings.lastSyncAt,
             now: now,
             syncPhase: settings.syncPhase,

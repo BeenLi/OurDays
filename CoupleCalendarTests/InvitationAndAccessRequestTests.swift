@@ -1,6 +1,6 @@
 import XCTest
 
-final class PrePairingHistoryAccessPlanTests: XCTestCase {
+final class PrePairingHistoryAccessPolicyTests: XCTestCase {
     func testApprovedOutgoingHistoryExpandsVisiblePartnerRange() {
         let calendar = gregorianUTC()
         let pairingDate = date(2026, 6, 9, calendar: calendar)
@@ -24,7 +24,7 @@ final class PrePairingHistoryAccessPlanTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            PrePairingHistoryAccessPlan.contiguousAuthorizedStartDate(
+            PrePairingHistoryAccessPolicy.contiguousAuthorizedStartDate(
                 pairingDate: pairingDate,
                 accessRequests: [approved, pendingOlder],
                 currentMemberID: "xiaoyugan",
@@ -49,7 +49,7 @@ final class PrePairingHistoryAccessPlanTests: XCTestCase {
             source: .acceptedSharedZone
         )
 
-        let range = PrePairingHistoryAccessPlan.defaultNextRequestRange(
+        let range = PrePairingHistoryAccessPolicy.defaultNextRequestRange(
             pairingDate: pairingDate,
             accessRequests: [approved],
             currentMemberID: "xiaoyugan",
@@ -75,7 +75,7 @@ final class PrePairingHistoryAccessPlanTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            PrePairingHistoryAccessPlan.validation(
+            PrePairingHistoryAccessPolicy.validation(
                 requestedStartDate: date(2026, 6, 8, calendar: calendar),
                 requestedEndDate: date(2026, 6, 9, calendar: calendar),
                 pairingDate: pairingDate,
@@ -86,7 +86,7 @@ final class PrePairingHistoryAccessPlanTests: XCTestCase {
             .alreadyAuthorized
         )
         XCTAssertEqual(
-            PrePairingHistoryAccessPlan.validation(
+            PrePairingHistoryAccessPolicy.validation(
                 requestedStartDate: date(2026, 6, 7, calendar: calendar),
                 requestedEndDate: date(2026, 6, 9, calendar: calendar),
                 pairingDate: pairingDate,
@@ -97,7 +97,7 @@ final class PrePairingHistoryAccessPlanTests: XCTestCase {
             .overlapsAuthorized
         )
         XCTAssertEqual(
-            PrePairingHistoryAccessPlan.validation(
+            PrePairingHistoryAccessPolicy.validation(
                 requestedStartDate: date(2026, 6, 7, calendar: calendar),
                 requestedEndDate: date(2026, 6, 8, calendar: calendar),
                 pairingDate: pairingDate,
@@ -142,7 +142,7 @@ final class PrePairingHistoryAccessPlanTests: XCTestCase {
     }
 }
 
-final class CalendarAccessRequestListPlanTests: XCTestCase {
+final class CalendarAccessRequestListPolicyTests: XCTestCase {
     func testSourceMappingDrivesIncomingAndOutgoingListsWhenMemberIDsMatch() {
         let rangeStart = Date(timeIntervalSince1970: 10_000)
         let incoming = CalendarAccessRequest(
@@ -174,14 +174,14 @@ final class CalendarAccessRequestListPlanTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            CalendarAccessRequestListPlan.pendingIncoming(
+            CalendarAccessRequestListPolicy.pendingIncoming(
                 [incoming, acceptedSharedCopy, localOutgoing],
                 currentMemberID: "me"
             ).map(\.id),
             ["incoming"]
         )
         XCTAssertEqual(
-            CalendarAccessRequestListPlan.outgoing([incoming, acceptedSharedCopy, localOutgoing], currentMemberID: "me").map(\.id),
+            CalendarAccessRequestListPolicy.outgoing([incoming, acceptedSharedCopy, localOutgoing], currentMemberID: "me").map(\.id),
             ["shared-copy", "local-outgoing"]
         )
     }
@@ -220,7 +220,7 @@ final class CalendarAccessRequestListPlanTests: XCTestCase {
         // server needs uploading. The `.acceptedSharedZone` copy round-tripped back
         // from CloudKit, so re-uploading it would overwrite the owner's response.
         XCTAssertEqual(
-            CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
+            CalendarAccessRequestCloudUploadPolicy.requestsNeedingUpload(
                 [pendingLocalOutgoing, pendingSharedOutgoing, incoming],
                 currentMemberID: "me"
             ).map(\.id),
@@ -273,21 +273,21 @@ final class CalendarAccessRequestListPlanTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            CalendarAccessRequestListPlan.pendingIncoming(
+            CalendarAccessRequestListPolicy.pendingIncoming(
                 [stalePendingIncoming, approvedIncoming],
                 currentMemberID: "_manuOwner"
             ).map(\.id),
             []
         )
         XCTAssertEqual(
-            CalendarAccessRequestListPlan.outgoing(
+            CalendarAccessRequestListPolicy.outgoing(
                 [stalePendingOutgoing, approvedOutgoing],
                 currentMemberID: "xiaoyugan"
             ).map(\.id),
             ["approved-outgoing"]
         )
         XCTAssertEqual(
-            CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
+            CalendarAccessRequestCloudUploadPolicy.requestsNeedingUpload(
                 [stalePendingOutgoing, approvedOutgoing],
                 currentMemberID: "xiaoyugan"
             ).map(\.id),
@@ -340,21 +340,21 @@ final class CalendarAccessRequestListPlanTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            CalendarAccessRequestListPlan.pendingIncoming(
+            CalendarAccessRequestListPolicy.pendingIncoming(
                 [olderDeclinedIncoming, newerPendingIncoming],
                 currentMemberID: "_manuOwner"
             ).map(\.id),
             ["newer-pending-incoming"]
         )
         XCTAssertEqual(
-            CalendarAccessRequestListPlan.outgoing(
+            CalendarAccessRequestListPolicy.outgoing(
                 [olderApprovedOutgoing, newerPendingOutgoing],
                 currentMemberID: "xiaoyugan"
             ).map(\.id),
             ["newer-pending-outgoing"]
         )
         XCTAssertEqual(
-            CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
+            CalendarAccessRequestCloudUploadPolicy.requestsNeedingUpload(
                 [olderApprovedOutgoing, newerPendingOutgoing],
                 currentMemberID: "xiaoyugan"
             ).map(\.id),
@@ -388,14 +388,14 @@ final class CalendarAccessRequestListPlanTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            CalendarAccessRequestListPlan.pendingIncoming(
+            CalendarAccessRequestListPolicy.pendingIncoming(
                 [incoming, outgoing],
                 currentMemberID: "_recipientLocalID"
             ).map(\.id),
             ["incoming"]
         )
         XCTAssertEqual(
-            PendingActionBadgePlan.count(
+            PendingActionBadgePolicy.count(
                 invitations: [],
                 accessRequests: [incoming, outgoing],
                 currentMemberID: "_recipientLocalID"
@@ -405,7 +405,7 @@ final class CalendarAccessRequestListPlanTests: XCTestCase {
     }
 }
 
-final class JointSchedulePlanTests: XCTestCase {
+final class JointSchedulePolicyTests: XCTestCase {
     func testAcceptedInvitationCreatesJointEventForBothMembers() {
         let invitation = EventInvitation(
             id: "invite-1",
@@ -419,7 +419,7 @@ final class JointSchedulePlanTests: XCTestCase {
             statusRawValue: InvitationStatus.accepted.rawValue
         )
 
-        let jointEvents = JointSchedulePlan.jointEvents(
+        let jointEvents = JointSchedulePolicy.jointEvents(
             from: [invitation],
             currentMemberID: "me",
             partnerMemberID: "partner"
@@ -455,7 +455,7 @@ final class JointSchedulePlanTests: XCTestCase {
             endDate: Date(timeIntervalSince1970: 21_000)
         )
 
-        let ordinary = JointSchedulePlan.ordinaryMirrors(
+        let ordinary = JointSchedulePolicy.ordinaryMirrors(
             [myCopy, partnerCopy, unrelated],
             excluding: [jointEvent]
         )
@@ -493,7 +493,7 @@ final class JointSchedulePlanTests: XCTestCase {
     }
 }
 
-final class AcceptedInvitationMirrorPlanTests: XCTestCase {
+final class AcceptedInvitationMirrorPolicyTests: XCTestCase {
     func testCreatesCurrentMemberShareCalMirrorForAcceptedInvitation() {
         let invitation = EventInvitation(
             id: "invite-1",
@@ -514,7 +514,7 @@ final class AcceptedInvitationMirrorPlanTests: XCTestCase {
             calendarColorHex: "#FF2D55"
         )
 
-        let mirror = AcceptedInvitationMirrorPlan.mirror(
+        let mirror = AcceptedInvitationMirrorPolicy.mirror(
             from: invitation,
             createdEvent: createdEvent,
             ownerMemberID: "partner",
@@ -538,7 +538,7 @@ final class AcceptedInvitationMirrorPlanTests: XCTestCase {
     }
 }
 
-final class InvitationConflictPlanTests: XCTestCase {
+final class InvitationConflictPolicyTests: XCTestCase {
     func testFindsOnlyOverlappingPartnerEvents() {
         let candidate = eventMirror(
             id: "candidate",
@@ -569,7 +569,7 @@ final class InvitationConflictPlanTests: XCTestCase {
             endDate: Date(timeIntervalSince1970: 13_000)
         )
 
-        let conflicts = InvitationConflictPlan.conflicts(
+        let conflicts = InvitationConflictPolicy.conflicts(
             for: candidate,
             partnerMemberID: "partner",
             mirrors: [partnerOverlap, partnerBoundary, myOverlap]
@@ -608,13 +608,13 @@ final class InvitationConflictPlanTests: XCTestCase {
     }
 }
 
-final class InviteTimeAdjustmentPlanTests: XCTestCase {
+final class InviteTimeAdjustmentPolicyTests: XCTestCase {
     func testMovingStartSlidesEndByTheSameAmount() {
         let start = Date(timeIntervalSince1970: 1_000)
         let end = start.addingTimeInterval(90 * 60) // custom 90-minute duration
         let newStart = start.addingTimeInterval(45 * 60)
 
-        let newEnd = InviteTimeAdjustmentPlan.endDate(
+        let newEnd = InviteTimeAdjustmentPolicy.endDate(
             forNewStart: newStart,
             previousStart: start,
             previousEnd: end
@@ -628,7 +628,7 @@ final class InviteTimeAdjustmentPlanTests: XCTestCase {
         let end = start.addingTimeInterval(10 * 60) // shorter than the 1h floor
         let newStart = start.addingTimeInterval(60 * 60)
 
-        let newEnd = InviteTimeAdjustmentPlan.endDate(
+        let newEnd = InviteTimeAdjustmentPolicy.endDate(
             forNewStart: newStart,
             previousStart: start,
             previousEnd: end
@@ -642,7 +642,7 @@ final class InviteTimeAdjustmentPlanTests: XCTestCase {
         let end = start.addingTimeInterval(60 * 60)
         let newStart = start.addingTimeInterval(-30 * 60)
 
-        let newEnd = InviteTimeAdjustmentPlan.endDate(
+        let newEnd = InviteTimeAdjustmentPolicy.endDate(
             forNewStart: newStart,
             previousStart: start,
             previousEnd: end
@@ -690,12 +690,12 @@ final class InvitationServiceTests: XCTestCase {
 
         let beforeEvent = Date(timeIntervalSince1970: 9_000)
 
-        XCTAssertTrue(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "partner", now: beforeEvent))
-        XCTAssertFalse(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "me", now: beforeEvent))
+        XCTAssertTrue(InvitationInteractionPolicy.canRespond(to: invitation, currentMemberID: "partner", now: beforeEvent))
+        XCTAssertFalse(InvitationInteractionPolicy.canRespond(to: invitation, currentMemberID: "me", now: beforeEvent))
 
         invitation.status = .accepted
 
-        XCTAssertFalse(InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: "partner", now: beforeEvent))
+        XCTAssertFalse(InvitationInteractionPolicy.canRespond(to: invitation, currentMemberID: "partner", now: beforeEvent))
     }
 
     func testPendingInvitationCannotBeAnsweredOnceTheEventHasEnded() {
@@ -711,11 +711,11 @@ final class InvitationServiceTests: XCTestCase {
         )
 
         // Still running: answerable right up to the end.
-        XCTAssertTrue(InvitationInteractionPlan.canRespond(
+        XCTAssertTrue(InvitationInteractionPolicy.canRespond(
             to: invitation, currentMemberID: "partner", now: Date(timeIntervalSince1970: 11_999)
         ))
         // Ended: nothing left to accept.
-        XCTAssertFalse(InvitationInteractionPlan.canRespond(
+        XCTAssertFalse(InvitationInteractionPolicy.canRespond(
             to: invitation, currentMemberID: "partner", now: Date(timeIntervalSince1970: 12_000)
         ))
     }
@@ -734,12 +734,12 @@ final class InvitationServiceTests: XCTestCase {
         let beforeEvent = Date(timeIntervalSince1970: 9_000)
         let afterEvent = Date(timeIntervalSince1970: 13_000)
 
-        XCTAssertTrue(InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: "me", now: beforeEvent))
-        XCTAssertFalse(InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: "partner", now: beforeEvent))
-        XCTAssertFalse(InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: "me", now: afterEvent))
+        XCTAssertTrue(InvitationInteractionPolicy.canWithdraw(invitation, currentMemberID: "me", now: beforeEvent))
+        XCTAssertFalse(InvitationInteractionPolicy.canWithdraw(invitation, currentMemberID: "partner", now: beforeEvent))
+        XCTAssertFalse(InvitationInteractionPolicy.canWithdraw(invitation, currentMemberID: "me", now: afterEvent))
 
         invitation.status = .declined
-        XCTAssertFalse(InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: "me", now: beforeEvent))
+        XCTAssertFalse(InvitationInteractionPolicy.canWithdraw(invitation, currentMemberID: "me", now: beforeEvent))
     }
 
     func testCancelMarksInvitationCanceledAndOwesACloudKitUpload() {
@@ -762,7 +762,7 @@ final class InvitationServiceTests: XCTestCase {
         // The withdrawal rides the same self-heal path as an optimistic create, so a
         // failed upload is re-pushed by the next sync instead of staying local-only.
         XCTAssertEqual(
-            InvitationReuploadPlan.creationsNeedingReupload(local: [invitation], currentMemberID: "me").map(\.id),
+            InvitationReuploadPolicy.creationsNeedingReupload(local: [invitation], currentMemberID: "me").map(\.id),
             [invitation.id]
         )
 
@@ -820,7 +820,7 @@ final class InvitationServiceTests: XCTestCase {
             createdLocalEventID: "local-pending"
         )
 
-        let canceled = InvitationLocalEventSyncPlan.cancelAcceptedInvitationsMissingLocalEvents(
+        let canceled = InvitationLocalEventSyncPolicy.cancelAcceptedInvitationsMissingLocalEvents(
             [missingLocalEvent, existingLocalEvent, pending],
             existingLocalEventIDs: ["local-existing"],
             now: Date(timeIntervalSince1970: 20_000)
@@ -847,7 +847,7 @@ final class InvitationServiceTests: XCTestCase {
             createdLocalEventID: "stale-local-id"
         )
 
-        let canceled = InvitationLocalEventSyncPlan.cancelAcceptedInvitationsMissingLocalEvents(
+        let canceled = InvitationLocalEventSyncPolicy.cancelAcceptedInvitationsMissingLocalEvents(
             [invitation],
             now: Date(timeIntervalSince1970: 20_000),
             localEventExists: { candidate in
@@ -862,22 +862,22 @@ final class InvitationServiceTests: XCTestCase {
     }
 }
 
-final class InvitationListPlanTests: XCTestCase {
+final class InvitationListPolicyTests: XCTestCase {
     func testOnlyAcceptedInvitationsCanOpenInCalendar() {
         let accepted = invitation(id: "accepted", status: .accepted)
         let pending = invitation(id: "pending", status: .pending)
         let declined = invitation(id: "declined", status: .declined)
 
-        XCTAssertTrue(InvitationListPlan.canOpenInCalendar(accepted))
-        XCTAssertFalse(InvitationListPlan.canOpenInCalendar(pending))
-        XCTAssertFalse(InvitationListPlan.canOpenInCalendar(declined))
+        XCTAssertTrue(InvitationListPolicy.canOpenInCalendar(accepted))
+        XCTAssertFalse(InvitationListPolicy.canOpenInCalendar(pending))
+        XCTAssertFalse(InvitationListPolicy.canOpenInCalendar(declined))
     }
 
     func testAllVisibleInvitationsCanBeDeletedFromList() {
-        XCTAssertTrue(InvitationListPlan.canDelete(invitation(id: "accepted", status: .accepted)))
-        XCTAssertTrue(InvitationListPlan.canDelete(invitation(id: "declined", status: .declined)))
-        XCTAssertTrue(InvitationListPlan.canDelete(invitation(id: "pending", status: .pending)))
-        XCTAssertTrue(InvitationListPlan.canDelete(invitation(id: "canceled", status: .canceled)))
+        XCTAssertTrue(InvitationListPolicy.canDelete(invitation(id: "accepted", status: .accepted)))
+        XCTAssertTrue(InvitationListPolicy.canDelete(invitation(id: "declined", status: .declined)))
+        XCTAssertTrue(InvitationListPolicy.canDelete(invitation(id: "pending", status: .pending)))
+        XCTAssertTrue(InvitationListPolicy.canDelete(invitation(id: "canceled", status: .canceled)))
     }
 
     func testSortsInvitationsNearestToNowFirst() {
@@ -885,7 +885,7 @@ final class InvitationListPlanTests: XCTestCase {
         let mid = invitation(id: "mid", status: .accepted, startDate: Date(timeIntervalSince1970: 20_000))
         let recent = invitation(id: "recent", status: .accepted, startDate: Date(timeIntervalSince1970: 30_000))
 
-        let sorted = InvitationListPlan.sortedForDisplay([old, recent, mid])
+        let sorted = InvitationListPolicy.sortedForDisplay([old, recent, mid])
 
         XCTAssertEqual(sorted.map(\.id), ["recent", "mid", "old"])
     }
@@ -898,7 +898,7 @@ final class InvitationListPlanTests: XCTestCase {
             archivedAt: Date(timeIntervalSince1970: 20_000)
         )
 
-        let invitations = InvitationListPlan.visibleInvitations([visible, archived])
+        let invitations = InvitationListPolicy.visibleInvitations([visible, archived])
 
         XCTAssertEqual(invitations.map(\.id), ["visible"])
     }
@@ -906,7 +906,7 @@ final class InvitationListPlanTests: XCTestCase {
     func testAcceptedInvitationBuildsCalendarFocusRequest() throws {
         let accepted = invitation(id: "accepted", status: .accepted)
 
-        let request = try XCTUnwrap(CalendarFocusPlan.request(for: accepted))
+        let request = try XCTUnwrap(CalendarFocusPolicy.request(for: accepted))
 
         XCTAssertEqual(request.invitationID, "accepted")
         XCTAssertEqual(request.startDate, Date(timeIntervalSince1970: 10_000))
@@ -919,18 +919,18 @@ final class InvitationListPlanTests: XCTestCase {
         let pastAccepted = invitation(id: "past-accepted", status: .accepted, startDate: Date(timeIntervalSince1970: 10_000))
         let pastCanceled = invitation(id: "past-canceled", status: .canceled, startDate: Date(timeIntervalSince1970: 10_000))
 
-        let (pending, handled) = InvitationListPlan.partitionForDisplay(
+        let (pending, handled) = InvitationListPolicy.partitionForDisplay(
             [past, pastAccepted, upcoming, pastCanceled],
             now: now
         )
 
         XCTAssertEqual(pending.map(\.id), ["upcoming"])
         XCTAssertEqual(handled.map(\.id), ["past", "past-accepted", "past-canceled"])
-        XCTAssertEqual(InvitationListPlan.displayStatus(for: past, now: now), .expired)
-        XCTAssertEqual(InvitationListPlan.displayStatus(for: upcoming, now: now), .pending)
+        XCTAssertEqual(InvitationListPolicy.displayStatus(for: past, now: now), .expired)
+        XCTAssertEqual(InvitationListPolicy.displayStatus(for: upcoming, now: now), .pending)
         // A decision outlives the event: an accepted or canceled invitation never "expires".
-        XCTAssertEqual(InvitationListPlan.displayStatus(for: pastAccepted, now: now), .accepted)
-        XCTAssertEqual(InvitationListPlan.displayStatus(for: pastCanceled, now: now), .canceled)
+        XCTAssertEqual(InvitationListPolicy.displayStatus(for: pastAccepted, now: now), .accepted)
+        XCTAssertEqual(InvitationListPolicy.displayStatus(for: pastCanceled, now: now), .canceled)
     }
 
     func testExpiredIncomingInvitationDoesNotCountTowardsTheBadge() {
@@ -942,7 +942,7 @@ final class InvitationListPlanTests: XCTestCase {
             startDate: Date(timeIntervalSince1970: 10_000)
         )
 
-        let count = PendingActionBadgePlan.count(
+        let count = PendingActionBadgePolicy.count(
             invitations: [expired],
             accessRequests: [],
             currentMemberID: "me",
@@ -985,7 +985,7 @@ final class InvitationListPlanTests: XCTestCase {
             sourceRawValue: CalendarAccessRequestSource.localOutgoing.rawValue
         )
 
-        let count = PendingActionBadgePlan.count(
+        let count = PendingActionBadgePolicy.count(
             invitations: [pendingInvite, ownPendingInvite],
             accessRequests: [incomingHistory, outgoingHistory],
             currentMemberID: "me",
@@ -1018,7 +1018,7 @@ final class InvitationListPlanTests: XCTestCase {
     }
 }
 
-final class CreateInvitePlanTests: XCTestCase {
+final class CreateInvitePolicyTests: XCTestCase {
     func testBuildsFutureInviteArtifactsForShareCalCalendar() throws {
         let start = Date(timeIntervalSince1970: 20_000)
         let draft = CreateInviteDraft(
@@ -1037,15 +1037,15 @@ final class CreateInvitePlanTests: XCTestCase {
         )
 
         let now = Date(timeIntervalSince1970: 10_000)
-        let localDraft = try CreateInvitePlan.localCalendarDraft(from: draft, now: now)
-        let mirror = try CreateInvitePlan.mirror(
+        let localDraft = try CreateInvitePolicy.localCalendarDraft(from: draft, now: now)
+        let mirror = try CreateInvitePolicy.mirror(
             from: draft,
             createdEvent: createdEvent,
             ownerMemberID: "me",
             timeZoneIdentifier: "Asia/Singapore",
             now: now
         )
-        let invitation = try CreateInvitePlan.invitation(
+        let invitation = try CreateInvitePolicy.invitation(
             from: draft,
             creatorMemberID: "me",
             inviteeMemberID: "partner",
@@ -1080,10 +1080,10 @@ final class CreateInvitePlanTests: XCTestCase {
         )
 
         let now = Date(timeIntervalSince1970: 10_000)
-        XCTAssertThrowsError(try CreateInvitePlan.localCalendarDraft(from: emptyTitle, now: now)) { error in
+        XCTAssertThrowsError(try CreateInvitePolicy.localCalendarDraft(from: emptyTitle, now: now)) { error in
             XCTAssertEqual(error as? CreateInviteValidationError, .emptyTitle)
         }
-        XCTAssertThrowsError(try CreateInvitePlan.localCalendarDraft(from: invalidRange, now: now)) { error in
+        XCTAssertThrowsError(try CreateInvitePolicy.localCalendarDraft(from: invalidRange, now: now)) { error in
             XCTAssertEqual(error as? CreateInviteValidationError, .invalidDateRange)
         }
     }
@@ -1100,21 +1100,21 @@ final class CreateInvitePlanTests: XCTestCase {
         )
 
         // Already started but not over: still fine to invite.
-        XCTAssertNoThrow(try CreateInvitePlan.localCalendarDraft(from: draft, now: start.addingTimeInterval(30 * 60)))
-        XCTAssertThrowsError(try CreateInvitePlan.localCalendarDraft(from: draft, now: start.addingTimeInterval(60 * 60))) { error in
+        XCTAssertNoThrow(try CreateInvitePolicy.localCalendarDraft(from: draft, now: start.addingTimeInterval(30 * 60)))
+        XCTAssertThrowsError(try CreateInvitePolicy.localCalendarDraft(from: draft, now: start.addingTimeInterval(60 * 60))) { error in
             XCTAssertEqual(error as? CreateInviteValidationError, .alreadyEnded)
         }
     }
 }
 
-final class InvitationTimingPlanTests: XCTestCase {
+final class InvitationTimingPolicyTests: XCTestCase {
     func testTimedEventEndsAtItsEndDate() {
         let end = Date(timeIntervalSince1970: 12_000)
 
-        XCTAssertFalse(InvitationTimingPlan.hasEnded(endDate: end, isAllDay: false, now: Date(timeIntervalSince1970: 11_999)))
-        XCTAssertTrue(InvitationTimingPlan.hasEnded(endDate: end, isAllDay: false, now: end))
-        XCTAssertTrue(InvitationTimingPlan.canInvite(endDate: end, isAllDay: false, now: Date(timeIntervalSince1970: 5_000)))
-        XCTAssertFalse(InvitationTimingPlan.canInvite(endDate: end, isAllDay: false, now: Date(timeIntervalSince1970: 20_000)))
+        XCTAssertFalse(InvitationTimingPolicy.hasEnded(endDate: end, isAllDay: false, now: Date(timeIntervalSince1970: 11_999)))
+        XCTAssertTrue(InvitationTimingPolicy.hasEnded(endDate: end, isAllDay: false, now: end))
+        XCTAssertTrue(InvitationTimingPolicy.canInvite(endDate: end, isAllDay: false, now: Date(timeIntervalSince1970: 5_000)))
+        XCTAssertFalse(InvitationTimingPolicy.canInvite(endDate: end, isAllDay: false, now: Date(timeIntervalSince1970: 20_000)))
     }
 
     func testAllDayEventEndsAtTheMidnightAfterItsLastDay() {
@@ -1125,8 +1125,8 @@ final class InvitationTimingPlanTests: XCTestCase {
         let lateThatNight = calendar.date(from: DateComponents(year: 2026, month: 10, day: 15, hour: 23, minute: 59, second: 59, nanosecond: 500_000_000))!
         let nextMidnight = calendar.date(from: DateComponents(year: 2026, month: 10, day: 16))!
 
-        XCTAssertFalse(InvitationTimingPlan.hasEnded(endDate: lastDay, isAllDay: true, now: lateThatNight, calendar: calendar))
-        XCTAssertTrue(InvitationTimingPlan.hasEnded(endDate: lastDay, isAllDay: true, now: nextMidnight, calendar: calendar))
+        XCTAssertFalse(InvitationTimingPolicy.hasEnded(endDate: lastDay, isAllDay: true, now: lateThatNight, calendar: calendar))
+        XCTAssertTrue(InvitationTimingPolicy.hasEnded(endDate: lastDay, isAllDay: true, now: nextMidnight, calendar: calendar))
     }
 
     func testOnlyPendingInvitationsExpire() {
@@ -1144,15 +1144,15 @@ final class InvitationTimingPlanTests: XCTestCase {
         }
         let after = Date(timeIntervalSince1970: 20_000)
 
-        XCTAssertTrue(InvitationTimingPlan.isExpired(make(.pending), now: after))
-        XCTAssertFalse(InvitationTimingPlan.isExpired(make(.pending), now: Date(timeIntervalSince1970: 11_000)))
-        XCTAssertFalse(InvitationTimingPlan.isExpired(make(.accepted), now: after))
-        XCTAssertFalse(InvitationTimingPlan.isExpired(make(.declined), now: after))
-        XCTAssertFalse(InvitationTimingPlan.isExpired(make(.canceled), now: after))
+        XCTAssertTrue(InvitationTimingPolicy.isExpired(make(.pending), now: after))
+        XCTAssertFalse(InvitationTimingPolicy.isExpired(make(.pending), now: Date(timeIntervalSince1970: 11_000)))
+        XCTAssertFalse(InvitationTimingPolicy.isExpired(make(.accepted), now: after))
+        XCTAssertFalse(InvitationTimingPolicy.isExpired(make(.declined), now: after))
+        XCTAssertFalse(InvitationTimingPolicy.isExpired(make(.canceled), now: after))
     }
 }
 
-final class CalendarAccessRequestImportMergePlanTests: XCTestCase {
+final class CalendarAccessRequestImportMergePolicyTests: XCTestCase {
     private let older = Date(timeIntervalSince1970: 1_000)
     private let newer = Date(timeIntervalSince1970: 2_000)
 
@@ -1161,7 +1161,7 @@ final class CalendarAccessRequestImportMergePlanTests: XCTestCase {
         // updatedAt than the owner's approval. A purely timestamp-based guard would roll
         // the approval back; the status-aware rule must not.
         XCTAssertFalse(
-            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+            CalendarAccessRequestImportMergePolicy.shouldApplyIncoming(
                 existingStatus: .approved, existingUpdatedAt: older,
                 incomingStatus: .pending, incomingUpdatedAt: newer
             )
@@ -1172,7 +1172,7 @@ final class CalendarAccessRequestImportMergePlanTests: XCTestCase {
         // The common race: approval saved locally, upload not yet landed, sync re-reads
         // the older pending server copy.
         XCTAssertFalse(
-            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+            CalendarAccessRequestImportMergePolicy.shouldApplyIncoming(
                 existingStatus: .approved, existingUpdatedAt: newer,
                 incomingStatus: .pending, incomingUpdatedAt: older
             )
@@ -1183,7 +1183,7 @@ final class CalendarAccessRequestImportMergePlanTests: XCTestCase {
         // The requester importing the owner's approval: it must land even if the owner's
         // clock is behind the requester's (decision wins over pending, ignoring clocks).
         XCTAssertTrue(
-            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+            CalendarAccessRequestImportMergePolicy.shouldApplyIncoming(
                 existingStatus: .pending, existingUpdatedAt: newer,
                 incomingStatus: .approved, incomingUpdatedAt: older
             )
@@ -1193,20 +1193,20 @@ final class CalendarAccessRequestImportMergePlanTests: XCTestCase {
     func testSameTerminalityFallsBackToLastWriterWins() {
         // Both pending: newer applies, equal applies (idempotent), older skips.
         XCTAssertTrue(
-            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+            CalendarAccessRequestImportMergePolicy.shouldApplyIncoming(
                 existingStatus: .pending, existingUpdatedAt: older,
                 incomingStatus: .pending, incomingUpdatedAt: newer
             )
         )
         XCTAssertTrue(
-            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+            CalendarAccessRequestImportMergePolicy.shouldApplyIncoming(
                 existingStatus: .pending, existingUpdatedAt: newer,
                 incomingStatus: .pending, incomingUpdatedAt: newer
             )
         )
         // Both terminal: last-writer-wins by timestamp (owner's own sequential writes).
         XCTAssertFalse(
-            CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+            CalendarAccessRequestImportMergePolicy.shouldApplyIncoming(
                 existingStatus: .approved, existingUpdatedAt: newer,
                 incomingStatus: .declined, incomingUpdatedAt: older
             )
@@ -1214,7 +1214,7 @@ final class CalendarAccessRequestImportMergePlanTests: XCTestCase {
     }
 }
 
-final class InvitationImportMergePlanTests: XCTestCase {
+final class InvitationImportMergePolicyTests: XCTestCase {
     private let older = Date(timeIntervalSince1970: 1_000)
     private let newer = Date(timeIntervalSince1970: 2_000)
 
@@ -1222,7 +1222,7 @@ final class InvitationImportMergePlanTests: XCTestCase {
         // Invitee accepted locally; a concurrent sync re-reads the still-pending server
         // copy before the accept upload lands — must not flip the invite back to pending.
         XCTAssertFalse(
-            InvitationImportMergePlan.shouldApplyIncoming(
+            InvitationImportMergePolicy.shouldApplyIncoming(
                 existingStatus: .accepted, existingUpdatedAt: older,
                 incomingStatus: .pending, incomingUpdatedAt: newer
             )
@@ -1233,7 +1233,7 @@ final class InvitationImportMergePlanTests: XCTestCase {
         // The creator receiving the invitee's accept must land it over local pending,
         // regardless of clock skew.
         XCTAssertTrue(
-            InvitationImportMergePlan.shouldApplyIncoming(
+            InvitationImportMergePolicy.shouldApplyIncoming(
                 existingStatus: .pending, existingUpdatedAt: newer,
                 incomingStatus: .accepted, incomingUpdatedAt: older
             )
@@ -1242,7 +1242,7 @@ final class InvitationImportMergePlanTests: XCTestCase {
 
     func testCanceledIsTerminalAndNotRolledBackByPending() {
         XCTAssertFalse(
-            InvitationImportMergePlan.shouldApplyIncoming(
+            InvitationImportMergePolicy.shouldApplyIncoming(
                 existingStatus: .canceled, existingUpdatedAt: older,
                 incomingStatus: .pending, incomingUpdatedAt: newer
             )
@@ -1250,7 +1250,7 @@ final class InvitationImportMergePlanTests: XCTestCase {
     }
 }
 
-final class StatusReuploadPlanTests: XCTestCase {
+final class StatusReuploadPolicyTests: XCTestCase {
     private let me = "me"
     private let partner = "you"
 
@@ -1259,7 +1259,7 @@ final class StatusReuploadPlanTests: XCTestCase {
         // failed). Must be returned for re-upload so it self-heals.
         let local = [request(id: "r1", owner: me, status: .approved, source: .privateOwnerZone)]
         let cloud = [request(id: "r1", owner: me, status: .pending, source: .privateOwnerZone)]
-        let result = CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload(
+        let result = CalendarAccessRequestReuploadPolicy.ownerDecisionsNeedingReupload(
             local: local, cloud: cloud, currentMemberID: me
         )
         XCTAssertEqual(result.map(\.id), ["r1"])
@@ -1267,7 +1267,7 @@ final class StatusReuploadPlanTests: XCTestCase {
 
     func testReuploadsOwnerApprovalWhenMissingFromServer() {
         let local = [request(id: "r1", owner: me, status: .approved, source: .privateOwnerZone)]
-        let result = CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload(
+        let result = CalendarAccessRequestReuploadPolicy.ownerDecisionsNeedingReupload(
             local: local, cloud: [], currentMemberID: me
         )
         XCTAssertEqual(result.map(\.id), ["r1"])
@@ -1278,7 +1278,7 @@ final class StatusReuploadPlanTests: XCTestCase {
         let local = [request(id: "r1", owner: me, status: .approved, source: .privateOwnerZone)]
         let cloud = [request(id: "r1", owner: me, status: .approved, source: .privateOwnerZone)]
         XCTAssertTrue(
-            CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload(
+            CalendarAccessRequestReuploadPolicy.ownerDecisionsNeedingReupload(
                 local: local, cloud: cloud, currentMemberID: me
             ).isEmpty
         )
@@ -1291,7 +1291,7 @@ final class StatusReuploadPlanTests: XCTestCase {
             request(id: "outgoing", owner: me, status: .approved, source: .acceptedSharedZone),
         ]
         XCTAssertTrue(
-            CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload(
+            CalendarAccessRequestReuploadPolicy.ownerDecisionsNeedingReupload(
                 local: local, cloud: [], currentMemberID: me
             ).isEmpty
         )
@@ -1304,7 +1304,7 @@ final class StatusReuploadPlanTests: XCTestCase {
         let local = [invite(id: "i1", creator: partner, status: .accepted)]
         let cloud = [invite(id: "i1", creator: partner, status: .pending)]
         XCTAssertEqual(
-            InvitationReuploadPlan.responsesNeedingReupload(
+            InvitationReuploadPolicy.responsesNeedingReupload(
                 local: local, cloud: cloud, currentMemberID: me
             ).map(\.id),
             ["i1"]
@@ -1318,7 +1318,7 @@ final class StatusReuploadPlanTests: XCTestCase {
         let local = [invite(id: "i1", creator: partner, status: .accepted)]
         let cloud = [invite(id: "i1", creator: partner, status: .canceled)]
         XCTAssertTrue(
-            InvitationReuploadPlan.responsesNeedingReupload(
+            InvitationReuploadPolicy.responsesNeedingReupload(
                 local: local, cloud: cloud, currentMemberID: me
             ).isEmpty
         )
@@ -1335,7 +1335,7 @@ final class StatusReuploadPlanTests: XCTestCase {
             invite(id: "mine", creator: me, status: .pending),
         ]
         XCTAssertTrue(
-            InvitationReuploadPlan.responsesNeedingReupload(
+            InvitationReuploadPolicy.responsesNeedingReupload(
                 local: local, cloud: cloud, currentMemberID: me
             ).isEmpty
         )
@@ -1351,7 +1351,7 @@ final class StatusReuploadPlanTests: XCTestCase {
             creation(id: "partners", creator: partner, needsUpload: true), // not mine
         ]
         XCTAssertEqual(
-            InvitationReuploadPlan.creationsNeedingReupload(local: local, currentMemberID: me).map(\.id),
+            InvitationReuploadPolicy.creationsNeedingReupload(local: local, currentMemberID: me).map(\.id),
             ["owed"]
         )
     }
@@ -1359,7 +1359,7 @@ final class StatusReuploadPlanTests: XCTestCase {
     func testNoCreationReuploadWhenNothingOwesAnUpload() {
         let local = [creation(id: "done", creator: me, needsUpload: false)]
         XCTAssertTrue(
-            InvitationReuploadPlan.creationsNeedingReupload(local: local, currentMemberID: me).isEmpty
+            InvitationReuploadPolicy.creationsNeedingReupload(local: local, currentMemberID: me).isEmpty
         )
     }
 

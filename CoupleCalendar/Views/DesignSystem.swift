@@ -206,7 +206,7 @@ struct MemberAvatarView: View {
 
     @ViewBuilder
     private var content: some View {
-        let normalized = MemberAvatarPlan.normalized(avatar)
+        let normalized = MemberAvatarPolicy.normalized(avatar)
         if let imageData = normalized?.imageData, let image = UIImage(data: imageData) {
             Image(uiImage: image)
                 .resizable()
@@ -237,11 +237,11 @@ struct MemberAvatarView: View {
 
 extension SettingsStore {
     var myAvatarFallbackText: String {
-        MemberAvatarPlan.initials(from: currentDisplayName, fallback: strings.meTitle)
+        MemberAvatarPolicy.initials(from: currentDisplayName, fallback: strings.meTitle)
     }
 
     var partnerAvatarFallbackText: String {
-        MemberAvatarPlan.initials(from: partnerDisplayName, fallback: strings.partnerTitle)
+        MemberAvatarPolicy.initials(from: partnerDisplayName, fallback: strings.partnerTitle)
     }
 }
 

@@ -63,9 +63,9 @@ final class CalendarAccessService {
     }
 
     @discardableResult
-    func ensureShareCalSmokeTestEvent(now: Date = .now, title: String = ShareCalSmokeTestEventPlan.title) throws -> String {
+    func ensureShareCalSmokeTestEvent(now: Date = .now, title: String = ShareCalSmokeTestEventPolicy.title) throws -> String {
         try ensureShareCalSmokeTestEvent(
-            draft: ShareCalSmokeTestEventPlan.draft(now: now, title: title)
+            draft: ShareCalSmokeTestEventPolicy.draft(now: now, title: title)
         )
     }
 
@@ -214,7 +214,7 @@ final class CalendarAccessService {
 
     private func ensureShareCalEKCalendar() throws -> EKCalendar {
         if let existing = eventStore.calendars(for: .event).first(where: { calendar in
-            calendar.title.compare(ShareCalCalendarBootstrapPlan.calendarTitle, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            calendar.title.compare(ShareCalCalendarBootstrapPolicy.calendarTitle, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
                 && calendar.allowsContentModifications
         }) {
             return existing
@@ -225,7 +225,7 @@ final class CalendarAccessService {
         }
 
         let calendar = EKCalendar(for: .event, eventStore: eventStore)
-        calendar.title = ShareCalCalendarBootstrapPlan.calendarTitle
+        calendar.title = ShareCalCalendarBootstrapPolicy.calendarTitle
         calendar.cgColor = UIColor.systemPink.cgColor
         calendar.source = source
         try eventStore.saveCalendar(calendar, commit: true)

@@ -150,7 +150,7 @@ if [ "${1:-}" != "--skip-build" ]; then
   xcodebuild -project "$ROOT_DIR/CoupleCalendar.xcodeproj" -scheme CoupleCalendar \
     -configuration Debug -destination "platform=iOS Simulator,id=$OWNER_UDID" \
     -derivedDataPath "$DERIVED" \
-    CODE_SIGN_ENTITLEMENTS=CoupleCalendar/CoupleCalendar.entitlements \
+    CODE_SIGN_ENTITLEMENTS=CoupleCalendar/App/CoupleCalendar.entitlements \
     "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
     build -quiet
 fi
@@ -281,7 +281,7 @@ TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
   -derivedDataPath "$DERIVED" \
   -resultBundlePath "$UI_RESULT" \
   -only-testing:CoupleCalendarUITests/CoupleCalendarUITests/testPairedPartnerCalendarShowsOwnerEvent \
-  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/CoupleCalendar.entitlements \
+  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/App/CoupleCalendar.entitlements \
   "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
   -quiet || fail "partner calendar UI did not render the owner's synced event (see $UI_RESULT)"
 log "Partner calendar UI rendered the owner's synced event (screenshot in $UI_RESULT)."
@@ -379,7 +379,7 @@ TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
   -derivedDataPath "$DERIVED" \
   -resultBundlePath "$JOINT_UI_RESULT" \
   -only-testing:CoupleCalendarUITests/CoupleCalendarUITests/testPairedPartnerCanOpenJointEventCommentThread \
-  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/CoupleCalendar.entitlements \
+  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/App/CoupleCalendar.entitlements \
   "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
   -quiet || fail "partner could not open the joint event's comment thread from the UI (see $JOINT_UI_RESULT)"
 log "Partner opened the joint event comment thread from the UI (screenshot in $JOINT_UI_RESULT)."
@@ -419,7 +419,7 @@ log "Partner sees the withdrawn invitation as canceled ✓"
 # survives in CloudKit. This proves the 「发现旧的 iCloud 数据 → 继续使用」 path (run through
 # its diagnostic twin) restores the pairing, the nickname and the imported data on a truly
 # fresh install, and that an event deleted WHILE the app was gone is tombstoned for the
-# partner (OwnMirrorReconciliationPlan) instead of living on as a ghost.
+# partner (OwnMirrorReconciliationPolicy) instead of living on as a ghost.
 log "Owner: syncing once so the next launch's automatic sync is throttled..."
 launch_app "$OWNER_UDID" "owner-presync" -ShareCalForceSync
 wait_for_console "$CONSOLE_LOG" "foregroundSync finished" $SYNC_TIMEOUT "owner pre-delete sync"

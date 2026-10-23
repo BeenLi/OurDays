@@ -15,7 +15,7 @@ final class ShareCalAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         // The launch handler fires minutes-to-hours later, by which time the App's
         // init has configured the shared runner (notifications decision 0002).
         BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: BackgroundRefreshSchedulePlan.taskIdentifier,
+            forTaskWithIdentifier: BackgroundRefreshSchedulePolicy.taskIdentifier,
             using: nil
         ) { task in
             guard let refreshTask = task as? BGAppRefreshTask else {
@@ -53,10 +53,10 @@ final class ShareCalAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
         let configuration = UISceneConfiguration(
-            name: ShareCalSceneDelegateConfigurationPlan.configurationName,
+            name: ShareCalSceneDelegateConfigurationPolicy.configurationName,
             sessionRole: connectingSceneSession.role
         )
-        configuration.delegateClass = ShareCalSceneDelegateConfigurationPlan.sceneDelegateClass
+        configuration.delegateClass = ShareCalSceneDelegateConfigurationPolicy.sceneDelegateClass
         return configuration
     }
 
@@ -124,7 +124,7 @@ enum ShareCalNotificationSetup {
 }
 
 @MainActor
-enum ShareCalUITestLaunchPlan {
+enum ShareCalUITestLaunchPolicy {
     static let resetUserDefaultsArgument = "--sharecal-reset-user-defaults"
 
     static func resetUserDefaultsIfRequested(
@@ -155,13 +155,13 @@ struct CoupleCalendarApp: App {
     }()
 
     init() {
-        ShareCalUITestLaunchPlan.resetUserDefaultsIfRequested()
+        ShareCalUITestLaunchPolicy.resetUserDefaultsIfRequested()
         let settings = SettingsStore()
         let services = AppServices()
         // Test harness: dismiss the first-run profile / existing-iCloud-data sheets by
         // seeding the app's own UserDefaults before the view tree appears. Inert in
         // normal launches (no -ShareCalSeedProfileName argument).
-        if let profileName = ShareCalLaunchDiagnosticPlan.seedProfileName() {
+        if let profileName = ShareCalLaunchDiagnosticPolicy.seedProfileName() {
             settings.currentDisplayName = profileName
             settings.hasCompletedInitialProfilePrompt = true
             settings.hasResolvedExistingICloudDataPrompt = true

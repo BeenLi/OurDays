@@ -4,7 +4,7 @@ import Foundation
 /// CloudKit writes, so the same comment UI serves both a regular `EventMirror` and a
 /// joint event (which has no mirror — see `JointScheduleEvent`). `key` is the value
 /// stored in `EventComment.eventMirrorID` (and the filter for the thread). `ownerMemberID`
-/// drives `CloudKitCommentWritePlan.destination` (== me → my private zone, else the
+/// drives `CloudKitCommentWritePolicy.destination` (== me → my private zone, else the
 /// accepted shared zone). `recordName` locates that shared zone.
 struct EventCommentAnchor: Equatable {
     let key: String
@@ -12,7 +12,7 @@ struct EventCommentAnchor: Equatable {
     let recordName: String
 }
 
-enum EventCommentAnchorPlan {
+enum EventCommentAnchorPolicy {
     static func anchor(forMirror mirror: EventMirror) -> EventCommentAnchor {
         EventCommentAnchor(
             key: mirror.id,
@@ -22,7 +22,7 @@ enum EventCommentAnchorPlan {
     }
 
     /// My own event as the calendar shows it: a transient `display:` mirror built straight
-    /// from EventKit (see `CalendarDisplayMirrorPlan`). Its thread is keyed by the `mirrorKey`,
+    /// from EventKit (see `CalendarDisplayMirrorPolicy`). Its thread is keyed by the `mirrorKey`,
     /// which is also the id *and* CloudKit record name of the persisted mirror on both devices
     /// (`EventMirrorService.makeMirrors` and the partner's import both name the record after
     /// it). So the key is known before the event has ever synced: a comment written now lands
@@ -67,30 +67,30 @@ enum EventCommentAvailability: Equatable {
 /// persisted mirrors) always do. My own events open as transient `display:` mirrors; they get
 /// a thread as soon as the event is inside the sharing windows — synced or not — so I can
 /// start the conversation on my own schedule and the partner can reply once the mirror lands.
-enum EventDetailCommentPlan {
+enum EventDetailCommentPolicy {
     static func availability(
         for event: EventMirror,
         mirrors: [EventMirror],
         sharingWindows: [DateInterval]
     ) -> EventCommentAvailability {
-        guard event.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) else {
-            return .available(EventCommentAnchorPlan.anchor(forMirror: event))
+        guard event.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix) else {
+            return .available(EventCommentAnchorPolicy.anchor(forMirror: event))
         }
-        let twin = EventDetailMirrorResolutionPlan.persistedTwin(for: event, in: mirrors)
-        guard twin != nil || CalendarSharingWindowPlan.contains(event.occurrenceStartDate, in: sharingWindows) else {
+        let twin = EventDetailMirrorResolutionPolicy.persistedTwin(for: event, in: mirrors)
+        guard twin != nil || CalendarSharingWindowPolicy.contains(event.occurrenceStartDate, in: sharingWindows) else {
             return .notSharedWithPartner
         }
-        return .available(EventCommentAnchorPlan.anchor(forOwnDisplayMirror: event, persistedTwin: twin))
+        return .available(EventCommentAnchorPolicy.anchor(forOwnDisplayMirror: event, persistedTwin: twin))
     }
 }
 
 /// Decides which calendar events show a "has comments" indicator (the red dot). A displayed
 /// event may be a transient `display:` mirror — my own events render straight from EventKit
-/// (see `CalendarDisplayMirrorPlan`) and their id is NOT the value comments are keyed by; the
+/// (see `CalendarDisplayMirrorPolicy`) and their id is NOT the value comments are keyed by; the
 /// persisted twin sharing its `mirrorKey` carries the real id. Callers pass a lightweight
-/// `mirrorKey -> real id` map so this stays a pure, SwiftData-free plan (one place owns the
+/// `mirrorKey -> real id` map so this stays a pure, SwiftData-free policy (one place owns the
 /// display→real resolution, matching `EventDetailView`'s own resolution).
-enum EventCommentIndicatorPlan {
+enum EventCommentIndicatorPolicy {
     /// Anchor keys (`EventComment.eventMirrorID`) that currently have at least one live comment.
     static func commentedAnchorKeys(_ comments: [EventComment]) -> Set<String> {
         Set(comments.lazy.filter { $0.deletedAt == nil }.map(\.eventMirrorID))
@@ -115,12 +115,12 @@ enum EventCommentIndicatorPlan {
     /// The value a mirror's comment thread is keyed by. A transient display mirror resolves to
     /// its persisted twin's id via the shared `mirrorKey`, falling back to the `mirrorKey`
     /// itself — the key my own not-yet-synced events comment under
-    /// (`EventCommentAnchorPlan.anchor(forOwnDisplayMirror:persistedTwin:)`).
+    /// (`EventCommentAnchorPolicy.anchor(forOwnDisplayMirror:persistedTwin:)`).
     private static func resolvedAnchorKey(
         for mirror: EventMirror,
         persistedIDByMirrorKey: [String: String]
     ) -> String? {
-        if mirror.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix) {
+        if mirror.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix) {
             return persistedIDByMirrorKey[mirror.mirrorKey] ?? mirror.mirrorKey
         }
         return mirror.id

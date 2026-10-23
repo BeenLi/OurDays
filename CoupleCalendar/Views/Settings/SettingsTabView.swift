@@ -53,14 +53,14 @@ struct SettingsTabView: View {
     }
 
     private var pendingIncomingAccessRequests: [CalendarAccessRequest] {
-        CalendarAccessRequestListPlan.pendingIncoming(
+        CalendarAccessRequestListPolicy.pendingIncoming(
             accessRequests,
             currentMemberID: settings.currentMemberID
         )
     }
 
     private var outgoingAccessRequests: [CalendarAccessRequest] {
-        CalendarAccessRequestListPlan.outgoing(accessRequests, currentMemberID: settings.currentMemberID)
+        CalendarAccessRequestListPolicy.outgoing(accessRequests, currentMemberID: settings.currentMemberID)
     }
 
     private var syncStatusText: String {
@@ -75,7 +75,7 @@ struct SettingsTabView: View {
     }
 
     private var pairingStatus: PairingStatus {
-        PairingSettingsPlan.status(
+        PairingSettingsPolicy.status(
             hasStartedPairing: settings.hasStartedPairing,
             outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
             incomingOwnerID: settings.partnerShareOwnerID
@@ -106,8 +106,8 @@ struct SettingsTabView: View {
             return strings.requestRequiredValue
         }
         let calendar = Calendar.current
-        let normalizedPairingDate = PairingDatePlan.normalizedPairingDate(pairingDate, calendar: calendar)
-        let authorizedStartDate = PrePairingHistoryAccessPlan.contiguousAuthorizedStartDate(
+        let normalizedPairingDate = PairingDatePolicy.normalizedPairingDate(pairingDate, calendar: calendar)
+        let authorizedStartDate = PrePairingHistoryAccessPolicy.contiguousAuthorizedStartDate(
             pairingDate: normalizedPairingDate,
             accessRequests: accessRequests,
             currentMemberID: settings.currentMemberID,
@@ -122,8 +122,8 @@ struct SettingsTabView: View {
     }
 
     private var nextHistoryRequestRange: PairingHistoryRequestRange {
-        let pairingDate = settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(.now)
-        return PrePairingHistoryAccessPlan.defaultNextRequestRange(
+        let pairingDate = settings.pairingDate ?? PairingDatePolicy.normalizedPairingDate(.now)
+        return PrePairingHistoryAccessPolicy.defaultNextRequestRange(
             pairingDate: pairingDate,
             accessRequests: accessRequests,
             currentMemberID: settings.currentMemberID,
@@ -132,7 +132,7 @@ struct SettingsTabView: View {
     }
 
     private func sharingScopeValue(
-        direction: PrePairingHistoryAccessPlan.Direction,
+        direction: PrePairingHistoryAccessPolicy.Direction,
         ownerMemberID: String?
     ) -> String {
         let strings = settings.strings
@@ -140,8 +140,8 @@ struct SettingsTabView: View {
             return strings.sharedAfterPairingDateValue
         }
         let calendar = Calendar.current
-        let normalizedPairingDate = PairingDatePlan.normalizedPairingDate(pairingDate, calendar: calendar)
-        let authorizedStartDate = PrePairingHistoryAccessPlan.contiguousAuthorizedStartDate(
+        let normalizedPairingDate = PairingDatePolicy.normalizedPairingDate(pairingDate, calendar: calendar)
+        let authorizedStartDate = PrePairingHistoryAccessPolicy.contiguousAuthorizedStartDate(
             pairingDate: normalizedPairingDate,
             accessRequests: accessRequests,
             currentMemberID: settings.currentMemberID,
@@ -230,7 +230,7 @@ struct SettingsTabView: View {
                     Image(systemName: "person.2.badge.gearshape")
                 }
                 .accessibilityIdentifier("shared-people-official-share-button")
-                .disabled(!SharedPeoplePresentationPlan.canOpenOfficialSharing(
+                .disabled(!SharedPeoplePresentationPolicy.canOpenOfficialSharing(
                     isCloudKitEnabled: services.isCloudKitEnabled,
                     isPreparingShare: isPreparingShare,
                     isStoppingShare: isStoppingShare
@@ -238,7 +238,7 @@ struct SettingsTabView: View {
             }
             .listRowBackground(OurDaysTheme.surface)
 
-            if PairingSafetyEducationPlan.shouldShowPersistentWarning(pairingStatus: pairingStatus) {
+            if PairingSafetyEducationPolicy.shouldShowPersistentWarning(pairingStatus: pairingStatus) {
                 Section(strings.pairingSafetySection) {
                     Label {
                         VStack(alignment: .leading, spacing: 4) {
@@ -330,7 +330,7 @@ struct SettingsTabView: View {
             .id(SettingsFocusTarget.calendarAccess)
 
             Section(strings.calendarsToShareSection) {
-                if ShareCalCalendarBootstrapPlan.shouldOfferCreation(calendars: calendars) {
+                if ShareCalCalendarBootstrapPolicy.shouldOfferCreation(calendars: calendars) {
                     Button(strings.createShareCalCalendarButton) {
                         createShareCalCalendar()
                     }
@@ -479,7 +479,7 @@ struct SettingsTabView: View {
             switch sheet {
             case .historyRequest:
                 HistoryRequestSheet(
-                    pairingDate: settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(.now),
+                    pairingDate: settings.pairingDate ?? PairingDatePolicy.normalizedPairingDate(.now),
                     initialRange: nextHistoryRequestRange
                 ) { startDate, endDate in
                     sendAccessRequest(startDate: startDate, endDate: endDate)
@@ -492,7 +492,7 @@ struct SettingsTabView: View {
                     identity: .me,
                     footnote: strings.avatarSyncFootnote(settings.partnerDisplayName)
                 ) { avatar in
-                    settings.currentAvatar = MemberAvatarPlan.normalized(avatar)
+                    settings.currentAvatar = MemberAvatarPolicy.normalized(avatar)
                     if pairingStatus != .notPaired {
                         syncNow()
                     }
@@ -506,7 +506,7 @@ struct SettingsTabView: View {
                     identity: .partner,
                     footnote: strings.partnerAvatarFootnote
                 ) { avatar in
-                    settings.partnerAvatarOverride = MemberAvatarPlan.normalized(avatar)
+                    settings.partnerAvatarOverride = MemberAvatarPolicy.normalized(avatar)
                 }
             }
         }
@@ -582,8 +582,8 @@ struct SettingsTabView: View {
         authorizationState = services.calendarAccess.authorizationState()
         calendars = services.calendarAccess.calendars()
         if settings.selectedCalendarIDs.isEmpty,
-           let shareCalCalendar = calendars.first(where: ShareCalCalendarBootstrapPlan.isShareCalCalendar) {
-            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
+           let shareCalCalendar = calendars.first(where: ShareCalCalendarBootstrapPolicy.isShareCalCalendar) {
+            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPolicy.selectedCalendarIDs(
                 afterEnsuring: shareCalCalendar,
                 currentSelection: settings.selectedCalendarIDs
             )
@@ -602,7 +602,7 @@ struct SettingsTabView: View {
         do {
             let calendar = try services.calendarAccess.ensureShareCalCalendar()
             refreshCalendars()
-            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
+            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPolicy.selectedCalendarIDs(
                 afterEnsuring: calendar,
                 currentSelection: settings.selectedCalendarIDs
             )
@@ -638,7 +638,7 @@ struct SettingsTabView: View {
         let calendar = Calendar.current
         let normalizedStartDate = calendar.startOfDay(for: startDate)
         let normalizedDisplayedEndDate = calendar.startOfDay(for: endDate)
-        let exclusiveEndDate = PairingDatePlan.exclusiveEndDate(
+        let exclusiveEndDate = PairingDatePolicy.exclusiveEndDate(
             forDisplayedEndDate: normalizedDisplayedEndDate,
             calendar: calendar
         )
@@ -648,10 +648,10 @@ struct SettingsTabView: View {
             return false
         }
 
-        let validation = PrePairingHistoryAccessPlan.validation(
+        let validation = PrePairingHistoryAccessPolicy.validation(
             requestedStartDate: normalizedStartDate,
             requestedEndDate: exclusiveEndDate,
-            pairingDate: settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(.now),
+            pairingDate: settings.pairingDate ?? PairingDatePolicy.normalizedPairingDate(.now),
             accessRequests: accessRequests,
             currentMemberID: settings.currentMemberID,
             ownerMemberID: ownerMemberIDForPartnerHistory,
@@ -723,13 +723,13 @@ struct SettingsTabView: View {
 
     private func accessRequestRangeText(for request: CalendarAccessRequest) -> String {
         let start = settings.strings.abbreviatedDateText(request.requestedStartDate)
-        let displayedEndDate = PairingDatePlan.displayedEndDate(forExclusiveEndDate: request.requestedEndDate)
+        let displayedEndDate = PairingDatePolicy.displayedEndDate(forExclusiveEndDate: request.requestedEndDate)
         let end = settings.strings.abbreviatedDateText(displayedEndDate)
         return "\(start) - \(end)"
     }
 
     private func displayName(forRequesterMemberID requesterMemberID: String) -> String {
-        MemberDisplayNamePlan.displayName(
+        MemberDisplayNamePolicy.displayName(
             forMemberID: requesterMemberID,
             currentMemberID: settings.currentMemberID,
             currentDisplayName: settings.currentDisplayName,
@@ -746,7 +746,7 @@ struct SettingsTabView: View {
             errorMessage = settings.strings.iCloudSharingUnavailableLocalBuild
             return
         }
-        guard let displayName = PairingSettingsPlan.normalizedDisplayName(settings.currentDisplayName) else {
+        guard let displayName = PairingSettingsPolicy.normalizedDisplayName(settings.currentDisplayName) else {
             errorMessage = settings.strings.currentDisplayNameRequiredMessage
             return
         }
@@ -780,7 +780,7 @@ struct SettingsTabView: View {
             settings.iCloudSharingEnabled = true
             settings.hasStartedPairing = true
             settings.markPairingDateIfNeeded()
-            settings.outgoingShareParticipantIDs = CloudKitShareParticipantIdentityPlan.acceptedParticipantIDs(
+            settings.outgoingShareParticipantIDs = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(
                 from: share.share
             )
             preparedShare = share
@@ -794,7 +794,7 @@ struct SettingsTabView: View {
 
     @MainActor
     private func clearLocalPairingAfterSharingStopped() {
-        let localOwnerIDsToPurge = ICloudSharingTeardownPlan.localOwnerIDsToPurge(
+        let localOwnerIDsToPurge = ICloudSharingTeardownPolicy.localOwnerIDsToPurge(
             partnerShareOwnerID: settings.partnerShareOwnerID
         )
         var purgeError: Error?
@@ -848,7 +848,7 @@ struct SettingsTabView: View {
         }
         // The share is gone, so local pairing state must be cleared whatever happens
         // next. The partner can no longer read my zone, but whatever they left in it
-        // would ride into the next share: clean it out now (PartnerScopedDataPlan); a
+        // would ride into the next share: clean it out now (PartnerScopedDataPolicy); a
         // failure here is reported, and the import-time filter still hides the leftovers.
         var cleanupError: Error?
         do {

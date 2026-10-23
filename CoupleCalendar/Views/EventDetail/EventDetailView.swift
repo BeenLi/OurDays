@@ -110,7 +110,7 @@ struct EventDetailView: View {
 
                 // An invitation proposes something still to come: once the event has
                 // ended there is nothing to invite the partner to, so the section is gone.
-                if InvitationTimingPlan.canInvite(endDate: event.endDate, isAllDay: event.isAllDay, now: .now) {
+                if InvitationTimingPolicy.canInvite(endDate: event.endDate, isAllDay: event.isAllDay, now: .now) {
                     Section {
                         Button {
                             createInviteAfterConflictCheck()
@@ -146,7 +146,7 @@ struct EventDetailView: View {
                 // conversation on my own event before it has even synced; the partner reads the
                 // comment from my shared zone once the mirror lands. Only an event the partner
                 // can't see (outside the sharing windows) gets an explanation instead.
-                switch EventDetailCommentPlan.availability(for: event, mirrors: mirrors, sharingWindows: sharingWindows) {
+                switch EventDetailCommentPolicy.availability(for: event, mirrors: mirrors, sharingWindows: sharingWindows) {
                 case .available(let anchor):
                     EventCommentsSection(anchor: anchor)
                 case .notSharedWithPartner:
@@ -198,14 +198,14 @@ struct EventDetailView: View {
     /// The same windows `SyncCoordinator.foregroundSync` mirrors with: from the pairing day
     /// onward, plus any approved history request.
     private var sharingWindows: [DateInterval] {
-        CalendarSharingWindowPlan.effectiveWindows(
-            now: settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(.now),
+        CalendarSharingWindowPolicy.effectiveWindows(
+            now: settings.pairingDate ?? PairingDatePolicy.normalizedPairingDate(.now),
             accessRequests: accessRequests
         )
     }
 
     private var detailTimeText: String {
-        EventDetailTimePlan.text(
+        EventDetailTimePolicy.text(
             startDate: event.startDate,
             endDate: event.endDate,
             isAllDay: event.isAllDay,
@@ -217,7 +217,7 @@ struct EventDetailView: View {
     private func createInviteAfterConflictCheck() {
         inviteError = nil
         inviteSuccessMessage = nil
-        let conflicts = InvitationConflictPlan.conflicts(
+        let conflicts = InvitationConflictPolicy.conflicts(
             for: event,
             partnerMemberID: settings.partnerOwnerIDForLocalData,
             mirrors: mirrors
@@ -229,7 +229,7 @@ struct EventDetailView: View {
 
         conflictMessage = settings.strings.invitationConflictMessage(
             eventTitle: firstConflict.title,
-            timeText: EventTimeRangeTextPlan.text(for: firstConflict, strings: settings.strings),
+            timeText: EventTimeRangeTextPolicy.text(for: firstConflict, strings: settings.strings),
             additionalConflictCount: conflicts.count - 1
         )
         isShowingInviteConflict = true
@@ -264,7 +264,7 @@ struct EventDetailView: View {
         // Optimistic send (req2): the invitation is durably in the local store, so report
         // success immediately rather than blocking on the CloudKit round-trip. The upload
         // moves to the background; if it fails, `needsCloudKitUpload` keeps it queued for
-        // self-heal on the next foregroundSync (InvitationReuploadPlan.creationsNeedingReupload).
+        // self-heal on the next foregroundSync (InvitationReuploadPolicy.creationsNeedingReupload).
         inviteSuccessMessage = settings.strings.invitationSentMessage
 
         guard let cloudKit else { return }
@@ -281,7 +281,7 @@ struct EventDetailView: View {
     }
 
     private func syncOnOpenIfNeeded() async {
-        guard ForegroundSyncPlan.shouldRunAutomaticSync(
+        guard ForegroundSyncPolicy.shouldRunAutomaticSync(
             lastSyncAt: settings.lastSyncAt,
             now: .now,
             syncPhase: settings.syncPhase,
@@ -313,7 +313,7 @@ struct JointEventDetailView: View {
                         title: event.title,
                         ownerLabel: strings.jointScheduleLabel,
                         ownerMemberID: nil,
-                        timeText: EventDetailTimePlan.text(
+                        timeText: EventDetailTimePolicy.text(
                             startDate: event.startDate,
                             endDate: event.endDate,
                             isAllDay: event.isAllDay,
@@ -338,7 +338,7 @@ struct JointEventDetailView: View {
                     }
                 }
 
-                EventCommentsSection(anchor: EventCommentAnchorPlan.anchor(forInvitation: invitation))
+                EventCommentsSection(anchor: EventCommentAnchorPolicy.anchor(forInvitation: invitation))
             }
             .listSectionSpacing(16)
             .ourDaysListBackground()
@@ -361,7 +361,7 @@ struct JointEventDetailView: View {
     }
 
     private func syncOnOpenIfNeeded() async {
-        guard ForegroundSyncPlan.shouldRunAutomaticSync(
+        guard ForegroundSyncPolicy.shouldRunAutomaticSync(
             lastSyncAt: settings.lastSyncAt,
             now: .now,
             syncPhase: settings.syncPhase,

@@ -9,7 +9,7 @@ struct ActivityFeedSection: Identifiable, Equatable {
 
 /// Groups the activity feed by the calendar day of each thread's latest comment,
 /// keeping the feed's newest-first order inside and across sections.
-enum ActivityFeedSectionPlan {
+enum ActivityFeedSectionPolicy {
     static func sections(_ items: [ActivityFeedItem], calendar: Calendar = .current) -> [ActivityFeedSection] {
         var sections: [ActivityFeedSection] = []
         for item in items.sorted(by: { $0.latestCommentAt > $1.latestCommentAt }) {
@@ -29,13 +29,13 @@ enum ActivityFeedSectionPlan {
 /// invites drives it to zero. Nothing else sets the icon badge once the silent-push
 /// migration (notifications decision 0002) removed the subscription's `shouldBadge`, so
 /// this is also what clears a badge orphaned by a pre-migration visible push.
-enum AppIconBadgePlan {
+enum AppIconBadgePolicy {
     static func badgeCount(unreadActivityCount: Int, pendingInviteCount: Int) -> Int {
         max(0, unreadActivityCount + pendingInviteCount)
     }
 }
 
-enum PendingActionBadgePlan {
+enum PendingActionBadgePolicy {
     static func count(
         invitations: [EventInvitation],
         accessRequests: [CalendarAccessRequest],
@@ -43,10 +43,10 @@ enum PendingActionBadgePlan {
         now: Date = .now
     ) -> Int {
         let invitationCount = invitations.filter {
-            InvitationInteractionPlan.canRespond(to: $0, currentMemberID: currentMemberID, now: now)
+            InvitationInteractionPolicy.canRespond(to: $0, currentMemberID: currentMemberID, now: now)
                 && $0.archivedAt == nil
         }.count
-        return invitationCount + CalendarAccessRequestListPlan.pendingIncoming(
+        return invitationCount + CalendarAccessRequestListPolicy.pendingIncoming(
             accessRequests,
             currentMemberID: currentMemberID
         ).count
@@ -72,7 +72,7 @@ struct ActivityFeedItem: Identifiable, Equatable {
 /// (newest-comment-first), and counts unread as partner-authored comments newer
 /// than the local `lastSeenActivityAt`. Deliberately does NOT use `EventComment.isRead`
 /// (that field is synced/shared with the partner) — see plan-tree decision 0002.
-enum ActivityFeedPlan {
+enum ActivityFeedPolicy {
     static func items(
         comments: [EventComment],
         mirrors: [EventMirror],
@@ -94,7 +94,7 @@ enum ActivityFeedPlan {
         var result: [ActivityFeedItem] = []
         for (eventMirrorID, group) in grouped {
             // Resolve the thread's title from a mirror OR, for joint-event comments
-            // (anchored to the invitation id, see EventCommentAnchorPlan), the invitation.
+            // (anchored to the invitation id, see EventCommentAnchorPolicy), the invitation.
             // Without the invitation fallback joint comments would silently vanish from the
             // feed while still bumping the unread badge — surface them instead.
             guard let title = threadTitle(
@@ -183,7 +183,7 @@ struct PlannedLocalNotification: Equatable, Identifiable {
 /// new invitations to me, responses to my invitations, and history access requests/replies.
 /// `since` is the local high-water mark of the last notification check; a nil `since`
 /// means "no baseline yet" and produces nothing (so first launch doesn't flood).
-enum LocalNotificationPlan {
+enum LocalNotificationPolicy {
     static func pending(
         comments: [EventComment],
         mirrors: [EventMirror],
@@ -260,7 +260,7 @@ enum LocalNotificationPlan {
         // 4. History access requests. The incoming request from the partner lands in
         // MY zone (.privateOwnerZone); the partner's reply to MY request comes back via
         // the accepted shared zone (any source other than .privateOwnerZone), mirroring
-        // CalendarAccessRequestListPlan.outgoing.
+        // CalendarAccessRequestListPolicy.outgoing.
         for request in accessRequests {
             if request.source == .privateOwnerZone
                 && request.ownerMemberID == currentMemberID
@@ -294,9 +294,9 @@ enum LocalNotificationPlan {
 }
 
 /// Pure mapping from a notification kind to localized title/body. Kept separate from
-/// LocalNotificationPlan so notification policy (what to notify) is tested independently
+/// LocalNotificationPolicy so notification policy (what to notify) is tested independently
 /// of wording (how it reads).
-enum LocalNotificationContentPlan {
+enum LocalNotificationContentPolicy {
     static func content(
         for kind: LocalNotificationKind,
         strings: ShareCalStrings,

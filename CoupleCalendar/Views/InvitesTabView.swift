@@ -12,7 +12,7 @@ struct InvitesTabView: View {
     let openInCalendar: (EventInvitation) -> Void
 
     private var pendingIncomingAccessRequests: [CalendarAccessRequest] {
-        CalendarAccessRequestListPlan.pendingIncoming(
+        CalendarAccessRequestListPolicy.pendingIncoming(
             accessRequests,
             currentMemberID: settings.currentMemberID
         )
@@ -20,10 +20,10 @@ struct InvitesTabView: View {
 
     var body: some View {
         let strings = settings.strings
-        let visibleInvitations = InvitationListPlan.visibleInvitations(invitations)
-        let (pendingInvitations, handledInvitations) = InvitationListPlan.partitionForDisplay(visibleInvitations)
+        let visibleInvitations = InvitationListPolicy.visibleInvitations(invitations)
+        let (pendingInvitations, handledInvitations) = InvitationListPolicy.partitionForDisplay(visibleInvitations)
         let answerableCount = pendingInvitations.filter {
-            InvitationInteractionPlan.canRespond(to: $0, currentMemberID: settings.currentMemberID)
+            InvitationInteractionPolicy.canRespond(to: $0, currentMemberID: settings.currentMemberID)
         }.count
 
         List {
@@ -66,7 +66,7 @@ struct InvitesTabView: View {
                         }
                         .invitesRowStyle()
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            if InvitationListPlan.canDelete(invitation) {
+                            if InvitationListPolicy.canDelete(invitation) {
                                 Button(role: .destructive) {
                                     archive(invitation)
                                 } label: {
@@ -92,7 +92,7 @@ struct InvitesTabView: View {
                         }
                         .invitesRowStyle(vertical: 3)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            if InvitationListPlan.canDelete(invitation) {
+                            if InvitationListPolicy.canDelete(invitation) {
                                 Button(role: .destructive) {
                                     archive(invitation)
                                 } label: {
@@ -133,13 +133,13 @@ struct InvitesTabView: View {
             let draft = services.invitationService.draft(from: invitation)
             let createdEvent = try services.calendarAccess.createShareCalEvent(from: draft)
             _ = try services.invitationService.accept(invitation, createdLocalEventID: createdEvent.eventIdentifier)
-            let mirror = AcceptedInvitationMirrorPlan.mirror(
+            let mirror = AcceptedInvitationMirrorPolicy.mirror(
                 from: invitation,
                 createdEvent: createdEvent,
                 ownerMemberID: settings.currentMemberID
             )
             try EventMirrorStore.upsert(mirror, modelContext: modelContext)
-            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
+            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPolicy.selectedCalendarIDs(
                 afterEnsuring: CalendarDescriptor(
                     id: createdEvent.calendarIdentifier,
                     title: createdEvent.calendarTitle,
@@ -167,7 +167,7 @@ struct InvitesTabView: View {
 
     /// Creator takes back a pending invitation. The status flips locally first (the
     /// ticket leaves "pending" at once); the upload is owed until it lands, and
-    /// `InvitationReuploadPlan.creationsNeedingReupload` re-pushes it on the next sync
+    /// `InvitationReuploadPolicy.creationsNeedingReupload` re-pushes it on the next sync
     /// if this one fails, so the partner's copy always catches up.
     private func withdraw(_ invitation: EventInvitation) {
         services.invitationService.cancel(invitation)
@@ -235,13 +235,13 @@ struct InvitesTabView: View {
 
     private func accessRequestRangeText(for request: CalendarAccessRequest) -> String {
         let start = settings.strings.abbreviatedDateText(request.requestedStartDate)
-        let displayedEndDate = PairingDatePlan.displayedEndDate(forExclusiveEndDate: request.requestedEndDate)
+        let displayedEndDate = PairingDatePolicy.displayedEndDate(forExclusiveEndDate: request.requestedEndDate)
         let end = settings.strings.abbreviatedDateText(displayedEndDate)
         return "\(start) - \(end)"
     }
 
     private func displayName(forRequesterMemberID requesterMemberID: String) -> String {
-        MemberDisplayNamePlan.displayName(
+        MemberDisplayNamePolicy.displayName(
             forMemberID: requesterMemberID,
             currentMemberID: settings.currentMemberID,
             currentDisplayName: settings.currentDisplayName,
@@ -314,8 +314,8 @@ struct InvitationTicket: View {
     var body: some View {
         let strings = settings.strings
         let locale = settings.appLanguage.locale
-        let canRespond = InvitationInteractionPlan.canRespond(to: invitation, currentMemberID: currentMemberID)
-        let canWithdraw = InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: currentMemberID)
+        let canRespond = InvitationInteractionPolicy.canRespond(to: invitation, currentMemberID: currentMemberID)
+        let canWithdraw = InvitationInteractionPolicy.canWithdraw(invitation, currentMemberID: currentMemberID)
 
         VStack(spacing: 0) {
             HStack(spacing: 0) {
@@ -449,9 +449,9 @@ struct InvitationRow: View {
 
     var body: some View {
         let strings = settings.strings
-        let canOpenInCalendar = InvitationListPlan.canOpenInCalendar(invitation)
+        let canOpenInCalendar = InvitationListPolicy.canOpenInCalendar(invitation)
         let isFromMe = invitation.creatorMemberID == currentMemberID
-        let displayStatus = InvitationListPlan.displayStatus(for: invitation)
+        let displayStatus = InvitationListPolicy.displayStatus(for: invitation)
 
         HStack(spacing: 12) {
             Text(invitation.startDate.formatted(.dateTime.day()))

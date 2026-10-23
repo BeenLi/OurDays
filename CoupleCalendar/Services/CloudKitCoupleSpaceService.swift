@@ -141,7 +141,7 @@ final class CloudKitCoupleSpaceService {
 
         return CloudKitAccountDiagnostic(
             expectedContainerIdentifier: Self.containerIdentifier,
-            expectedEnvironment: CloudKitExpectedConfigurationPlan.containerEnvironment,
+            expectedEnvironment: CloudKitExpectedConfigurationPolicy.containerEnvironment,
             expectedZoneName: Self.zoneName,
             runtimeContainerIdentifier: container.containerIdentifier ?? Self.containerIdentifier,
             accountStatus: Self.describe(status),
@@ -203,13 +203,13 @@ final class CloudKitCoupleSpaceService {
     func stopSharing(ownerMemberID: String) async throws {
         cloudKitSharingInfo("stopSharing begin ownerMemberIDPresent=\((!ownerMemberID.isEmpty).description)")
         try await ensureZone()
-        let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
+        let rootRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: zoneID)
         guard let root = try await fetchRecordIfPresent(with: rootRecordID) else {
             cloudKitSharingInfo("stopSharing skipped; root missing")
             return
         }
 
-        guard let shareRecordID = CloudKitStopSharingPlan.shareRecordIDToDelete(from: root) else {
+        guard let shareRecordID = CloudKitStopSharingPolicy.shareRecordIDToDelete(from: root) else {
             cloudKitSharingInfo("stopSharing skipped; share missing")
             return
         }
@@ -263,7 +263,7 @@ final class CloudKitCoupleSpaceService {
         var hasPrivateZoneData = false
         var hasOutgoingShare = false
         if privateZoneExists {
-            let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
+            let rootRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: zoneID)
             do {
                 let rootRecord = try await fetchRecordForUpsertIfPresent(
                     with: rootRecordID,
@@ -294,7 +294,7 @@ final class CloudKitCoupleSpaceService {
     }
 
     /// Fetches the accepted participants of the outgoing share. Read-only:
-    /// an extra participant is reported to `TwoPersonPairingPlan`, which raises
+    /// an extra participant is reported to `TwoPersonPairingPolicy`, which raises
     /// a pairing conflict for the user to resolve. Nobody is removed from the
     /// share without the user choosing (see `removeOutgoingShareParticipants`).
     func fetchOutgoingShareParticipantIDs(ownerMemberID: String) async throws -> [String] {
@@ -305,7 +305,7 @@ final class CloudKitCoupleSpaceService {
             return []
         }
 
-        let participantIDs = CloudKitShareParticipantIdentityPlan.acceptedParticipantIDs(from: share)
+        let participantIDs = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(from: share)
         cloudKitSharingInfo("fetchOutgoingShareParticipantIDs succeeded count=\(participantIDs.count)")
         return participantIDs
     }
@@ -321,7 +321,7 @@ final class CloudKitCoupleSpaceService {
 
         var didRemoveParticipant = false
         for participant in share.participants where participant.role != .owner {
-            let identifier = CloudKitShareParticipantIdentityPlan.identifier(for: participant)
+            let identifier = CloudKitShareParticipantIdentityPolicy.identifier(for: participant)
             if let keptParticipantID, identifier == keptParticipantID { continue }
             cloudKitSharingInfo("removeOutgoingShareParticipants removing participant=\(identifier ?? "unknown")")
             share.removeParticipant(participant)
@@ -332,9 +332,9 @@ final class CloudKitCoupleSpaceService {
     }
 
     private func fetchOutgoingShare() async throws -> CKShare? {
-        let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
+        let rootRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: zoneID)
         guard let root = try await fetchRecordIfPresent(with: rootRecordID),
-              let shareRecordID = CloudKitStopSharingPlan.shareRecordIDToDelete(from: root) else {
+              let shareRecordID = CloudKitStopSharingPolicy.shareRecordIDToDelete(from: root) else {
             return nil
         }
         return try await fetchShare(with: shareRecordID)
@@ -455,7 +455,7 @@ final class CloudKitCoupleSpaceService {
         let recordID = zoneID.map {
             CKRecord.ID(recordName: recordName, zoneID: $0)
         } ?? CKRecord.ID(recordName: recordName)
-        let record = CKRecord(recordType: ShareCalLaunchDiagnosticPlan.cloudKitWriteProbeRecordType, recordID: recordID)
+        let record = CKRecord(recordType: ShareCalLaunchDiagnosticPolicy.cloudKitWriteProbeRecordType, recordID: recordID)
         record["ownerMemberID"] = "write-probe" as CKRecordValue
         record["createdAt"] = Date() as CKRecordValue
 
@@ -543,7 +543,7 @@ final class CloudKitCoupleSpaceService {
     func saveNewShare(rootRecord: CKRecord) async throws -> CKShare {
         cloudKitSharingInfo("saveNewShare begin root=\(rootRecord.recordID.recordName)")
         let share = CKShare(rootRecord: rootRecord)
-        CloudKitSharePermissionPlan.configureForLinkInvitation(share)
+        CloudKitSharePermissionPolicy.configureForLinkInvitation(share)
 
         let result: CloudKitModifyRecordResults
         do {
@@ -570,8 +570,8 @@ final class CloudKitCoupleSpaceService {
     }
 
     private func ensureShareSupportsLinkInvitation(_ share: CKShare) async throws -> CKShare {
-        let acceptedParticipantCount = CloudKitShareParticipantIdentityPlan.acceptedParticipantIDs(from: share).count
-        guard CloudKitSharePermissionPlan.needsLinkInvitationUpgrade(
+        let acceptedParticipantCount = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(from: share).count
+        guard CloudKitSharePermissionPolicy.needsLinkInvitationUpgrade(
             share,
             acceptedParticipantCount: acceptedParticipantCount
         ) else {
@@ -584,7 +584,7 @@ final class CloudKitCoupleSpaceService {
         cloudKitSharingInfo(
             "ensureShareSupportsLinkInvitation upgrading share=\(share.recordID.recordName) currentPermission=\(String(describing: share.publicPermission))"
         )
-        CloudKitSharePermissionPlan.configureForLinkInvitation(share)
+        CloudKitSharePermissionPolicy.configureForLinkInvitation(share)
 
         let result: CloudKitModifyRecordResults
         do {
@@ -692,17 +692,17 @@ final class CloudKitCoupleSpaceService {
     }
 
     private func rootRecordForSharing(ownerMemberID: String) async throws -> ShareRootRecord {
-        let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
+        let rootRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: zoneID)
         if let existingRoot = try await fetchRecordIfPresent(with: rootRecordID) {
             cloudKitSharingInfo("rootRecordForSharing found existing root=\(rootRecordID.recordName) hasShare=\((existingRoot.share != nil).description)")
-            let didChange = CloudKitShareRootMetadataPlan.applyOwnerMemberID(ownerMemberID, to: existingRoot)
+            let didChange = CloudKitShareRootMetadataPolicy.applyOwnerMemberID(ownerMemberID, to: existingRoot)
             return ShareRootRecord(record: existingRoot, state: .existing, needsSave: didChange)
         }
 
         cloudKitSharingInfo("rootRecordForSharing creating new root=\(rootRecordID.recordName)")
         let root = CKRecord(recordType: "CoupleSpace", recordID: rootRecordID)
         root["createdAt"] = Date() as CKRecordValue
-        CloudKitShareRootMetadataPlan.applyOwnerMemberID(ownerMemberID, to: root)
+        CloudKitShareRootMetadataPolicy.applyOwnerMemberID(ownerMemberID, to: root)
         return ShareRootRecord(record: root, state: .created, needsSave: true)
     }
 
@@ -750,7 +750,7 @@ final class CloudKitCoupleSpaceService {
         with recordIDs: [CKRecord.ID],
         database: CKDatabase? = nil
     ) async throws -> [CKRecord.ID: CKRecord] {
-        let uniqueRecordIDs = CloudKitBatchUpsertPlan.uniquedRecordIDs(recordIDs)
+        let uniqueRecordIDs = CloudKitBatchUpsertPolicy.uniquedRecordIDs(recordIDs)
         guard !uniqueRecordIDs.isEmpty else { return [:] }
 
         do {
@@ -811,9 +811,9 @@ final class CloudKitCoupleSpaceService {
             return
         }
 
-        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
+        let parentRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: zoneID)
         let existingRecordsByID = try await fetchRecordsForUpsertIfPresent(
-            with: CloudKitBatchUpsertPlan.recordIDs(forMirrors: mirrors, zoneID: zoneID)
+            with: CloudKitBatchUpsertPolicy.recordIDs(forMirrors: mirrors, zoneID: zoneID)
         )
         var records: [CKRecord] = []
         for mirror in mirrors {
@@ -869,7 +869,7 @@ final class CloudKitCoupleSpaceService {
         )
         do {
             try await saveMemberProfilesForSync([profile], in: zoneID, database: privateDatabase)
-        } catch where MemberProfileAvatarSchemaFallbackPlan.shouldRetryWithoutAvatar(error: error, profile: profile) {
+        } catch where MemberProfileAvatarSchemaFallbackPolicy.shouldRetryWithoutAvatar(error: error, profile: profile) {
             // The environment's schema doesn't have the avatar fields yet (Production not
             // deployed): keep the nickname syncing and drop the avatar for this save.
             cloudKitSharingInfo("saveMemberProfileForSync retrying without avatar error=\(error)")
@@ -884,7 +884,7 @@ final class CloudKitCoupleSpaceService {
         _ invitation: EventInvitation,
         currentMemberID: String
     ) async throws {
-        switch CloudKitInvitationWritePlan.destination(
+        switch CloudKitInvitationWritePolicy.destination(
             creatorMemberID: invitation.creatorMemberID,
             currentMemberID: currentMemberID
         ) {
@@ -903,7 +903,7 @@ final class CloudKitCoupleSpaceService {
         _ request: CalendarAccessRequest,
         currentMemberID: String
     ) async throws {
-        switch CloudKitAccessRequestWritePlan.destination(
+        switch CloudKitAccessRequestWritePolicy.destination(
             for: request,
             currentMemberID: currentMemberID
         ) {
@@ -924,7 +924,7 @@ final class CloudKitCoupleSpaceService {
         currentMemberID: String,
         eventRecordName: String
     ) async throws {
-        switch CloudKitCommentWritePlan.destination(
+        switch CloudKitCommentWritePolicy.destination(
             eventOwnerMemberID: eventOwnerMemberID,
             currentMemberID: currentMemberID
         ) {
@@ -949,9 +949,9 @@ final class CloudKitCoupleSpaceService {
             return
         }
 
-        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: targetZoneID)
+        let parentRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: targetZoneID)
         let existingRecordsByID = try await fetchRecordsForUpsertIfPresent(
-            with: CloudKitBatchUpsertPlan.recordIDs(forInvitations: invitations, zoneID: targetZoneID),
+            with: CloudKitBatchUpsertPolicy.recordIDs(forInvitations: invitations, zoneID: targetZoneID),
             database: database
         )
         var records: [CKRecord] = []
@@ -992,9 +992,9 @@ final class CloudKitCoupleSpaceService {
             return
         }
 
-        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: targetZoneID)
+        let parentRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: targetZoneID)
         let existingRecordsByID = try await fetchRecordsForUpsertIfPresent(
-            with: CloudKitBatchUpsertPlan.recordIDs(forAccessRequests: requests, zoneID: targetZoneID),
+            with: CloudKitBatchUpsertPolicy.recordIDs(forAccessRequests: requests, zoneID: targetZoneID),
             database: database
         )
         var records: [CKRecord] = []
@@ -1035,9 +1035,9 @@ final class CloudKitCoupleSpaceService {
             return
         }
 
-        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: targetZoneID)
+        let parentRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: targetZoneID)
         let existingRecordsByID = try await fetchRecordsForUpsertIfPresent(
-            with: CloudKitBatchUpsertPlan.recordIDs(forMemberProfiles: profiles, zoneID: targetZoneID),
+            with: CloudKitBatchUpsertPolicy.recordIDs(forMemberProfiles: profiles, zoneID: targetZoneID),
             database: database
         )
         var records: [CKRecord] = []
@@ -1089,9 +1089,9 @@ final class CloudKitCoupleSpaceService {
             return
         }
 
-        let parentRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: targetZoneID)
+        let parentRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: targetZoneID)
         let existingRecordsByID = try await fetchRecordsForUpsertIfPresent(
-            with: CloudKitBatchUpsertPlan.recordIDs(forComments: comments, zoneID: targetZoneID),
+            with: CloudKitBatchUpsertPolicy.recordIDs(forComments: comments, zoneID: targetZoneID),
             database: database
         )
         var records: [CKRecord] = []
@@ -1139,7 +1139,7 @@ final class CloudKitCoupleSpaceService {
     }
 
     /// The user's own EventMirror records, read from their private zone. Used only by
-    /// the reinstall reconciliation (`OwnMirrorReconciliationPlan`): the regular sync
+    /// the reinstall reconciliation (`OwnMirrorReconciliationPolicy`): the regular sync
     /// never reads its own zone because the local shadows already know what is there.
     func fetchOwnEventMirrors(currentMemberID: String) async throws -> [EventMirror] {
         let records: [CKRecord]
@@ -1150,17 +1150,17 @@ final class CloudKitCoupleSpaceService {
                 database: privateDatabase
             )
         } catch {
-            guard CloudKitRecordQueryFailurePlan.isMissingZone(error) else { throw error }
+            guard CloudKitRecordQueryFailurePolicy.isMissingZone(error) else { throw error }
             cloudKitSharingInfo("fetchOwnEventMirrors zone missing; nothing to reconcile")
             return []
         }
         let mirrors = try records.map { try EventMirrorRecordMapper.eventMirror(from: $0) }
         cloudKitSharingInfo("fetchOwnEventMirrors fetched records=\(mirrors.count)")
-        return OwnMirrorReconciliationPlan.ownedMirrors(mirrors, currentMemberID: currentMemberID)
+        return OwnMirrorReconciliationPolicy.ownedMirrors(mirrors, currentMemberID: currentMemberID)
     }
 
     /// Removes the previous partner's records from my private zone so they cannot be
-    /// exposed through the next share (see `PartnerScopedDataPlan`). Deletes the comments
+    /// exposed through the next share (see `PartnerScopedDataPolicy`). Deletes the comments
     /// not authored by me and every invitation / history-access-request transport record.
     /// A missing zone means there is nothing to clean.
     func purgeExPartnerRecordsFromPrivateZone(currentMemberID: String) async throws {
@@ -1180,11 +1180,11 @@ final class CloudKitCoupleSpaceService {
             commentRecords = try await comments
             invitationRecords = try await invitations
         } catch {
-            guard CloudKitRecordQueryFailurePlan.isMissingZone(error) else { throw error }
+            guard CloudKitRecordQueryFailurePolicy.isMissingZone(error) else { throw error }
             cloudKitSharingInfo("purgeExPartnerRecordsFromPrivateZone zone missing; nothing to clean")
             return
         }
-        let recordIDs = CloudKitExPartnerCleanupPlan.recordIDsToDelete(
+        let recordIDs = CloudKitExPartnerCleanupPolicy.recordIDsToDelete(
             commentRecords: commentRecords,
             invitationRecords: invitationRecords,
             currentMemberID: currentMemberID
@@ -1201,13 +1201,13 @@ final class CloudKitCoupleSpaceService {
     }
 
     /// Best-effort read of what a fresh install can take back from its own private zone
-    /// (see `ExistingICloudDataRecoveryPlan.recoveredState`). Failures are logged and
+    /// (see `ExistingICloudDataRecoveryPolicy.recoveredState`). Failures are logged and
     /// yield nils: recovery must still proceed without them.
     func fetchExistingICloudIdentity(ownerMemberID: String) async -> (shareRootCreatedAt: Date?, ownProfile: CloudKitMemberProfile?) {
         var shareRootCreatedAt: Date?
         var ownProfile: CloudKitMemberProfile?
         do {
-            let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
+            let rootRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: zoneID)
             if let root = try await fetchRecordForUpsertIfPresent(with: rootRecordID, database: privateDatabase) {
                 shareRootCreatedAt = (root["createdAt"] as? Date) ?? root.creationDate
             }
@@ -1252,7 +1252,7 @@ final class CloudKitCoupleSpaceService {
             let zoneMirrors = try records.map {
                 try EventMirrorRecordMapper.eventMirror(from: $0)
             }
-            mirrors.append(contentsOf: CloudKitSharedDatabaseImportPlan.identifiedMirrors(
+            mirrors.append(contentsOf: CloudKitSharedDatabaseImportPolicy.identifiedMirrors(
                 zoneMirrors,
                 sharedOwnerID: sharedZoneID.ownerName
             ))
@@ -1274,7 +1274,7 @@ final class CloudKitCoupleSpaceService {
         // so CloudKit re-syncs the owner's zone back and it reappears as a newly
         // discovered shared calendar.
         let rootRecordIDsByZone = zoneIDs.reduce(into: [CKRecordZone.ID: CKRecord.ID]()) { result, zoneID in
-            result[zoneID] = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
+            result[zoneID] = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: zoneID)
         }
         let rootRecordsByID = try await fetchRecordsForUpsertIfPresent(
             with: Array(rootRecordIDsByZone.values),
@@ -1283,7 +1283,7 @@ final class CloudKitCoupleSpaceService {
         let shareRecordIDs = zoneIDs.compactMap { zoneID -> CKRecord.ID? in
             guard let rootRecordID = rootRecordIDsByZone[zoneID],
                   let rootRecord = rootRecordsByID[rootRecordID] else { return nil }
-            return CloudKitStopSharingPlan.shareRecordIDToDelete(from: rootRecord)
+            return CloudKitStopSharingPolicy.shareRecordIDToDelete(from: rootRecord)
         }
 
         do {
@@ -1411,7 +1411,7 @@ final class CloudKitCoupleSpaceService {
                 }
             }
         }
-        return CloudKitSharedDatabaseImportPlan.coupleSpaceZoneIDs(
+        return CloudKitSharedDatabaseImportPolicy.coupleSpaceZoneIDs(
             from: zones,
             expectedZoneName: Self.zoneName
         )
@@ -1444,7 +1444,7 @@ final class CloudKitCoupleSpaceService {
 
     private func acceptedSharedZoneID(ownerMemberID: String) async throws -> CKRecordZone.ID {
         let zoneIDs = try await sharedCoupleSpaceZoneIDs()
-        if let zoneID = CloudKitAccessRequestSharedZonePlan.targetZoneID(
+        if let zoneID = CloudKitAccessRequestSharedZonePolicy.targetZoneID(
             ownerMemberID: ownerMemberID,
             acceptedSharedZoneIDs: zoneIDs
         ) {
@@ -1497,7 +1497,7 @@ final class CloudKitCoupleSpaceService {
             matching: query,
             in: zoneID,
             database: database,
-            desiredKeys: CloudKitForegroundQueryPlan.desiredKeys(forRecordType: recordType)
+            desiredKeys: CloudKitForegroundQueryPolicy.desiredKeys(forRecordType: recordType)
         )
     }
 
@@ -1594,7 +1594,7 @@ final class CloudKitCoupleSpaceService {
                     )
                     continuation.resume(returning: fetchedRecords)
                 case .failure(let error):
-                    if CloudKitRecordQueryFailurePlan.canTreatMissingRecordTypeAsEmpty(
+                    if CloudKitRecordQueryFailurePolicy.canTreatMissingRecordTypeAsEmpty(
                         recordType: targetRecordType,
                         error: error
                     ) {
@@ -1639,10 +1639,10 @@ final class CloudKitCoupleSpaceService {
         // be generic ("有新的共享日程动态") — and it fired on the partner's *calendar
         // event* edits (the common case), steering users to the comments-only 动态 tab
         // where nothing had changed (the "phantom notification" feedback). Instead we
-        // wake the app silently, run a sync, and let LocalNotificationPlan decide what is
+        // wake the app silently, run a sync, and let LocalNotificationPolicy decide what is
         // notification-worthy (comments / invites / access — never plain event edits).
         // The trade-off (accepted): silent pushes can be throttled/dropped and won't run
-        // if the app is force-quit; the BGAppRefresh fallback (BackgroundRefreshSchedulePlan)
+        // if the app is force-quit; the BGAppRefresh fallback (BackgroundRefreshSchedulePolicy)
         // narrows that window, and a foreground open remains the only guaranteed sync.
         notificationInfo.shouldSendContentAvailable = true
         subscription.notificationInfo = notificationInfo

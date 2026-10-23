@@ -1,6 +1,6 @@
 import XCTest
 
-final class EventCommentAnchorPlanTests: XCTestCase {
+final class EventCommentAnchorPolicyTests: XCTestCase {
     func testInvitationAnchorUsesInvitationIdAndCreatorForSymmetricRouting() {
         let invitation = EventInvitation(
             id: "invite-1",
@@ -13,7 +13,7 @@ final class EventCommentAnchorPlanTests: XCTestCase {
             notes: nil
         )
 
-        let anchor = EventCommentAnchorPlan.anchor(forInvitation: invitation)
+        let anchor = EventCommentAnchorPolicy.anchor(forInvitation: invitation)
         // Both partners key the thread off the shared invitation id.
         XCTAssertEqual(anchor.key, "invite-1")
         XCTAssertEqual(anchor.recordName, "invite-1")
@@ -22,11 +22,11 @@ final class EventCommentAnchorPlanTests: XCTestCase {
         // The creator's comment lands in their private zone; the partner's lands in the
         // creator's shared zone. Both devices read both zones back, so the thread is shared.
         XCTAssertEqual(
-            CloudKitCommentWritePlan.destination(eventOwnerMemberID: anchor.ownerMemberID, currentMemberID: "_creator"),
+            CloudKitCommentWritePolicy.destination(eventOwnerMemberID: anchor.ownerMemberID, currentMemberID: "_creator"),
             .privateOwnerZone
         )
         XCTAssertEqual(
-            CloudKitCommentWritePlan.destination(eventOwnerMemberID: anchor.ownerMemberID, currentMemberID: "_partner"),
+            CloudKitCommentWritePolicy.destination(eventOwnerMemberID: anchor.ownerMemberID, currentMemberID: "_partner"),
             .acceptedSharedZone
         )
     }
@@ -38,13 +38,13 @@ final class EventCommentOwnDisplayMirrorAnchorTests: XCTestCase {
         // mirrorKey, so an unsynced own event already knows the key its thread will live under.
         let display = TestMirrors.mirror(id: "display:cal:ev:100", mirrorKey: "cal:ev:100", ownerMemberID: "_me")
 
-        let anchor = EventCommentAnchorPlan.anchor(forOwnDisplayMirror: display, persistedTwin: nil)
+        let anchor = EventCommentAnchorPolicy.anchor(forOwnDisplayMirror: display, persistedTwin: nil)
 
         XCTAssertEqual(anchor.key, "cal:ev:100")
         XCTAssertEqual(anchor.recordName, "cal:ev:100")
         XCTAssertEqual(anchor.ownerMemberID, "_me")
         XCTAssertEqual(
-            CloudKitCommentWritePlan.destination(eventOwnerMemberID: anchor.ownerMemberID, currentMemberID: "_me"),
+            CloudKitCommentWritePolicy.destination(eventOwnerMemberID: anchor.ownerMemberID, currentMemberID: "_me"),
             .privateOwnerZone
         )
     }
@@ -53,23 +53,23 @@ final class EventCommentOwnDisplayMirrorAnchorTests: XCTestCase {
         let display = TestMirrors.mirror(id: "display:cal:ev:100", mirrorKey: "cal:ev:100", ownerMemberID: "_me")
         let twin = TestMirrors.mirror(id: "legacy-id", mirrorKey: "cal:ev:100", ownerMemberID: "_me", recordName: "legacy-id")
 
-        let anchor = EventCommentAnchorPlan.anchor(forOwnDisplayMirror: display, persistedTwin: twin)
+        let anchor = EventCommentAnchorPolicy.anchor(forOwnDisplayMirror: display, persistedTwin: twin)
 
         XCTAssertEqual(anchor.key, "legacy-id")
         XCTAssertEqual(anchor.recordName, "legacy-id")
     }
 }
 
-final class EventDetailCommentPlanTests: XCTestCase {
+final class EventDetailCommentPolicyTests: XCTestCase {
     private let pairingDay = Date(timeIntervalSince1970: 1_000_000)
-    private var windows: [DateInterval] { CalendarSharingWindowPlan.defaultWindows(now: pairingDay) }
+    private var windows: [DateInterval] { CalendarSharingWindowPolicy.defaultWindows(now: pairingDay) }
 
     func testPartnerMirrorAlwaysHasAThread() {
         let partner = TestMirrors.mirror(id: "cal:p:1", mirrorKey: "cal:p:1", ownerMemberID: "_partner", recordName: "cal:p:1")
 
-        let availability = EventDetailCommentPlan.availability(for: partner, mirrors: [partner], sharingWindows: windows)
+        let availability = EventDetailCommentPolicy.availability(for: partner, mirrors: [partner], sharingWindows: windows)
 
-        XCTAssertEqual(availability, .available(EventCommentAnchorPlan.anchor(forMirror: partner)))
+        XCTAssertEqual(availability, .available(EventCommentAnchorPolicy.anchor(forMirror: partner)))
     }
 
     func testOwnUnsyncedEventInsideSharingWindowCanStartAThread() {
@@ -80,7 +80,7 @@ final class EventDetailCommentPlanTests: XCTestCase {
             occurrenceStart: pairingDay.addingTimeInterval(3_600)
         )
 
-        let availability = EventDetailCommentPlan.availability(for: display, mirrors: [], sharingWindows: windows)
+        let availability = EventDetailCommentPolicy.availability(for: display, mirrors: [], sharingWindows: windows)
 
         guard case .available(let anchor) = availability else {
             return XCTFail("expected an available thread, got \(availability)")
@@ -95,7 +95,7 @@ final class EventDetailCommentPlanTests: XCTestCase {
             occurrenceStart: pairingDay.addingTimeInterval(-3_600)
         )
 
-        let availability = EventDetailCommentPlan.availability(for: display, mirrors: [], sharingWindows: windows)
+        let availability = EventDetailCommentPolicy.availability(for: display, mirrors: [], sharingWindows: windows)
 
         XCTAssertEqual(availability, .notSharedWithPartner)
     }
@@ -107,7 +107,7 @@ final class EventDetailCommentPlanTests: XCTestCase {
         )
         let history = DateInterval(start: pairingDay.addingTimeInterval(-86_400), end: pairingDay)
 
-        let availability = EventDetailCommentPlan.availability(
+        let availability = EventDetailCommentPolicy.availability(
             for: display, mirrors: [], sharingWindows: windows + [history]
         )
 
@@ -129,9 +129,9 @@ final class EventDetailCommentPlanTests: XCTestCase {
             occurrenceStart: pairingDay.addingTimeInterval(-3_600)
         )
 
-        let availability = EventDetailCommentPlan.availability(for: display, mirrors: [twin], sharingWindows: windows)
+        let availability = EventDetailCommentPolicy.availability(for: display, mirrors: [twin], sharingWindows: windows)
 
-        XCTAssertEqual(availability, .available(EventCommentAnchorPlan.anchor(forMirror: twin)))
+        XCTAssertEqual(availability, .available(EventCommentAnchorPolicy.anchor(forMirror: twin)))
     }
 }
 
@@ -166,7 +166,7 @@ enum TestMirrors {
     }
 }
 
-final class EventCommentIndicatorPlanTests: XCTestCase {
+final class EventCommentIndicatorPolicyTests: XCTestCase {
     func testCommentedAnchorKeysCollectsLiveCommentKeysIgnoringDeleted() {
         let comments = [
             comment(event: "real-1", at: 1),
@@ -175,7 +175,7 @@ final class EventCommentIndicatorPlanTests: XCTestCase {
             comment(event: "gone", at: 4, deletedAt: 5),
         ]
 
-        let keys = EventCommentIndicatorPlan.commentedAnchorKeys(comments)
+        let keys = EventCommentIndicatorPolicy.commentedAnchorKeys(comments)
 
         XCTAssertEqual(keys, ["real-1", "invite-9"])
     }
@@ -184,7 +184,7 @@ final class EventCommentIndicatorPlanTests: XCTestCase {
         let partnerMirror = mirror(id: "real-1", mirrorKey: "key-1")
 
         XCTAssertTrue(
-            EventCommentIndicatorPlan.hasComments(
+            EventCommentIndicatorPolicy.hasComments(
                 mirror: partnerMirror,
                 commentedKeys: ["real-1"],
                 persistedIDByMirrorKey: ["key-1": "real-1"]
@@ -198,7 +198,7 @@ final class EventCommentIndicatorPlanTests: XCTestCase {
         let displayMirror = mirror(id: "display:key-1", mirrorKey: "key-1", recordName: nil)
 
         XCTAssertTrue(
-            EventCommentIndicatorPlan.hasComments(
+            EventCommentIndicatorPolicy.hasComments(
                 mirror: displayMirror,
                 commentedKeys: ["real-1"],
                 persistedIDByMirrorKey: ["key-1": "real-1"]
@@ -210,7 +210,7 @@ final class EventCommentIndicatorPlanTests: XCTestCase {
         let displayMirror = mirror(id: "display:key-2", mirrorKey: "key-2", recordName: nil)
 
         XCTAssertFalse(
-            EventCommentIndicatorPlan.hasComments(
+            EventCommentIndicatorPolicy.hasComments(
                 mirror: displayMirror,
                 commentedKeys: ["real-1"],
                 persistedIDByMirrorKey: ["key-1": "real-1"]
@@ -220,11 +220,11 @@ final class EventCommentIndicatorPlanTests: XCTestCase {
 
     func testDisplayMirrorWithoutTwinShowsIndicatorForCommentsKeyedByMirrorKey() {
         // I commented on my own event before it synced: the thread is keyed by the mirrorKey
-        // (EventCommentAnchorPlan.anchor(forOwnDisplayMirror:)), so the dot shows right away.
+        // (EventCommentAnchorPolicy.anchor(forOwnDisplayMirror:)), so the dot shows right away.
         let displayMirror = mirror(id: "display:key-2", mirrorKey: "key-2", recordName: nil)
 
         XCTAssertTrue(
-            EventCommentIndicatorPlan.hasComments(
+            EventCommentIndicatorPolicy.hasComments(
                 mirror: displayMirror,
                 commentedKeys: ["key-2"],
                 persistedIDByMirrorKey: [:]
@@ -236,7 +236,7 @@ final class EventCommentIndicatorPlanTests: XCTestCase {
         let partnerMirror = mirror(id: "real-3", mirrorKey: "key-3")
 
         XCTAssertFalse(
-            EventCommentIndicatorPlan.hasComments(
+            EventCommentIndicatorPolicy.hasComments(
                 mirror: partnerMirror,
                 commentedKeys: ["real-1"],
                 persistedIDByMirrorKey: ["key-3": "real-3"]
@@ -255,8 +255,8 @@ final class EventCommentIndicatorPlanTests: XCTestCase {
             notes: nil
         )
 
-        XCTAssertTrue(EventCommentIndicatorPlan.hasComments(jointEvent: jointEvent, commentedKeys: ["invite-9"]))
-        XCTAssertFalse(EventCommentIndicatorPlan.hasComments(jointEvent: jointEvent, commentedKeys: ["other"]))
+        XCTAssertTrue(EventCommentIndicatorPolicy.hasComments(jointEvent: jointEvent, commentedKeys: ["invite-9"]))
+        XCTAssertFalse(EventCommentIndicatorPolicy.hasComments(jointEvent: jointEvent, commentedKeys: ["other"]))
     }
 
     private func comment(event: String, at seconds: TimeInterval, deletedAt: TimeInterval? = nil) -> EventComment {
@@ -298,17 +298,17 @@ final class EventCommentIndicatorPlanTests: XCTestCase {
     }
 }
 
-final class CloudKitCommentWritePlanTests: XCTestCase {
+final class CloudKitCommentWritePolicyTests: XCTestCase {
     func testWritesOwnEventCommentsToPrivateOwnerZone() {
         XCTAssertEqual(
-            CloudKitCommentWritePlan.destination(eventOwnerMemberID: "me", currentMemberID: "me"),
+            CloudKitCommentWritePolicy.destination(eventOwnerMemberID: "me", currentMemberID: "me"),
             .privateOwnerZone
         )
     }
 
     func testWritesPartnerEventCommentsToAcceptedSharedZone() {
         XCTAssertEqual(
-            CloudKitCommentWritePlan.destination(eventOwnerMemberID: "partner", currentMemberID: "me"),
+            CloudKitCommentWritePolicy.destination(eventOwnerMemberID: "partner", currentMemberID: "me"),
             .acceptedSharedZone
         )
     }

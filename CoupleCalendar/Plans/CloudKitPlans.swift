@@ -55,7 +55,7 @@ enum CloudKitShareHierarchyPlan {
     }
 
     static func attach(_ record: CKRecord, toShareRoot parentRecordID: CKRecord.ID?) {
-        guard let parentRecordID else { return }
+        guard let parentRecordID, record.parent?.recordID != parentRecordID else { return }
         record.parent = CKRecord.Reference(recordID: parentRecordID, action: .none)
     }
 }
@@ -63,8 +63,15 @@ enum CloudKitShareHierarchyPlan {
 enum CloudKitShareRootMetadataPlan {
     static let ownerMemberIDKey = "ownerMemberID"
 
-    static func applyOwnerMemberID(_ ownerMemberID: String, to record: CKRecord) {
+    /// Writes the owner ID only when the root doesn't already carry it. Returns whether
+    /// the record changed: saving a shared record on every sync (even with identical
+    /// values) pushes the partner, whose push-driven sync saves their root, which pushes
+    /// us back — a silent-push ping-pong that burns the budget real changes need.
+    @discardableResult
+    static func applyOwnerMemberID(_ ownerMemberID: String, to record: CKRecord) -> Bool {
+        guard (record[ownerMemberIDKey] as? String) != ownerMemberID else { return false }
         record[ownerMemberIDKey] = ownerMemberID as CKRecordValue
+        return true
     }
 }
 

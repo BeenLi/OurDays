@@ -72,6 +72,9 @@ struct PreparedCloudShare: Identifiable {
 private struct ShareRootRecord {
     let record: CKRecord
     let state: CloudKitShareRootState
+    /// False when an existing root already carries the current metadata: saving it again
+    /// would only push the partner for nothing.
+    let needsSave: Bool
 }
 
 final class CloudKitOperationCompletionGate: @unchecked Sendable {
@@ -395,6 +398,10 @@ final class CloudKitCoupleSpaceService {
     func ensureShareRoot(ownerMemberID: String) async throws -> CKRecord {
         try await ensureZone()
         let root = try await rootRecordForSharing(ownerMemberID: ownerMemberID)
+        guard root.needsSave else {
+            cloudKitSharingInfo("ensureShareRoot unchanged root=\(root.record.recordID.recordName); skipping save")
+            return root.record
+        }
         return try await saveRootRecord(root.record)
     }
 
@@ -688,15 +695,15 @@ final class CloudKitCoupleSpaceService {
         let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
         if let existingRoot = try await fetchRecordIfPresent(with: rootRecordID) {
             cloudKitSharingInfo("rootRecordForSharing found existing root=\(rootRecordID.recordName) hasShare=\((existingRoot.share != nil).description)")
-            CloudKitShareRootMetadataPlan.applyOwnerMemberID(ownerMemberID, to: existingRoot)
-            return ShareRootRecord(record: existingRoot, state: .existing)
+            let didChange = CloudKitShareRootMetadataPlan.applyOwnerMemberID(ownerMemberID, to: existingRoot)
+            return ShareRootRecord(record: existingRoot, state: .existing, needsSave: didChange)
         }
 
         cloudKitSharingInfo("rootRecordForSharing creating new root=\(rootRecordID.recordName)")
         let root = CKRecord(recordType: "CoupleSpace", recordID: rootRecordID)
         root["createdAt"] = Date() as CKRecordValue
         CloudKitShareRootMetadataPlan.applyOwnerMemberID(ownerMemberID, to: root)
-        return ShareRootRecord(record: root, state: .created)
+        return ShareRootRecord(record: root, state: .created, needsSave: true)
     }
 
     private func fetchShare(with recordID: CKRecord.ID) async throws -> CKShare {
@@ -1034,17 +1041,28 @@ final class CloudKitCoupleSpaceService {
             database: database
         )
         var records: [CKRecord] = []
+        var unchangedCount = 0
         for profile in profiles {
             let recordName = MemberProfileRecordMapper.recordName(ownerMemberID: profile.ownerMemberID)
             let recordID = CKRecord.ID(recordName: recordName, zoneID: targetZoneID)
-            records.append(
-                MemberProfileRecordMapper.record(
-                    from: profile,
-                    zoneID: targetZoneID,
-                    parentRecordID: parentRecordID,
-                    existingRecord: existingRecordsByID[recordID]
-                )
+            let existingRecord = existingRecordsByID[recordID]
+            let record = MemberProfileRecordMapper.record(
+                from: profile,
+                zoneID: targetZoneID,
+                parentRecordID: parentRecordID,
+                existingRecord: existingRecord
             )
+            // An existing record whose keys didn't change is not re-saved: it would only
+            // fire the partner's database subscription and start a sync ping-pong.
+            if existingRecord != nil, record.changedKeys().isEmpty {
+                unchangedCount += 1
+                continue
+            }
+            records.append(record)
+        }
+        guard !records.isEmpty else {
+            cloudKitSharingInfo("saveMemberProfilesForSync skipped; unchanged=\(unchangedCount)")
+            return
         }
 
         cloudKitSharingInfo(

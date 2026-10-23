@@ -146,7 +146,7 @@ OurDays/
 │   │   ├── HierarchicalDatePickerSheet.swift  年/月/日层级选日期
 │   │   ├── DesignSystem.swift         OurDaysTheme、卡片/按钮样式、头像视图
 │   │   └── CloudSharingController.swift   UICloudSharingController 封装
-│   ├── Plans/                         无状态 "Plan enum"：全部决策逻辑，纯函数，直接单测
+│   ├── Plans/                         "Plan" = 只做决定、不动手：无状态 enum + 纯 static 函数，输入值、输出"该怎么办"，不碰 I/O；服务层按它的答案执行
 │   │   ├── PairingPlans.swift         TwoPersonPairingPlan、ShareAcceptanceGuardPlan、ExistingICloudDataRecoveryPlan（重装恢复）、PartnerScopedDataPlan（前任数据过滤）
 │   │   ├── SyncPlans.swift            ForegroundSyncPlan（节流）、CloudKitMirrorSyncPlan（哪些 mirror 要上传）、OwnMirrorReconciliationPlan（重装补墓碑）、BackgroundRefreshSchedulePlan
 │   │   ├── CloudKitPlans.swift        写入去向、共享层级、根记录元数据、导入过滤、停止共享、解除配对时清理前任记录
@@ -180,6 +180,8 @@ OurDays/
 ├── .github/workflows/ios-ci.yml   CI：macOS runner 构建并跑全部测试
 └── CLAUDE.md                      代码架构与约定（身份模型、CloudKit 布局、Plan 约定）
 ```
+
+"Plan" 是这个代码库的核心约定：所有决策逻辑写成 `enum XxxPlan` 里的纯 static 函数（例如 `TwoPersonPairingPlan.resolve` 输入三组 ID，输出"对方是谁、该退出哪些 zone、有没有冲突"），自己不发请求、不读写存储；`SyncCoordinator` 和各 Service 先问 Plan 再执行。单元测试因此几乎只测 Plans，不需要模拟 CloudKit。
 
 新增非 UI 文件时要同时加进 App 和 Test 两个 target（test target 直接编译源码）；UI 文件只进 App target。
 

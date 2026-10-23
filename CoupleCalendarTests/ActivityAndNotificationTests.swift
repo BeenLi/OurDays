@@ -1,6 +1,6 @@
 import XCTest
 
-final class ActivityFeedPlanTests: XCTestCase {
+final class ActivityFeedPolicyTests: XCTestCase {
     private let me = "me"
     private let partner = "you"
 
@@ -12,7 +12,7 @@ final class ActivityFeedPlanTests: XCTestCase {
             comment(event: "B", author: partner, body: "tonight?", at: 200),
         ]
 
-        let items = ActivityFeedPlan.items(
+        let items = ActivityFeedPolicy.items(
             comments: comments,
             mirrors: mirrors,
             invitations: [],
@@ -35,7 +35,7 @@ final class ActivityFeedPlanTests: XCTestCase {
             comment(event: "A", author: me, body: "mine", at: 300),
         ]
 
-        let count = ActivityFeedPlan.unreadCount(
+        let count = ActivityFeedPolicy.unreadCount(
             comments: comments,
             mirrors: [mirror(id: "A", title: "Dinner")],
             invitations: [],
@@ -53,7 +53,7 @@ final class ActivityFeedPlanTests: XCTestCase {
             comment(event: "A", author: me, body: "mine", at: 300),
         ]
 
-        let count = ActivityFeedPlan.unreadCount(
+        let count = ActivityFeedPolicy.unreadCount(
             comments: comments,
             mirrors: [mirror(id: "A", title: "Dinner")],
             invitations: [],
@@ -70,7 +70,7 @@ final class ActivityFeedPlanTests: XCTestCase {
             comment(event: "A", author: me, body: "b", at: 200),
         ]
 
-        let count = ActivityFeedPlan.unreadCount(
+        let count = ActivityFeedPolicy.unreadCount(
             comments: comments,
             mirrors: [mirror(id: "A", title: "Dinner")],
             invitations: [],
@@ -88,7 +88,7 @@ final class ActivityFeedPlanTests: XCTestCase {
             comment(event: "A", author: partner, body: "gone", at: 300, deletedAt: 350),
         ]
 
-        let items = ActivityFeedPlan.items(
+        let items = ActivityFeedPolicy.items(
             comments: comments,
             mirrors: mirrors,
             invitations: [],
@@ -109,7 +109,7 @@ final class ActivityFeedPlanTests: XCTestCase {
             comment(event: "ghost", author: partner, body: "orphan", at: 200),
         ]
 
-        let items = ActivityFeedPlan.items(
+        let items = ActivityFeedPolicy.items(
             comments: comments,
             mirrors: mirrors,
             invitations: [],
@@ -121,7 +121,7 @@ final class ActivityFeedPlanTests: XCTestCase {
     }
 
     func testSurfacesJointEventCommentsViaInvitationAndCountsThemUnread() {
-        // Joint-event comments are anchored to the invitation id (EventCommentAnchorPlan),
+        // Joint-event comments are anchored to the invitation id (EventCommentAnchorPolicy),
         // which has no EventMirror. They must still show in the feed (titled by the
         // invitation) AND count toward unread — otherwise the badge points at an invisible row.
         let invitations = [invitation(id: "inv-1", title: "Joint Dinner")]
@@ -129,7 +129,7 @@ final class ActivityFeedPlanTests: XCTestCase {
             comment(event: "inv-1", author: partner, body: "see you at the joint event", at: 500),
         ]
 
-        let items = ActivityFeedPlan.items(
+        let items = ActivityFeedPolicy.items(
             comments: comments,
             mirrors: [],
             invitations: invitations,
@@ -140,7 +140,7 @@ final class ActivityFeedPlanTests: XCTestCase {
         XCTAssertEqual(items[0].eventTitle, "Joint Dinner")
         XCTAssertEqual(items[0].unreadCount, 1)
 
-        let count = ActivityFeedPlan.unreadCount(
+        let count = ActivityFeedPolicy.unreadCount(
             comments: comments,
             mirrors: [],
             invitations: invitations,
@@ -155,7 +155,7 @@ final class ActivityFeedPlanTests: XCTestCase {
         // shown, so it must not inflate the badge (the bug this guards against).
         let comments = [comment(event: "ghost", author: partner, body: "orphan", at: 100)]
 
-        let count = ActivityFeedPlan.unreadCount(
+        let count = ActivityFeedPolicy.unreadCount(
             comments: comments,
             mirrors: [],
             invitations: [],
@@ -220,13 +220,13 @@ final class ActivityFeedPlanTests: XCTestCase {
     }
 }
 
-final class LocalNotificationPlanTests: XCTestCase {
+final class LocalNotificationPolicyTests: XCTestCase {
     private let me = "me"
     private let partner = "you"
     private let since = Date(timeIntervalSince1970: 1_000)
 
     func testReturnsEmptyWithoutBaseline() {
-        let planned = LocalNotificationPlan.pending(
+        let planned = LocalNotificationPolicy.pending(
             comments: [comment(event: "M1", author: partner, body: "hi", at: 2_000)],
             mirrors: [mirror(id: "M1", owner: me)],
             invitations: [],
@@ -247,7 +247,7 @@ final class LocalNotificationPlanTests: XCTestCase {
             comment(event: "M1", author: partner, body: "old", at: 500),
         ]
 
-        let planned = LocalNotificationPlan.pending(
+        let planned = LocalNotificationPolicy.pending(
             comments: comments,
             mirrors: mirrors,
             invitations: [],
@@ -267,7 +267,7 @@ final class LocalNotificationPlanTests: XCTestCase {
             invitation(creator: partner, invitee: me, title: "Old", status: .pending, createdAt: 500, updatedAt: 500),
         ]
 
-        let planned = LocalNotificationPlan.pending(
+        let planned = LocalNotificationPolicy.pending(
             comments: [], mirrors: [], invitations: invitations, accessRequests: [],
             currentMemberID: me, since: since
         )
@@ -284,7 +284,7 @@ final class LocalNotificationPlanTests: XCTestCase {
             invitation(creator: me, invitee: partner, title: "Stale", status: .accepted, createdAt: 100, updatedAt: 500),
         ]
 
-        let planned = LocalNotificationPlan.pending(
+        let planned = LocalNotificationPolicy.pending(
             comments: [], mirrors: [], invitations: invitations, accessRequests: [],
             currentMemberID: me, since: since
         )
@@ -308,7 +308,7 @@ final class LocalNotificationPlanTests: XCTestCase {
             accessRequest(requester: me, owner: partner, status: .pending, source: .localOutgoing, createdAt: 100, updatedAt: 2_050),
         ]
 
-        let planned = LocalNotificationPlan.pending(
+        let planned = LocalNotificationPolicy.pending(
             comments: [], mirrors: [], invitations: [], accessRequests: requests,
             currentMemberID: me, since: since
         )
@@ -322,7 +322,7 @@ final class LocalNotificationPlanTests: XCTestCase {
 
     func testProducesStableDedupeIDs() {
         let c = comment(event: "M1", author: partner, body: "late", at: 2_000)
-        let planned = LocalNotificationPlan.pending(
+        let planned = LocalNotificationPolicy.pending(
             comments: [c],
             mirrors: [mirror(id: "M1", owner: me)],
             invitations: [],
@@ -341,7 +341,7 @@ final class LocalNotificationPlanTests: XCTestCase {
         // push to silent from resurrecting the phantom "动态" notifications — the
         // shared-DB subscription fires on every mirror write, but nothing about a
         // calendar-event change is notification-worthy on its own.
-        let planned = LocalNotificationPlan.pending(
+        let planned = LocalNotificationPolicy.pending(
             comments: [],
             mirrors: [
                 mirror(id: "P1", owner: partner, title: "New partner event"),
@@ -430,11 +430,11 @@ final class LocalNotificationPlanTests: XCTestCase {
     }
 }
 
-final class LocalNotificationContentPlanTests: XCTestCase {
+final class LocalNotificationContentPolicyTests: XCTestCase {
     private let strings = ShareCalStrings(language: .english)
 
     func testCommentContentIncludesEventTitleAndCommentBody() {
-        let content = LocalNotificationContentPlan.content(
+        let content = LocalNotificationContentPolicy.content(
             for: .partnerCommentedOnMyEvent(eventTitle: "Dinner", commentBody: "running late"),
             strings: strings,
             partnerName: "Yoki"
@@ -446,7 +446,7 @@ final class LocalNotificationContentPlanTests: XCTestCase {
     }
 
     func testInvitationReceivedContentUsesInviteTitle() {
-        let content = LocalNotificationContentPlan.content(
+        let content = LocalNotificationContentPolicy.content(
             for: .invitationReceived(title: "Weekend Trip"),
             strings: strings,
             partnerName: "Yoki"
@@ -457,12 +457,12 @@ final class LocalNotificationContentPlanTests: XCTestCase {
     }
 
     func testAccessRequestApprovedAndDeclinedDiffer() {
-        let approved = LocalNotificationContentPlan.content(
+        let approved = LocalNotificationContentPolicy.content(
             for: .accessRequestAnswered(approved: true),
             strings: strings,
             partnerName: "Yoki"
         )
-        let declined = LocalNotificationContentPlan.content(
+        let declined = LocalNotificationContentPolicy.content(
             for: .accessRequestAnswered(approved: false),
             strings: strings,
             partnerName: "Yoki"
@@ -474,22 +474,22 @@ final class LocalNotificationContentPlanTests: XCTestCase {
     }
 }
 
-final class AppIconBadgePlanTests: XCTestCase {
+final class AppIconBadgePolicyTests: XCTestCase {
     func testSumsUnreadActivityAndPendingActions() {
         XCTAssertEqual(
-            AppIconBadgePlan.badgeCount(unreadActivityCount: 2, pendingInviteCount: 3), 5
+            AppIconBadgePolicy.badgeCount(unreadActivityCount: 2, pendingInviteCount: 3), 5
         )
     }
 
     func testZeroWhenNothingOutstandingClearsTheBadge() {
         XCTAssertEqual(
-            AppIconBadgePlan.badgeCount(unreadActivityCount: 0, pendingInviteCount: 0), 0
+            AppIconBadgePolicy.badgeCount(unreadActivityCount: 0, pendingInviteCount: 0), 0
         )
     }
 
     func testNeverNegative() {
         XCTAssertEqual(
-            AppIconBadgePlan.badgeCount(unreadActivityCount: -1, pendingInviteCount: 0), 0
+            AppIconBadgePolicy.badgeCount(unreadActivityCount: -1, pendingInviteCount: 0), 0
         )
     }
 }

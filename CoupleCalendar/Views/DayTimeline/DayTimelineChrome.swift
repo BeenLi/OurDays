@@ -74,19 +74,19 @@ struct DayTimelineHourRail: View {
     var body: some View {
         let offsetY = CGFloat(startHour) * hourHeight
         ZStack(alignment: .topTrailing) {
-            ForEach(DayTimelineLayoutPlan.hourMarks(hourHeight: hourHeight).filter { $0.hour >= startHour }, id: \.hour) { mark in
+            ForEach(DayTimelineLayoutPolicy.hourMarks(hourHeight: hourHeight).filter { $0.hour >= startHour }, id: \.hour) { mark in
                 Text(String(format: "%02d:00", mark.hour))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(OurDaysTheme.secondaryInk)
                     .offset(y: max(0, mark.y - offsetY - 7))
             }
         }
-        .frame(width: width, height: DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight) - offsetY, alignment: .topTrailing)
+        .frame(width: width, height: DayTimelineLayoutPolicy.dayHeight(hourHeight: hourHeight) - offsetY, alignment: .topTrailing)
     }
 }
 
 /// The "now" line + time chip drawn over the day timeline. `TimelineView(.everyMinute)`
-/// refreshes it cheaply while visible; `DayTimelineNowIndicatorPlan` returns nil (hiding
+/// refreshes it cheaply while visible; `DayTimelineNowIndicatorPolicy` returns nil (hiding
 /// it) unless the displayed day is today. Non-interactive so it never blocks taps.
 struct DayTimelineNowIndicatorOverlay: View {
     let dayStart: Date
@@ -101,7 +101,7 @@ struct DayTimelineNowIndicatorOverlay: View {
         let lineX = railWidth + railSpacing
 
         TimelineView(.everyMinute) { context in
-            if let indicator = DayTimelineNowIndicatorPlan.indicator(
+            if let indicator = DayTimelineNowIndicatorPolicy.indicator(
                 now: context.date,
                 dayStart: dayStart,
                 hourHeight: hourHeight
@@ -141,13 +141,13 @@ struct DayTimelineHourGrid: View {
     var body: some View {
         let offsetY = CGFloat(startHour) * hourHeight
         ZStack(alignment: .topLeading) {
-            ForEach(DayTimelineLayoutPlan.hourMarks(hourHeight: hourHeight).filter { $0.hour > startHour }, id: \.hour) { mark in
+            ForEach(DayTimelineLayoutPolicy.hourMarks(hourHeight: hourHeight).filter { $0.hour > startHour }, id: \.hour) { mark in
                 Rectangle()
                     .fill(OurDaysTheme.hairline)
                     .frame(width: contentWidth - railWidth - railSpacing, height: 1)
                     .offset(x: railWidth + railSpacing, y: mark.y - offsetY)
             }
         }
-        .frame(width: contentWidth, height: DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight) - offsetY, alignment: .topLeading)
+        .frame(width: contentWidth, height: DayTimelineLayoutPolicy.dayHeight(hourHeight: hourHeight) - offsetY, alignment: .topLeading)
     }
 }

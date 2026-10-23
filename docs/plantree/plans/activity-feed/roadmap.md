@@ -2,7 +2,7 @@
 
 ## Done（2026-06-14，全部 TDD 落地，206 单测通过）
 - ✅ OQ1–OQ4 → [decisions/0002](decisions/0002-unread-interaction-organization.md)。
-- ✅ `ActivityFeedPlan` + `ActivityFeedItem`（`Models.swift`）+ 6 个单测（`ActivityFeedPlanTests`）。
+- ✅ `ActivityFeedPolicy` + `ActivityFeedItem`（`Models.swift`）+ 6 个单测（`ActivityFeedPolicyTests`）。
 - ✅ `SettingsStore.lastSeenActivityAt`（UserDefaults，per-device）+ 进入 tab `markActivitySeen()` 置 now。
 - ✅ `ShareCalTab.activity` + `ActivityTabView`/`ActivityFeedRow`（`RootView.swift`）+ `.badge(unreadActivityCount)` + 本地化字符串；行点击 sheet → `EventDetailView`。
 - ✅ 切到 activity tab 触发节流同步（`onChange(of: selectedTab)`）。

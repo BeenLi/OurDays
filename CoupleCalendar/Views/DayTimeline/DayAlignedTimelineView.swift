@@ -30,7 +30,7 @@ struct DayAlignedTimelineView: View {
 
     /// First hour drawn; the hours before it fold into the "both free" band.
     func startHour(isExpanded: Bool) -> Int {
-        DayTimelineCollapsePlan.visibleStartHour(
+        DayTimelineCollapsePolicy.visibleStartHour(
             eventStartDates: timedEventStartDates,
             dayStart: dayStart,
             now: .now,
@@ -60,7 +60,7 @@ struct DayAlignedTimelineView: View {
     var offsetY: CGFloat { CGFloat(visibleStartHour) * hourHeight }
 
     var dayHeight: CGFloat {
-        DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight) - offsetY
+        DayTimelineLayoutPolicy.dayHeight(hourHeight: hourHeight) - offsetY
     }
 
     var laneWidth: CGFloat {
@@ -96,19 +96,19 @@ struct DayAlignedTimelineView: View {
                         }
 
                         ZStack(alignment: .topLeading) {
-                            let jointPlacements = DayTimelineJointLayoutPlan.placements(for: jointEvents)
+                            let jointPlacements = DayTimelineJointLayoutPolicy.placements(for: jointEvents)
                             let mySpans = timedSpans(myEvents)
                             let partnerSpans = timedSpans(partnerEvents)
-                            let jointSpans = DayTimelineOverlapPlan.jointSpans(
+                            let jointSpans = DayTimelineOverlapPolicy.jointSpans(
                                 jointEvents: jointTimedSpans,
                                 myEvents: mySpans,
                                 partnerEvents: partnerSpans
                             )
-                            let narrowedMyEventIDs = DayTimelineOverlapPlan.narrowedLaneEventIDs(
+                            let narrowedMyEventIDs = DayTimelineOverlapPolicy.narrowedLaneEventIDs(
                                 laneEvents: mySpans,
                                 jointEvents: jointTimedSpans
                             )
-                            let narrowedPartnerEventIDs = DayTimelineOverlapPlan.narrowedLaneEventIDs(
+                            let narrowedPartnerEventIDs = DayTimelineOverlapPolicy.narrowedLaneEventIDs(
                                 laneEvents: partnerSpans,
                                 jointEvents: jointTimedSpans
                             )
@@ -192,7 +192,7 @@ struct DayAlignedTimelineView: View {
                                     DayTimelineJointEventBlock(
                                         event: event,
                                         isFocused: event.id == focusedJointEventID,
-                                        hasComments: EventCommentIndicatorPlan.hasComments(
+                                        hasComments: EventCommentIndicatorPolicy.hasComments(
                                             jointEvent: event,
                                             commentedKeys: commentedAnchorKeys
                                         )
@@ -204,7 +204,7 @@ struct DayAlignedTimelineView: View {
                                     x: railWidth + railSpacing + leadingInset + 4 + (CGFloat(placement.columnIndex) * slotWidth),
                                     y: eventY
                                 )
-                                .accessibilityLabel("\(event.title), \(EventTimeRangeTextPlan.text(for: event, strings: settings.strings)), \(event.calendarTitle), \(settings.strings.jointScheduleLabel)")
+                                .accessibilityLabel("\(event.title), \(EventTimeRangeTextPolicy.text(for: event, strings: settings.strings)), \(event.calendarTitle), \(settings.strings.jointScheduleLabel)")
                             }
 
                             DayTimelineNowIndicatorOverlay(
@@ -267,7 +267,7 @@ struct DayAlignedTimelineView: View {
             return DayTimelineEventFrame(y: 0, height: hourHeight)
         }
 
-        let frame = DayTimelineLayoutPlan.eventFrame(
+        let frame = DayTimelineLayoutPolicy.eventFrame(
             startDate: event.startDate,
             endDate: event.endDate,
             dayStart: dayStart,
@@ -297,9 +297,9 @@ struct DayAlignedTimelineView: View {
     }
 
     /// Marks where the timeline opens: the current time on today, otherwise
-    /// the day's first event, otherwise 08:00 (`DayTimelineScrollTargetPlan`).
+    /// the day's first event, otherwise 08:00 (`DayTimelineScrollTargetPolicy`).
     private func defaultScrollMarker() -> some View {
-        let targetY = DayTimelineScrollTargetPlan.initialTargetY(
+        let targetY = DayTimelineScrollTargetPolicy.initialTargetY(
             now: .now,
             dayStart: dayStart,
             eventStartDates: timedEventStartDates,
@@ -319,7 +319,7 @@ struct DayAlignedTimelineView: View {
     }
 
     private func jointScrollMarker(for event: JointScheduleEvent) -> some View {
-        let targetY = DayTimelineScrollTargetPlan.targetY(
+        let targetY = DayTimelineScrollTargetPolicy.targetY(
             for: event,
             dayStart: dayStart,
             hourHeight: hourHeight

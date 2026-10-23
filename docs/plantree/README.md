@@ -1,4 +1,4 @@
-# Plan Tree — ShareCal / CoupleCalendar
+# Plan Tree — OurDays（原 ShareCal / CoupleCalendar）
 
 planning 总入口（registry）。这里只放**持久的方向、决策、进度与未决问题**，不放一次性会话内容。
 
@@ -8,7 +8,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 3. 读相关 plan root（见下表）或 `ideas/inbox.md`。
 
 ## Authority order（权威顺序，冲突时以高者为准）
-1. 代码本身 + 仓库根 `CLAUDE.md`（架构铁律：两人制、userRecordID 身份模型、Plan enum 约定）。
+1. 代码本身 + 仓库根 `CLAUDE.md`（架构铁律：两人制、userRecordID 身份模型、Policy enum 约定）。
 2. `baseline/`（从代码归纳出的稳定上下文）。
 3. 各 plan root 的 `decisions/` > `roadmap.md` > `topics/`。
 4. `ideas/inbox.md`（低承诺想法，未提升前不算计划）。
@@ -21,15 +21,52 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 ## Active plans
 | Plan | Status | Current Phase | Last Landed | Next Target |
 |------|--------|---------------|-------------|-------------|
-| [activity-feed](plans/activity-feed/) | ✅ Done | landed | 2026-06-14, 215 tests pass | — |
-| [notifications](plans/notifications/) | ✅ v3 Code landed | landed | 2026-06-16, 236 tests pass（v3） | 两真机端到端验证（事件改动不弹、评论/邀请弹、审批+邀请不回退且失败上传自愈、角标自清） |
-| [public-launch](plans/public-launch/) | 🚧 In Progress | Track B/C 已上线；Track A v1.3 build 27 提交外测 | 2026-06-20：v1.3 (build 27) 上传 VALID + 加入外测组 `friends` + 提交 Beta Review（WAITING_FOR_REVIEW）。含 calendar-ux-fixes 三特性 | build 27 审核通过 → 公开链接自动服务 |
-| [calendar-ux-fixes](plans/calendar-ux-fixes/) | ✅ 已发布 | 3 phase 落地 + 两真机 e2e 跑通；已随 v1.3 build 27 提交公开外测 | 2026-06-20：commit `aadd4bb`，推 origin/main，archive+upload，build 27 VALID 提交 Beta Review | （可选）周视图 joint 点击 Deferred；离线乐观自愈分支单独验 |
-| [comment-visibility](plans/comment-visibility/) | ✅ 已提交 App Store 审核 | 代码+回归+新路径均验证；随 v1.4 build 33 提交 | 2026-07-04：合并 main → build 33（修 TestFlight 导出 internal-only bug）→ archive/upload → v1.4 提交 App Store（WAITING_FOR_REVIEW，发布说明含评论功能） | Apple 审核通过 → 手动发布上线 |
-| v1.5 release（PR #3 UI 重设计 + #4 配对更换修复 + #5 日视图打磨） | ✅ 已上架 | 1.5 (build 34) 2026-10-21 上架 | 2026-10-21：三个 PR 合并 main；`MemberProfile.avatar*` 三字段已部署到 Production（cktool 核对）；archive/upload → 提交审核 → 自动发布上架 | — |
-| v1.6 release（#7 评论头像 + #20 头像同步乒乓修复 + #21 邀请过期/撤回 + #22 重装恢复 + #23 解除配对清理 + #24 自己日程可评论） | 🚧 版本号已升级 | 1.6 (build 35) 版本号 PR | 2026-10-23：#26 README 合并后基于 main 升级版本号；schema 自 1.5 无变化，无需部署 Production | archive/upload → 更新截图 → 填发布说明 → 提交审核 |
+| [releases](plans/releases/) | 🚧 1.6 待上传 | 1.6 (build 35) 版本号 PR 待合并 | 2026-10-21：1.5 (build 34) 上架 | archive/upload → 更新 App Store 截图 → 填发布说明 → 提交审核 |
+| [docs-and-site](plans/docs-and-site/) | 🚧 In Progress | README 已对齐 main 至 #29 | 2026-10-23：#28 代码结构合成一棵树；#29 随改名更新 README / CLAUDE.md | 1.6 上架后刷新官网与 README 的版本说明 |
+
+## Landed plans（已落地 / 已发布，只在回归时回看）
+| Plan | Status | 发布于 | 备注 |
+|------|--------|--------|------|
+| [code-structure](plans/code-structure/) | ✅ Code landed | 1.6 起 | 瘦身 #8–#10、架构 A–E #12–#16、`Plans/` → `Policies/` 改名与分层目录 #29 |
+| [pairing-sync-integrity](plans/pairing-sync-integrity/) | ✅ Code landed | #4 随 1.5；#20 #22 #23 随 1.6 | 配对冲突改由用户选择；共享记录只在变化时保存；重装恢复；解除配对清理前任数据 |
+| [invitation-lifecycle](plans/invitation-lifecycle/) | ✅ Code landed | 1.6 | 已结束的日程不可邀请、待处理邀请会过期、发起方可撤销 |
+| [comment-visibility](plans/comment-visibility/) | ✅ 已发布 + 扩展 | 1.4；#24 随 1.6 | 评论红点、我的日程可看/可回评论；#24 起未同步也可先发起评论 |
+| [ui-redesign](plans/ui-redesign/) | ✅ 已发布 | 1.5；#7 随 1.6 | 「纸上双线」视觉、身份泳道、头像同步、日视图打磨 |
+| [calendar-ux-fixes](plans/calendar-ux-fixes/) | ✅ 已发布 | 1.3 | 今天红线、邀请乐观发送、共同日程可评论 |
+| [notifications](plans/notifications/) | ✅ 已发布 | 1.3 | 静默推送 + 后台同步 + 本地通知；两机端到端已自动化（2026-06-17） |
+| [activity-feed](plans/activity-feed/) | ✅ 已发布 | 1.3 | 「动态」tab；1.5 改为按天分组的聊天卡片样式 |
+| [public-launch](plans/public-launch/) | 📦 Archived | — | 外部 TestFlight 已被 App Store 上架取代；介绍页/域名部分由 docs-and-site 接管 |
 
 顺序：先 activity-feed，后 notifications（用户决定，2026-06-14）。v2（上线后反馈修复）见 [decision 0002](plans/notifications/decisions/0002-silent-push-and-background-sync.md)（2026-06-16）。
+
+## PR 索引（#1 起，按主题归档）
+每个 PR 的详细"原本怎样 / 为什么改 / 改成怎样"记在对应 plan 的 `decisions/`；这里只做查找表。
+
+| PR | 合并 | 主题 | 归属 plan |
+|----|------|------|-----------|
+| #1 | 2026-06-23 | CI：启动相关 UI 测试加重试与更长过渡超时 | [code-structure](plans/code-structure/roadmap.md) |
+| #2 | 2026-07-04 | 评论红点 + 我的日程可看/可回评论 | [comment-visibility](plans/comment-visibility/) |
+| #3 | 2026-10-21 | 「纸上双线」UI 重设计 + 头像自定义与同步 | [ui-redesign](plans/ui-redesign/) |
+| #4 | 2026-10-21 | 配对更换：不再静默踢人，改为冲突弹窗由用户选择 | [pairing-sync-integrity](plans/pairing-sync-integrity/) |
+| #5 | 2026-10-21 | 日视图打磨：打开定位、共享块让位、配对第 1 天 | [ui-redesign](plans/ui-redesign/) |
+| #6 | 2026-10-21 | 版本号 1.5 (34) | [releases](plans/releases/) |
+| #7 | 2026-10-21 | 我的评论气泡旁显示自己的头像 | [ui-redesign](plans/ui-redesign/) |
+| #8–#10 | 2026-10-22 | 拆分 RootView / Models / 测试文件；删零引用代码 | [code-structure](plans/code-structure/) |
+| #11 | 2026-10-22 | ourdays.cn 官网换 1.5 截图与文案 | [docs-and-site](plans/docs-and-site/) |
+| #12–#16 | 2026-10-22 | 架构重构 A–E（拆 CloudKit 服务、拆 AppServices、Diagnostics/、去重、删 CKSyncEngine） | [code-structure](plans/code-structure/) |
+| #17 | 2026-10-22 | README：badge、定位语、重构后的代码结构 | [docs-and-site](plans/docs-and-site/) |
+| #18 | 2026-10-22 | 冒烟脚本：模拟器 iCloud token 过期时快速失败 | [code-structure](plans/code-structure/roadmap.md) |
+| #19 | 2026-10-23 | README 截图换成新版 UI | [docs-and-site](plans/docs-and-site/) |
+| #20 | 2026-10-23 | 根记录 / MemberProfile 只在真正变化时保存（消除推送乒乓） | [pairing-sync-integrity](plans/pairing-sync-integrity/) |
+| #21 | 2026-10-23 | 邀请生命周期：已结束不可邀、待处理会过期、发起方可撤销 | [invitation-lifecycle](plans/invitation-lifecycle/) |
+| #22 | 2026-10-23 | 删除重装后从 iCloud 恢复；消失的自有事件打墓碑 | [pairing-sync-integrity](plans/pairing-sync-integrity/) |
+| #23 | 2026-10-23 | 解除配对时清掉前任留下的记录，导入时过滤 | [pairing-sync-integrity](plans/pairing-sync-integrity/) |
+| #24 | 2026-10-23 | 自己的日程未同步也可先发起评论 | [comment-visibility](plans/comment-visibility/) |
+| #25 | 2026-10-23 | README 全面更新（同步架构、记录类型、代码结构） | [docs-and-site](plans/docs-and-site/) |
+| #26 | 2026-10-23 | README 精简同步架构、重画图、新增数据安全 | [docs-and-site](plans/docs-and-site/) |
+| #27 | 未合并 | 版本号 1.6 (35) | [releases](plans/releases/) |
+| #28 | 2026-10-23 | README 代码结构合成一棵树 | [docs-and-site](plans/docs-and-site/) |
+| #29 | 2026-10-23 | `Plans/` → `Policies/`、`…Plan` → `…Policy`；源码按 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 分目录 | [code-structure](plans/code-structure/) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

@@ -100,7 +100,7 @@ struct WeekAgendaDaySection: View {
 
     private func itemHasComments(_ item: WeekAgendaItem) -> Bool {
         if let mirrorID = item.mirrorID, let mirror = mirrorByID[mirrorID] {
-            return EventCommentIndicatorPlan.hasComments(
+            return EventCommentIndicatorPolicy.hasComments(
                 mirror: mirror,
                 commentedKeys: commentedAnchorKeys,
                 persistedIDByMirrorKey: persistedMirrorIDByKey

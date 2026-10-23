@@ -1,5 +1,7 @@
 # Plan: public-launch（外部 TestFlight + 介绍页）
 
+> **📦 Archived（2026-10-23）**。目标已被超越：应用自 v1.3 (build 30) 起以 OurDays 名义公开上架 App Store（https://apps.apple.com/cn/app/id6772868166），外部 TestFlight 公开链接 `testflight.apple.com/join/42BdyA1N` 已退役；介绍页与域名的后续维护归 [docs-and-site](../docs-and-site/)。本文件保留为历史记录，不再更新。
+
 把 ShareCal 从「仅内部邀请测试」推进到「任何人凭公开链接即可加入的外部 TestFlight」，并在 GitHub Pages 上线一个中英双语的 ShareCal 介绍页（含开源地址）。
 
 ## Scope

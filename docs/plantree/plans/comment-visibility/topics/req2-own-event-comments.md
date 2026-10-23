@@ -7,12 +7,12 @@
 ## 根因（核实 2026-07-03）
 - 日历里「我自己的事件」= `localDisplayMirrors`（display mirror，`id="display:..."`，`cloudKitRecordName=nil`）。tap → `selectedEvent`（`RootView.swift:1009,1046`）→ `EventDetailView(event:)`。
 - `EventDetailView`（`RootView.swift:2781`）：详情 section + 「邀请对方」section（`:2813`，普通事件恒显）+ 评论 section（`:2836`，仅当 `EventDetailInteractionPlan.canComment(on:)` 为真）。
-- `canComment`（`Models.swift:1361`）= `!id.hasPrefix("display:")` ⇒ **我的 display mirror 恒 false ⇒ 我永远看不到评论区**。而对方评论我的事件时，评论按 `CloudKitCommentWritePlan.destination`（对方视角=我的事件→写入我的 private zone），我 `fetchEventComments` 能拉回，只是 UI 被 `canComment` 门槛挡住。
+- `canComment`（`Models.swift:1361`）= `!id.hasPrefix("display:")` ⇒ **我的 display mirror 恒 false ⇒ 我永远看不到评论区**。而对方评论我的事件时，评论按 `CloudKitCommentWritePolicy.destination`（对方视角=我的事件→写入我的 private zone），我 `fetchEventComments` 能拉回，只是 UI 被 `canComment` 门槛挡住。
 - 对比：点对方事件（真实 mirror）→ `canComment` true → 评论区正常。这是不对称 bug。
 
 ## 方案
 1. `EventDetailView` 内部解析持久化孪生：已有 `@Query mirrors`(`:2786`)。若传入 `event.id` 带 `display:` 前缀，按 `mirrorKey` 找 `!id.hasPrefix("display:")` 的真实 mirror；否则用自身。
-2. 放宽评论门槛：评论区显示条件从「非 display 前缀」改为「解析到持久化孪生」。anchor 用**解析出的真实 mirror** 建（`EventCommentAnchorPlan.anchor(forMirror:)`），拿到真实 `id` + `recordName` 供写入路由。
+2. 放宽评论门槛：评论区显示条件从「非 display 前缀」改为「解析到持久化孪生」。anchor 用**解析出的真实 mirror** 建（`EventCommentAnchorPolicy.anchor(forMirror:)`），拿到真实 `id` + `recordName` 供写入路由。
 3. 「邀请对方」section 保持不变，评论 section 显示在其下方（复用既有 `EventCommentsSection`，`RootView.swift:2682`——发送走 `saveCommentForSync`，路由：我的事件→我的 private zone，对方读回）。
 4. 边界：事件尚未同步（无持久化孪生）⇒ 不显示评论区（此时对方也不可能已评论）。可选「同步后可评论」提示列 Deferred。
 

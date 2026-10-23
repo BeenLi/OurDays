@@ -10,7 +10,7 @@ struct CloudSharingController: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UICloudSharingController {
         cloudKitSharingInfo("CloudSharingController presenting active share=\(preparedShare.share.recordID.recordName)")
         let controller = UICloudSharingController(share: preparedShare.share, container: preparedShare.container)
-        controller.availablePermissions = CloudKitSharePermissionPlan.controllerAvailablePermissions
+        controller.availablePermissions = CloudKitSharePermissionPolicy.controllerAvailablePermissions
         controller.delegate = context.coordinator
         return controller
     }

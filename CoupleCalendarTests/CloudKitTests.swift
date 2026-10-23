@@ -238,7 +238,7 @@ final class CloudKitRecordMappingTests: XCTestCase {
     }
 }
 
-final class CloudKitStopSharingPlanTests: XCTestCase {
+final class CloudKitStopSharingPolicyTests: XCTestCase {
     func testNoopsWhenRootHasNoShareReference() {
         let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
         let root = CKRecord(
@@ -246,7 +246,7 @@ final class CloudKitStopSharingPlanTests: XCTestCase {
             recordID: CKRecord.ID(recordName: CloudKitCoupleSpaceService.rootRecordName, zoneID: zoneID)
         )
 
-        XCTAssertNil(CloudKitStopSharingPlan.shareRecordIDToDelete(from: root))
+        XCTAssertNil(CloudKitStopSharingPolicy.shareRecordIDToDelete(from: root))
     }
 
     func testDeletesActiveShareRecordWhenRootIsShared() {
@@ -257,7 +257,7 @@ final class CloudKitStopSharingPlanTests: XCTestCase {
         )
         let share = CKShare(rootRecord: root)
 
-        XCTAssertEqual(CloudKitStopSharingPlan.shareRecordIDToDelete(from: root), share.recordID)
+        XCTAssertEqual(CloudKitStopSharingPolicy.shareRecordIDToDelete(from: root), share.recordID)
     }
 
     @MainActor
@@ -426,7 +426,7 @@ final class CloudKitStopSharingPlanTests: XCTestCase {
     }
 }
 
-final class CloudKitExPartnerCleanupPlanTests: XCTestCase {
+final class CloudKitExPartnerCleanupPolicyTests: XCTestCase {
     func testDeletesForeignCommentsAndEveryInvitationRecordButKeepsMyOwnComments() {
         let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
         let mine = CKRecord(recordType: CommentRecordMapper.recordType, recordID: CKRecord.ID(recordName: "c-mine", zoneID: zoneID))
@@ -439,7 +439,7 @@ final class CloudKitExPartnerCleanupPlanTests: XCTestCase {
             recordID: CKRecord.ID(recordName: "history-access-request:req", zoneID: zoneID)
         )
 
-        let ids = CloudKitExPartnerCleanupPlan.recordIDsToDelete(
+        let ids = CloudKitExPartnerCleanupPolicy.recordIDsToDelete(
             commentRecords: [mine, theirs],
             invitationRecords: [invitation, transport],
             currentMemberID: "_me"
@@ -449,23 +449,23 @@ final class CloudKitExPartnerCleanupPlanTests: XCTestCase {
     }
 }
 
-final class CloudKitInvitationWritePlanTests: XCTestCase {
+final class CloudKitInvitationWritePolicyTests: XCTestCase {
     func testCreatorWritesInvitationToPrivateOwnerZone() {
         XCTAssertEqual(
-            CloudKitInvitationWritePlan.destination(creatorMemberID: "me", currentMemberID: "me"),
+            CloudKitInvitationWritePolicy.destination(creatorMemberID: "me", currentMemberID: "me"),
             .privateOwnerZone
         )
     }
 
     func testInviteeWritesInvitationStatusBackToAcceptedSharedZone() {
         XCTAssertEqual(
-            CloudKitInvitationWritePlan.destination(creatorMemberID: "partner", currentMemberID: "me"),
+            CloudKitInvitationWritePolicy.destination(creatorMemberID: "partner", currentMemberID: "me"),
             .acceptedSharedZone
         )
     }
 }
 
-final class CloudKitAccessRequestWritePlanTests: XCTestCase {
+final class CloudKitAccessRequestWritePolicyTests: XCTestCase {
     func testRequesterWritesNewHistoryRequestToAcceptedSharedZone() {
         let request = CalendarAccessRequest(
             requesterMemberID: "me",
@@ -476,7 +476,7 @@ final class CloudKitAccessRequestWritePlanTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            CloudKitAccessRequestWritePlan.destination(for: request, currentMemberID: "me"),
+            CloudKitAccessRequestWritePolicy.destination(for: request, currentMemberID: "me"),
             .acceptedSharedZone
         )
     }
@@ -492,7 +492,7 @@ final class CloudKitAccessRequestWritePlanTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            CloudKitAccessRequestWritePlan.destination(for: request, currentMemberID: "me"),
+            CloudKitAccessRequestWritePolicy.destination(for: request, currentMemberID: "me"),
             .privateOwnerZone
         )
     }
@@ -502,7 +502,7 @@ final class CloudKitAccessRequestWritePlanTests: XCTestCase {
         let targetZone = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: "_manuOwner")
 
         XCTAssertEqual(
-            CloudKitAccessRequestSharedZonePlan.targetZoneID(
+            CloudKitAccessRequestSharedZonePolicy.targetZoneID(
                 ownerMemberID: "_manuOwner",
                 acceptedSharedZoneIDs: [staleZone, targetZone]
             ),
@@ -515,7 +515,7 @@ final class CloudKitAccessRequestWritePlanTests: XCTestCase {
         let otherZone = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: "_otherOwner")
 
         XCTAssertNil(
-            CloudKitAccessRequestSharedZonePlan.targetZoneID(
+            CloudKitAccessRequestSharedZonePolicy.targetZoneID(
                 ownerMemberID: "_manuOwner",
                 acceptedSharedZoneIDs: [staleZone, otherZone]
             )
@@ -526,7 +526,7 @@ final class CloudKitAccessRequestWritePlanTests: XCTestCase {
         let onlyZone = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: "_manuOwner")
 
         XCTAssertEqual(
-            CloudKitAccessRequestSharedZonePlan.targetZoneID(
+            CloudKitAccessRequestSharedZonePolicy.targetZoneID(
                 ownerMemberID: "马努",
                 acceptedSharedZoneIDs: [onlyZone]
             ),
@@ -551,7 +551,7 @@ final class CloudKitRootLookupPolicyTests: XCTestCase {
     }
 }
 
-final class CloudKitSharePermissionPlanTests: XCTestCase {
+final class CloudKitSharePermissionPolicyTests: XCTestCase {
     func testConfiguresShareForInviteLinksUntilPartnerJoins() {
         let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
         let root = CKRecord(
@@ -560,12 +560,12 @@ final class CloudKitSharePermissionPlanTests: XCTestCase {
         )
         let share = CKShare(rootRecord: root)
 
-        XCTAssertTrue(CloudKitSharePermissionPlan.needsLinkInvitationUpgrade(share, acceptedParticipantCount: 0))
+        XCTAssertTrue(CloudKitSharePermissionPolicy.needsLinkInvitationUpgrade(share, acceptedParticipantCount: 0))
 
-        CloudKitSharePermissionPlan.configureForLinkInvitation(share)
+        CloudKitSharePermissionPolicy.configureForLinkInvitation(share)
 
         XCTAssertEqual(share.publicPermission, .readWrite)
-        XCTAssertFalse(CloudKitSharePermissionPlan.needsLinkInvitationUpgrade(share, acceptedParticipantCount: 0))
+        XCTAssertFalse(CloudKitSharePermissionPolicy.needsLinkInvitationUpgrade(share, acceptedParticipantCount: 0))
     }
 
     func testDoesNotReopenLinkInvitationAfterPartnerJoined() {
@@ -576,11 +576,11 @@ final class CloudKitSharePermissionPlanTests: XCTestCase {
         )
         let share = CKShare(rootRecord: root)
 
-        XCTAssertFalse(CloudKitSharePermissionPlan.needsLinkInvitationUpgrade(share, acceptedParticipantCount: 1))
+        XCTAssertFalse(CloudKitSharePermissionPolicy.needsLinkInvitationUpgrade(share, acceptedParticipantCount: 1))
     }
 
     func testControllerPermissionsExposePublicInviteLinks() {
-        let permissions = CloudKitSharePermissionPlan.controllerAvailablePermissions
+        let permissions = CloudKitSharePermissionPolicy.controllerAvailablePermissions
 
         XCTAssertTrue(permissions.contains(.allowPublic))
         XCTAssertTrue(permissions.contains(.allowPrivate))
@@ -588,9 +588,9 @@ final class CloudKitSharePermissionPlanTests: XCTestCase {
     }
 }
 
-final class CloudKitShareParticipantIdentityPlanTests: XCTestCase {
+final class CloudKitShareParticipantIdentityPolicyTests: XCTestCase {
     func testCountsOnlyAcceptedNonOwnerParticipantsAsShared() {
-        let participantIDs = CloudKitShareParticipantIdentityPlan.acceptedParticipantIDs(from: [
+        let participantIDs = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(from: [
             CloudKitShareParticipantIdentity(
                 role: .owner,
                 acceptanceStatus: .accepted,
@@ -701,11 +701,11 @@ final class CloudKitSharedReadDiagnosticTests: XCTestCase {
     }
 }
 
-final class CloudKitShareRootMetadataPlanTests: XCTestCase {
+final class CloudKitShareRootMetadataPolicyTests: XCTestCase {
     func testWritesStableOwnerMemberIDToShareRoot() {
         let record = CKRecord(recordType: "CoupleSpace")
 
-        CloudKitShareRootMetadataPlan.applyOwnerMemberID("_me", to: record)
+        CloudKitShareRootMetadataPolicy.applyOwnerMemberID("_me", to: record)
 
         XCTAssertEqual(record["ownerMemberID"] as? String, "_me")
     }
@@ -718,7 +718,7 @@ final class CloudKitShareRootMetadataPlanTests: XCTestCase {
         record["ownerMemberID"] = "_me" as CKRecordValue
         let changedBefore = Set(record.changedKeys())
 
-        let didChange = CloudKitShareRootMetadataPlan.applyOwnerMemberID("_me", to: record)
+        let didChange = CloudKitShareRootMetadataPolicy.applyOwnerMemberID("_me", to: record)
 
         XCTAssertFalse(didChange)
         XCTAssertEqual(Set(record.changedKeys()), changedBefore)
@@ -728,7 +728,7 @@ final class CloudKitShareRootMetadataPlanTests: XCTestCase {
         let record = CKRecord(recordType: "CoupleSpace")
         record["ownerMemberID"] = "_old" as CKRecordValue
 
-        let didChange = CloudKitShareRootMetadataPlan.applyOwnerMemberID("_me", to: record)
+        let didChange = CloudKitShareRootMetadataPolicy.applyOwnerMemberID("_me", to: record)
 
         XCTAssertTrue(didChange)
         XCTAssertEqual(record["ownerMemberID"] as? String, "_me")
@@ -785,14 +785,14 @@ final class MemberProfileRecordMapperTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            MemberProfileDisplayPlan.partnerSyncedDisplayName(
+            MemberProfileDisplayPolicy.partnerSyncedDisplayName(
                 from: [newerPartner, mine, olderPartner],
                 partnerID: "_partner"
             ),
             "Newer name"
         )
         XCTAssertNil(
-            MemberProfileDisplayPlan.partnerSyncedDisplayName(
+            MemberProfileDisplayPolicy.partnerSyncedDisplayName(
                 from: [newerPartner, mine, olderPartner],
                 partnerID: nil
             )
@@ -802,18 +802,18 @@ final class MemberProfileRecordMapperTests: XCTestCase {
 
 final class ShareCalSceneDelegateConfigurationTests: XCTestCase {
     func testAppDelegateUsesSceneDelegateForCloudKitShareAcceptance() {
-        XCTAssertEqual(ShareCalSceneDelegateConfigurationPlan.configurationName, "Default Configuration")
-        XCTAssertTrue(ShareCalSceneDelegateConfigurationPlan.acceptsColdStartShareMetadata)
-        XCTAssertTrue(ShareCalSceneDelegateConfigurationPlan.sceneDelegateClass === ShareCalSceneDelegate.self)
+        XCTAssertEqual(ShareCalSceneDelegateConfigurationPolicy.configurationName, "Default Configuration")
+        XCTAssertTrue(ShareCalSceneDelegateConfigurationPolicy.acceptsColdStartShareMetadata)
+        XCTAssertTrue(ShareCalSceneDelegateConfigurationPolicy.sceneDelegateClass === ShareCalSceneDelegate.self)
     }
 }
 
-final class CloudKitSharedDatabaseImportPlanTests: XCTestCase {
+final class CloudKitSharedDatabaseImportPolicyTests: XCTestCase {
     func testSelectsCoupleSpaceZonesForAcceptedSharesRegardlessOwnerName() {
         let acceptedShareZone = CKRecordZone(zoneID: CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: "_partnerOwner"))
         let unrelatedZone = CKRecordZone(zoneID: CKRecordZone.ID(zoneName: "OtherZone", ownerName: "_partnerOwner"))
 
-        let zoneIDs = CloudKitSharedDatabaseImportPlan.coupleSpaceZoneIDs(
+        let zoneIDs = CloudKitSharedDatabaseImportPolicy.coupleSpaceZoneIDs(
             from: [acceptedShareZone, unrelatedZone],
             expectedZoneName: "CoupleSpace"
         )
@@ -862,7 +862,7 @@ final class CloudKitSharedDatabaseImportPlanTests: XCTestCase {
             cloudKitRecordName: "second"
         )
 
-        let localized = CloudKitSharedDatabaseImportPlan.identifiedMirrors(
+        let localized = CloudKitSharedDatabaseImportPolicy.identifiedMirrors(
             [first, second],
             sharedOwnerID: "icloud-owner"
         )
@@ -958,58 +958,58 @@ final class CloudKitSharingFailureMessageTests: XCTestCase {
     }
 }
 
-final class ShareCalLaunchDiagnosticPlanTests: XCTestCase {
+final class ShareCalLaunchDiagnosticPolicyTests: XCTestCase {
     func testParsesEventCommentArgumentsWithSmokeTitleDefault() {
         let arguments = ["ShareCal", "-ShareCalAddEventComment", "hello there", "-ShareCalEventCommentTitle", "Own Comment Event"]
 
-        XCTAssertEqual(ShareCalLaunchDiagnosticPlan.eventCommentBody(arguments: arguments), "hello there")
-        XCTAssertEqual(ShareCalLaunchDiagnosticPlan.eventCommentTitle(arguments: arguments), "Own Comment Event")
+        XCTAssertEqual(ShareCalLaunchDiagnosticPolicy.eventCommentBody(arguments: arguments), "hello there")
+        XCTAssertEqual(ShareCalLaunchDiagnosticPolicy.eventCommentTitle(arguments: arguments), "Own Comment Event")
         XCTAssertEqual(
-            ShareCalLaunchDiagnosticPlan.eventCommentTitle(arguments: ["ShareCal"]),
-            ShareCalSmokeTestEventPlan.title
+            ShareCalLaunchDiagnosticPolicy.eventCommentTitle(arguments: ["ShareCal"]),
+            ShareCalSmokeTestEventPolicy.title
         )
-        XCTAssertNil(ShareCalLaunchDiagnosticPlan.eventCommentBody(arguments: ["ShareCal", "-ShareCalAddEventComment"]))
-        XCTAssertTrue(ShareCalLaunchDiagnosticPlan.shouldProbeEventComments(arguments: ["ShareCal", "-ShareCalProbeEventComments"]))
-        XCTAssertFalse(ShareCalLaunchDiagnosticPlan.shouldProbeEventComments(arguments: ["ShareCal"]))
+        XCTAssertNil(ShareCalLaunchDiagnosticPolicy.eventCommentBody(arguments: ["ShareCal", "-ShareCalAddEventComment"]))
+        XCTAssertTrue(ShareCalLaunchDiagnosticPolicy.shouldProbeEventComments(arguments: ["ShareCal", "-ShareCalProbeEventComments"]))
+        XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.shouldProbeEventComments(arguments: ["ShareCal"]))
     }
 
     func testPreparesPairingShareOnlyWhenLaunchArgumentIsPresent() {
         XCTAssertTrue(
-            ShareCalLaunchDiagnosticPlan.shouldPreparePairingShare(
+            ShareCalLaunchDiagnosticPolicy.shouldPreparePairingShare(
                 arguments: ["ShareCal", "-ShareCalPreparePairingShare"]
             )
         )
-        XCTAssertFalse(ShareCalLaunchDiagnosticPlan.shouldPreparePairingShare(arguments: ["ShareCal"]))
+        XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.shouldPreparePairingShare(arguments: ["ShareCal"]))
     }
 
     func testParsesAcceptShareURLArgumentValue() {
         XCTAssertEqual(
-            ShareCalLaunchDiagnosticPlan.acceptShareURL(
+            ShareCalLaunchDiagnosticPolicy.acceptShareURL(
                 arguments: ["ShareCal", "-ShareCalAcceptShareURL", "https://www.icloud.com/share/abc#Name"]
             ),
             URL(string: "https://www.icloud.com/share/abc#Name")
         )
         XCTAssertNil(
-            ShareCalLaunchDiagnosticPlan.acceptShareURL(arguments: ["ShareCal", "-ShareCalAcceptShareURL"])
+            ShareCalLaunchDiagnosticPolicy.acceptShareURL(arguments: ["ShareCal", "-ShareCalAcceptShareURL"])
         )
-        XCTAssertNil(ShareCalLaunchDiagnosticPlan.acceptShareURL(arguments: ["ShareCal"]))
+        XCTAssertNil(ShareCalLaunchDiagnosticPolicy.acceptShareURL(arguments: ["ShareCal"]))
     }
 
     func testForcesSyncOnlyWhenLaunchArgumentIsPresent() {
         XCTAssertTrue(
-            ShareCalLaunchDiagnosticPlan.shouldForceSync(arguments: ["ShareCal", "-ShareCalForceSync"])
+            ShareCalLaunchDiagnosticPolicy.shouldForceSync(arguments: ["ShareCal", "-ShareCalForceSync"])
         )
-        XCTAssertFalse(ShareCalLaunchDiagnosticPlan.shouldForceSync(arguments: ["ShareCal"]))
+        XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.shouldForceSync(arguments: ["ShareCal"]))
     }
 
     func testRunsCloudKitWriteProbeOnlyWhenLaunchArgumentIsPresent() {
         XCTAssertTrue(
-            ShareCalLaunchDiagnosticPlan.shouldRunCloudKitWriteProbe(
+            ShareCalLaunchDiagnosticPolicy.shouldRunCloudKitWriteProbe(
                 arguments: ["ShareCal", "-ShareCalCloudKitWriteProbe"]
             )
         )
         XCTAssertFalse(
-            ShareCalLaunchDiagnosticPlan.shouldRunCloudKitWriteProbe(
+            ShareCalLaunchDiagnosticPolicy.shouldRunCloudKitWriteProbe(
                 arguments: ["ShareCal"]
             )
         )
@@ -1017,19 +1017,19 @@ final class ShareCalLaunchDiagnosticPlanTests: XCTestCase {
 
     func testSeedsCalendarEventOnlyWhenLaunchArgumentIsPresent() {
         XCTAssertTrue(
-            ShareCalLaunchDiagnosticPlan.shouldSeedCalendarEvent(
+            ShareCalLaunchDiagnosticPolicy.shouldSeedCalendarEvent(
                 arguments: ["ShareCal", "-ShareCalSeedCalendarEvent"]
             )
         )
         XCTAssertFalse(
-            ShareCalLaunchDiagnosticPlan.shouldSeedCalendarEvent(
+            ShareCalLaunchDiagnosticPolicy.shouldSeedCalendarEvent(
                 arguments: ["ShareCal"]
             )
         )
     }
 
     func testBuildsSeedCalendarDraftFromISODateArguments() throws {
-        let draft = ShareCalLaunchDiagnosticPlan.seedCalendarEventDraft(
+        let draft = ShareCalLaunchDiagnosticPolicy.seedCalendarEventDraft(
             arguments: [
                 "ShareCal",
                 "-ShareCalSeedCalendarEvent",
@@ -1046,12 +1046,12 @@ final class ShareCalLaunchDiagnosticPlanTests: XCTestCase {
         XCTAssertEqual(draft.title, "Pre pairing in range")
         XCTAssertEqual(draft.startDate, try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-06-01T09:00:00Z")))
         XCTAssertEqual(draft.endDate, try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-06-01T10:00:00Z")))
-        XCTAssertEqual(draft.notes, ShareCalSmokeTestEventPlan.notes)
+        XCTAssertEqual(draft.notes, ShareCalSmokeTestEventPolicy.notes)
     }
 
     func testFallsBackToDefaultSeedDraftWhenISODateRangeIsInvalid() {
         let now = Date(timeIntervalSince1970: 1_000)
-        let draft = ShareCalLaunchDiagnosticPlan.seedCalendarEventDraft(
+        let draft = ShareCalLaunchDiagnosticPolicy.seedCalendarEventDraft(
             arguments: [
                 "ShareCal",
                 "-ShareCalSeedCalendarEvent",
@@ -1065,21 +1065,21 @@ final class ShareCalLaunchDiagnosticPlanTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(draft, ShareCalSmokeTestEventPlan.draft(now: now, title: "Fallback"))
+        XCTAssertEqual(draft, ShareCalSmokeTestEventPolicy.draft(now: now, title: "Fallback"))
     }
 
     func testCloudKitWriteProbeUsesRealShareRootRecordType() {
-        XCTAssertEqual(ShareCalLaunchDiagnosticPlan.cloudKitWriteProbeRecordType, "CoupleSpace")
+        XCTAssertEqual(ShareCalLaunchDiagnosticPolicy.cloudKitWriteProbeRecordType, "CoupleSpace")
     }
 
     func testRunsStopSharingProbeOnlyWhenLaunchArgumentIsPresent() {
         XCTAssertTrue(
-            ShareCalLaunchDiagnosticPlan.shouldRunStopSharingProbe(
+            ShareCalLaunchDiagnosticPolicy.shouldRunStopSharingProbe(
                 arguments: ["ShareCal", "-ShareCalStopICloudSharing"]
             )
         )
         XCTAssertFalse(
-            ShareCalLaunchDiagnosticPlan.shouldRunStopSharingProbe(
+            ShareCalLaunchDiagnosticPolicy.shouldRunStopSharingProbe(
                 arguments: ["ShareCal"]
             )
         )
@@ -1087,25 +1087,25 @@ final class ShareCalLaunchDiagnosticPlanTests: XCTestCase {
 
     func testRunsSharedReadProbeOnlyWhenLaunchArgumentIsPresent() {
         XCTAssertTrue(
-            ShareCalLaunchDiagnosticPlan.shouldRunSharedReadProbe(
+            ShareCalLaunchDiagnosticPolicy.shouldRunSharedReadProbe(
                 arguments: ["ShareCal", "-ShareCalSharedReadProbe"]
             )
         )
         XCTAssertFalse(
-            ShareCalLaunchDiagnosticPlan.shouldRunSharedReadProbe(
+            ShareCalLaunchDiagnosticPolicy.shouldRunSharedReadProbe(
                 arguments: ["ShareCal"]
             )
         )
     }
 }
 
-final class CloudKitBatchUpsertPlanTests: XCTestCase {
+final class CloudKitBatchUpsertPolicyTests: XCTestCase {
     func testBuildsMirrorRecordIDsWithServerRecordNameFallback() {
         let zoneID = CKRecordZone.ID(zoneName: "CoupleSpaceZone", ownerName: CKCurrentUserDefaultName)
         let existing = eventMirror(id: "event-1", cloudKitRecordName: "server-record")
         let new = eventMirror(id: "event-2", cloudKitRecordName: nil)
 
-        let recordIDs = CloudKitBatchUpsertPlan.recordIDs(forMirrors: [existing, new], zoneID: zoneID)
+        let recordIDs = CloudKitBatchUpsertPolicy.recordIDs(forMirrors: [existing, new], zoneID: zoneID)
 
         XCTAssertEqual(recordIDs.map(\.recordName), ["server-record", "work:event-2:1800"])
     }
@@ -1121,7 +1121,7 @@ final class CloudKitBatchUpsertPlanTests: XCTestCase {
             cloudKitRecordName: "history-access-request:request-1"
         )
 
-        let recordIDs = CloudKitBatchUpsertPlan.recordIDs(forAccessRequests: [request], zoneID: zoneID)
+        let recordIDs = CloudKitBatchUpsertPolicy.recordIDs(forAccessRequests: [request], zoneID: zoneID)
         let record = CalendarAccessRequestRecordMapper.record(from: request, zoneID: zoneID)
 
         XCTAssertEqual(recordIDs.map(\.recordName), ["history-access-request:request-1"])
@@ -1130,7 +1130,7 @@ final class CloudKitBatchUpsertPlanTests: XCTestCase {
 
     func testDefinesMinimalDesiredKeysForEachForegroundQueryType() {
         XCTAssertEqual(
-            CloudKitForegroundQueryPlan.desiredKeys(forRecordType: EventMirrorRecordMapper.recordType),
+            CloudKitForegroundQueryPolicy.desiredKeys(forRecordType: EventMirrorRecordMapper.recordType),
             [
                 EventMirrorRecordMapper.Key.ownerMemberID,
                 EventMirrorRecordMapper.Key.mirrorKey,
@@ -1151,7 +1151,7 @@ final class CloudKitBatchUpsertPlanTests: XCTestCase {
             ]
         )
         XCTAssertEqual(
-            CloudKitForegroundQueryPlan.desiredKeys(forRecordType: CommentRecordMapper.recordType),
+            CloudKitForegroundQueryPolicy.desiredKeys(forRecordType: CommentRecordMapper.recordType),
             [
                 CommentRecordMapper.Key.eventMirrorID,
                 CommentRecordMapper.Key.authorMemberID,
@@ -1163,7 +1163,7 @@ final class CloudKitBatchUpsertPlanTests: XCTestCase {
             ]
         )
         XCTAssertEqual(
-            CloudKitForegroundQueryPlan.desiredKeys(forRecordType: MemberProfileRecordMapper.recordType),
+            CloudKitForegroundQueryPolicy.desiredKeys(forRecordType: MemberProfileRecordMapper.recordType),
             [
                 MemberProfileRecordMapper.Key.ownerMemberID,
                 MemberProfileRecordMapper.Key.displayName,
@@ -1199,7 +1199,7 @@ final class CloudKitBatchUpsertPlanTests: XCTestCase {
     }
 }
 
-final class CloudKitRecordQueryFailurePlanTests: XCTestCase {
+final class CloudKitRecordQueryFailurePolicyTests: XCTestCase {
     func testTreatsMissingMemberProfileRecordTypeAsEmpty() {
         let error = NSError(
             domain: CKError.errorDomain,
@@ -1208,7 +1208,7 @@ final class CloudKitRecordQueryFailurePlanTests: XCTestCase {
         )
 
         XCTAssertTrue(
-            CloudKitRecordQueryFailurePlan.canTreatMissingRecordTypeAsEmpty(
+            CloudKitRecordQueryFailurePolicy.canTreatMissingRecordTypeAsEmpty(
                 recordType: MemberProfileRecordMapper.recordType,
                 error: error
             )
@@ -1223,7 +1223,7 @@ final class CloudKitRecordQueryFailurePlanTests: XCTestCase {
         )
 
         XCTAssertFalse(
-            CloudKitRecordQueryFailurePlan.canTreatMissingRecordTypeAsEmpty(
+            CloudKitRecordQueryFailurePolicy.canTreatMissingRecordTypeAsEmpty(
                 recordType: EventMirrorRecordMapper.recordType,
                 error: error
             )
@@ -1400,10 +1400,10 @@ final class MemberProfileAvatarRecordTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            MemberProfileDisplayPlan.partnerSyncedAvatar(from: [older, mine, newer], partnerID: " _partner "),
+            MemberProfileDisplayPolicy.partnerSyncedAvatar(from: [older, mine, newer], partnerID: " _partner "),
             MemberAvatar(text: "雨", background: .coral)
         )
-        XCTAssertNil(MemberProfileDisplayPlan.partnerSyncedAvatar(from: [older, mine, newer], partnerID: nil))
+        XCTAssertNil(MemberProfileDisplayPolicy.partnerSyncedAvatar(from: [older, mine, newer], partnerID: nil))
     }
 
     func testRetriesWithoutAvatarOnlyForSchemaRejections() {
@@ -1419,9 +1419,9 @@ final class MemberProfileAvatarRecordTests: XCTestCase {
             CKPartialErrorsByItemIDKey: [CKRecord.ID(recordName: "member-profile:_me"): CKError(.invalidArguments)]
         ])
 
-        XCTAssertTrue(MemberProfileAvatarSchemaFallbackPlan.shouldRetryWithoutAvatar(error: invalid, profile: withAvatar))
-        XCTAssertTrue(MemberProfileAvatarSchemaFallbackPlan.shouldRetryWithoutAvatar(error: partial, profile: withAvatar))
-        XCTAssertFalse(MemberProfileAvatarSchemaFallbackPlan.shouldRetryWithoutAvatar(error: invalid, profile: withoutAvatar))
-        XCTAssertFalse(MemberProfileAvatarSchemaFallbackPlan.shouldRetryWithoutAvatar(error: CKError(.networkUnavailable), profile: withAvatar))
+        XCTAssertTrue(MemberProfileAvatarSchemaFallbackPolicy.shouldRetryWithoutAvatar(error: invalid, profile: withAvatar))
+        XCTAssertTrue(MemberProfileAvatarSchemaFallbackPolicy.shouldRetryWithoutAvatar(error: partial, profile: withAvatar))
+        XCTAssertFalse(MemberProfileAvatarSchemaFallbackPolicy.shouldRetryWithoutAvatar(error: invalid, profile: withoutAvatar))
+        XCTAssertFalse(MemberProfileAvatarSchemaFallbackPolicy.shouldRetryWithoutAvatar(error: CKError(.networkUnavailable), profile: withAvatar))
     }
 }

@@ -7,7 +7,7 @@
 
 ## Non-goals
 - 不改两人制身份模型、不新增 SwiftData 实体、不改部署 CloudKit schema（复用现有 `EventComment` + 锚路由）。
-- 不改「动态」tab 的未读聚合逻辑（`ActivityFeedPlan`）；红点语义是「有评论」而非「未读」（见 decision 0001）。
+- 不改「动态」tab 的未读聚合逻辑（`ActivityFeedPolicy`）；红点语义是「有评论」而非「未读」（见 decision 0001）。
 - 不做评论编辑/富文本/@提醒等增强。
 
 ## 根因（核实 2026-07-03，见 topics）
@@ -17,7 +17,11 @@
 - [roadmap.md](roadmap.md) — 分期状态
 - [open-questions.md](open-questions.md) — 未决 / 待验证
 - topics/[req1-comment-dot.md](topics/req1-comment-dot.md) · [req2-own-event-comments.md](topics/req2-own-event-comments.md)
-- decisions/[0001-dot-marks-any-comment.md](decisions/0001-dot-marks-any-comment.md) · [0002-own-event-detail-resolves-persisted-mirror.md](decisions/0002-own-event-detail-resolves-persisted-mirror.md)
+- decisions/[0001-dot-marks-any-comment.md](decisions/0001-dot-marks-any-comment.md) · [0002-own-event-detail-resolves-persisted-mirror.md](decisions/0002-own-event-detail-resolves-persisted-mirror.md) · [0003-own-events-comment-before-sync.md](decisions/0003-own-events-comment-before-sync.md)（#24，取代 0002 的门槛）
+
+## Status
+- **✅ 已发布**：#2 随 v1.4 (build 33) 上架（2026-07）。
+- **✅ 扩展落地**：#24（2026-10-23，随 1.6）让我的日程不等同步也能先发起评论，见 decision 0003。
 
 ## 权威
 本 plan 服从仓库 `CLAUDE.md` 铁律与 [baseline](../../baseline/README.md)。冲突时以代码 + `CLAUDE.md` 为准。

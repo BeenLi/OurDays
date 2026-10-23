@@ -1,8 +1,8 @@
 import XCTest
 
-final class ICloudSharingTeardownPlanTests: XCTestCase {
+final class ICloudSharingTeardownPolicyTests: XCTestCase {
     func testPurgesPartnerOwnerAndPlaceholderIDs() {
-        let ownerIDs = ICloudSharingTeardownPlan.localOwnerIDsToPurge(
+        let ownerIDs = ICloudSharingTeardownPolicy.localOwnerIDsToPurge(
             partnerShareOwnerID: "_partnerOwner"
         )
 
@@ -10,16 +10,16 @@ final class ICloudSharingTeardownPlanTests: XCTestCase {
     }
 
     func testIgnoresMissingPartnerOwnerID() {
-        let ownerIDs = ICloudSharingTeardownPlan.localOwnerIDsToPurge(partnerShareOwnerID: " ")
+        let ownerIDs = ICloudSharingTeardownPolicy.localOwnerIDsToPurge(partnerShareOwnerID: " ")
 
         XCTAssertEqual(ownerIDs, ["partner"])
     }
 }
 
-final class PairingSettingsPlanTests: XCTestCase {
+final class PairingSettingsPolicyTests: XCTestCase {
     func testReportsNotPairedWhenNoPairingSignalsExist() {
         XCTAssertEqual(
-            PairingSettingsPlan.status(
+            PairingSettingsPolicy.status(
                 hasStartedPairing: false,
                 outgoingParticipantIDs: [],
                 incomingOwnerID: nil
@@ -30,7 +30,7 @@ final class PairingSettingsPlanTests: XCTestCase {
 
     func testReportsWaitingForPartnerAfterStartingOutgoingShare() {
         XCTAssertEqual(
-            PairingSettingsPlan.status(
+            PairingSettingsPolicy.status(
                 hasStartedPairing: true,
                 outgoingParticipantIDs: [],
                 incomingOwnerID: nil
@@ -41,7 +41,7 @@ final class PairingSettingsPlanTests: XCTestCase {
 
     func testReportsWaitingForPartnerToShareAfterOutgoingShareIsAccepted() {
         XCTAssertEqual(
-            PairingSettingsPlan.status(
+            PairingSettingsPolicy.status(
                 hasStartedPairing: true,
                 outgoingParticipantIDs: ["partner@example.com"],
                 incomingOwnerID: nil
@@ -52,7 +52,7 @@ final class PairingSettingsPlanTests: XCTestCase {
 
     func testReportsWaitingForYouToShareWhenOnlyIncomingShareIsAvailable() {
         XCTAssertEqual(
-            PairingSettingsPlan.status(
+            PairingSettingsPolicy.status(
                 hasStartedPairing: true,
                 outgoingParticipantIDs: [],
                 incomingOwnerID: "icloud-owner"
@@ -63,7 +63,7 @@ final class PairingSettingsPlanTests: XCTestCase {
 
     func testReportsPairedOnlyWhenIncomingAndOutgoingSharesAreAvailable() {
         XCTAssertEqual(
-            PairingSettingsPlan.status(
+            PairingSettingsPolicy.status(
                 hasStartedPairing: true,
                 outgoingParticipantIDs: ["partner@example.com"],
                 incomingOwnerID: "icloud-owner"
@@ -74,7 +74,7 @@ final class PairingSettingsPlanTests: XCTestCase {
 
     func testPartnerDisplayNamePrefersLocalNoteThenSyncedProfile() {
         XCTAssertEqual(
-            PairingSettingsPlan.partnerDisplayName(
+            PairingSettingsPolicy.partnerDisplayName(
                 partnerNoteName: " Local note ",
                 partnerSyncedDisplayName: "Remote name",
                 fallback: "Partner"
@@ -82,7 +82,7 @@ final class PairingSettingsPlanTests: XCTestCase {
             "Local note"
         )
         XCTAssertEqual(
-            PairingSettingsPlan.partnerDisplayName(
+            PairingSettingsPolicy.partnerDisplayName(
                 partnerNoteName: " ",
                 partnerSyncedDisplayName: " Remote name ",
                 fallback: "Partner"
@@ -90,7 +90,7 @@ final class PairingSettingsPlanTests: XCTestCase {
             "Remote name"
         )
         XCTAssertEqual(
-            PairingSettingsPlan.partnerDisplayName(
+            PairingSettingsPolicy.partnerDisplayName(
                 partnerNoteName: "",
                 partnerSyncedDisplayName: nil,
                 fallback: "Partner"
@@ -101,7 +101,7 @@ final class PairingSettingsPlanTests: XCTestCase {
 
     func testPartnerStatusDisplayNameShowsNicknameWithOptionalNote() {
         XCTAssertEqual(
-            PairingSettingsPlan.partnerStatusDisplayName(
+            PairingSettingsPolicy.partnerStatusDisplayName(
                 partnerNoteName: " Home ",
                 partnerSyncedDisplayName: " Yoki ",
                 fallback: "Partner",
@@ -110,7 +110,7 @@ final class PairingSettingsPlanTests: XCTestCase {
             "Yoki (Home)"
         )
         XCTAssertEqual(
-            PairingSettingsPlan.partnerStatusDisplayName(
+            PairingSettingsPolicy.partnerStatusDisplayName(
                 partnerNoteName: " ",
                 partnerSyncedDisplayName: " Yoki ",
                 fallback: "Partner",
@@ -119,7 +119,7 @@ final class PairingSettingsPlanTests: XCTestCase {
             "Yoki"
         )
         XCTAssertEqual(
-            PairingSettingsPlan.partnerStatusDisplayName(
+            PairingSettingsPolicy.partnerStatusDisplayName(
                 partnerNoteName: " Yoki ",
                 partnerSyncedDisplayName: "Yoki",
                 fallback: "Partner",
@@ -128,7 +128,7 @@ final class PairingSettingsPlanTests: XCTestCase {
             "Yoki"
         )
         XCTAssertEqual(
-            PairingSettingsPlan.partnerStatusDisplayName(
+            PairingSettingsPolicy.partnerStatusDisplayName(
                 partnerNoteName: " 宝宝 ",
                 partnerSyncedDisplayName: nil,
                 fallback: "对方",
@@ -139,21 +139,21 @@ final class PairingSettingsPlanTests: XCTestCase {
     }
 
     func testNormalizesCurrentDisplayNameForProfileSync() {
-        XCTAssertEqual(PairingSettingsPlan.normalizedDisplayName(" Manu "), "Manu")
-        XCTAssertNil(PairingSettingsPlan.normalizedDisplayName(" "))
-        XCTAssertNil(PairingSettingsPlan.normalizedDisplayName(nil))
+        XCTAssertEqual(PairingSettingsPolicy.normalizedDisplayName(" Manu "), "Manu")
+        XCTAssertNil(PairingSettingsPolicy.normalizedDisplayName(" "))
+        XCTAssertNil(PairingSettingsPolicy.normalizedDisplayName(nil))
     }
 
     func testRandomNicknameIsReadableAndStableLength() {
-        let nickname = PairingSettingsPlan.randomDisplayName(randomNumber: { 42 })
+        let nickname = PairingSettingsPolicy.randomDisplayName(randomNumber: { 42 })
 
         XCTAssertEqual(nickname, "OurDays 0042")
     }
 }
 
-final class TwoPersonPairingPlanTests: XCTestCase {
+final class TwoPersonPairingPolicyTests: XCTestCase {
     func testMutualShareEstablishesPartnerAndLeavesStaleZones() {
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: nil,
             outgoingAcceptedParticipantIDs: ["_partner"],
             sharedZoneOwnerIDs: ["_partner", "_oldFriend"]
@@ -165,7 +165,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     }
 
     func testSingleIncomingShareBecomesPartnerWithoutOutgoingShare() {
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: nil,
             outgoingAcceptedParticipantIDs: [],
             sharedZoneOwnerIDs: ["_partner"]
@@ -177,7 +177,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     }
 
     func testStoredPartnerSelectsAmongMultipleIncomingShares() {
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: "_partner",
             outgoingAcceptedParticipantIDs: [],
             sharedZoneOwnerIDs: ["_oldFriend", "_partner"]
@@ -189,7 +189,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     }
 
     func testMultipleIncomingSharesWithoutBindingIsAConflict() {
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: nil,
             outgoingAcceptedParticipantIDs: [],
             sharedZoneOwnerIDs: ["_personB", "_personA"]
@@ -204,7 +204,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     }
 
     func testOutgoingIncomingMismatchIsAConflictAndBlocksCleanup() {
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: nil,
             outgoingAcceptedParticipantIDs: ["_personA"],
             sharedZoneOwnerIDs: ["_personB"]
@@ -219,7 +219,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     }
 
     func testMismatchConflictCarriesAllOutgoingParticipantsAsCandidates() {
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: nil,
             outgoingAcceptedParticipantIDs: ["_personB", "_personA"],
             sharedZoneOwnerIDs: ["_personC"]
@@ -230,7 +230,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
             .outgoingIncomingMismatch(outgoingIDs: ["_personA", "_personB"], incomingOwnerIDs: ["_personC"])
         )
         XCTAssertEqual(
-            TwoPersonPairingConflictPresentationPlan.candidateIDs(
+            TwoPersonPairingConflictPresentationPolicy.candidateIDs(
                 .outgoingIncomingMismatch(outgoingIDs: ["_personA", "_personB"], incomingOwnerIDs: ["_personC"])
             ),
             ["_personA", "_personB", "_personC"]
@@ -238,7 +238,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     }
 
     func testOutgoingOnlyShareWaitsForPartnerWithoutConflict() {
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: nil,
             outgoingAcceptedParticipantIDs: ["_partner"],
             sharedZoneOwnerIDs: []
@@ -250,7 +250,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     }
 
     func testMultipleOutgoingParticipantsWithoutBindingIsAConflict() {
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: nil,
             outgoingAcceptedParticipantIDs: ["_personB", "_personA"],
             sharedZoneOwnerIDs: []
@@ -265,7 +265,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     func testMultipleOutgoingParticipantsWithStoredPartnerIsStillAConflict() {
         // A newcomer on the outgoing share is never removed silently, even when
         // the stored partner is among the participants: the user decides.
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: "_partner",
             outgoingAcceptedParticipantIDs: ["_partner", "_newcomer"],
             sharedZoneOwnerIDs: []
@@ -282,7 +282,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
         // A paired with B; C accepted A's link. Previously C was auto-removed
         // before A could confirm a replacement, so the replacement ended with
         // no participant at all. Now it is a conflict A resolves by choosing.
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: "_partner",
             outgoingAcceptedParticipantIDs: ["_newcomer", "_partner"],
             sharedZoneOwnerIDs: ["_partner"]
@@ -295,7 +295,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
             .outgoingIncomingMismatch(outgoingIDs: ["_newcomer", "_partner"], incomingOwnerIDs: ["_partner"])
         )
         XCTAssertEqual(
-            TwoPersonPairingConflictPresentationPlan.candidateIDs(
+            TwoPersonPairingConflictPresentationPolicy.candidateIDs(
                 .outgoingIncomingMismatch(outgoingIDs: ["_newcomer", "_partner"], incomingOwnerIDs: ["_partner"])
             ),
             ["_newcomer", "_partner"]
@@ -303,7 +303,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     }
 
     func testStaleIncomingZonesStillLeaveWhenOutgoingHasOnlyThePartner() {
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: "_partner",
             outgoingAcceptedParticipantIDs: ["_partner"],
             sharedZoneOwnerIDs: ["_partner", "_oldFriend"]
@@ -315,7 +315,7 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     }
 
     func testNonCloudKitParticipantIdentifiersAreIgnoredForMatching() {
-        let resolution = TwoPersonPairingPlan.resolve(
+        let resolution = TwoPersonPairingPolicy.resolve(
             storedPartnerID: nil,
             outgoingAcceptedParticipantIDs: ["partner@example.com"],
             sharedZoneOwnerIDs: ["_partner"]
@@ -326,10 +326,10 @@ final class TwoPersonPairingPlanTests: XCTestCase {
     }
 }
 
-final class ShareAcceptanceGuardPlanTests: XCTestCase {
+final class ShareAcceptanceGuardPolicyTests: XCTestCase {
     func testFirstAcceptanceNeedsNoConfirmation() {
         XCTAssertFalse(
-            ShareAcceptanceGuardPlan.requiresReplacementConfirmation(
+            ShareAcceptanceGuardPolicy.requiresReplacementConfirmation(
                 incomingOwnerID: "_partner",
                 storedPartnerID: nil,
                 outgoingParticipantIDs: []
@@ -339,7 +339,7 @@ final class ShareAcceptanceGuardPlanTests: XCTestCase {
 
     func testReacceptingCurrentPartnerNeedsNoConfirmation() {
         XCTAssertFalse(
-            ShareAcceptanceGuardPlan.requiresReplacementConfirmation(
+            ShareAcceptanceGuardPolicy.requiresReplacementConfirmation(
                 incomingOwnerID: "_partner",
                 storedPartnerID: "_partner",
                 outgoingParticipantIDs: []
@@ -349,7 +349,7 @@ final class ShareAcceptanceGuardPlanTests: XCTestCase {
 
     func testAcceptingDifferentPersonThanStoredPartnerNeedsConfirmation() {
         XCTAssertTrue(
-            ShareAcceptanceGuardPlan.requiresReplacementConfirmation(
+            ShareAcceptanceGuardPolicy.requiresReplacementConfirmation(
                 incomingOwnerID: "_intruder",
                 storedPartnerID: "_partner",
                 outgoingParticipantIDs: []
@@ -359,7 +359,7 @@ final class ShareAcceptanceGuardPlanTests: XCTestCase {
 
     func testAcceptingDifferentPersonThanOutgoingParticipantNeedsConfirmation() {
         XCTAssertTrue(
-            ShareAcceptanceGuardPlan.requiresReplacementConfirmation(
+            ShareAcceptanceGuardPolicy.requiresReplacementConfirmation(
                 incomingOwnerID: "_intruder",
                 storedPartnerID: nil,
                 outgoingParticipantIDs: ["_partner"]
@@ -369,7 +369,7 @@ final class ShareAcceptanceGuardPlanTests: XCTestCase {
 
     func testNonCloudKitOutgoingIdentifiersDoNotBlockAcceptance() {
         XCTAssertFalse(
-            ShareAcceptanceGuardPlan.requiresReplacementConfirmation(
+            ShareAcceptanceGuardPolicy.requiresReplacementConfirmation(
                 incomingOwnerID: "_partner",
                 storedPartnerID: nil,
                 outgoingParticipantIDs: ["partner@example.com"]
@@ -378,10 +378,10 @@ final class ShareAcceptanceGuardPlanTests: XCTestCase {
     }
 }
 
-final class ExistingICloudDataRecoveryPlanTests: XCTestCase {
+final class ExistingICloudDataRecoveryPolicyTests: XCTestCase {
     func testPromptsWhenFreshLocalStateFindsExistingCloudDataAfterProfileSetup() {
         XCTAssertTrue(
-            ExistingICloudDataRecoveryPlan.shouldPresent(
+            ExistingICloudDataRecoveryPolicy.shouldPresent(
                 snapshot: ExistingICloudDataSnapshot(
                     hasPrivateZoneData: true,
                     hasOutgoingShare: true,
@@ -399,7 +399,7 @@ final class ExistingICloudDataRecoveryPlanTests: XCTestCase {
 
     func testDoesNotPromptWhenNoExistingCloudDataIsFound() {
         XCTAssertFalse(
-            ExistingICloudDataRecoveryPlan.shouldPresent(
+            ExistingICloudDataRecoveryPolicy.shouldPresent(
                 snapshot: ExistingICloudDataSnapshot(
                     hasPrivateZoneData: false,
                     hasOutgoingShare: false,
@@ -417,7 +417,7 @@ final class ExistingICloudDataRecoveryPlanTests: XCTestCase {
 
     func testDoesNotPromptWhenLocalPairingStateAlreadyExists() {
         XCTAssertFalse(
-            ExistingICloudDataRecoveryPlan.shouldPresent(
+            ExistingICloudDataRecoveryPolicy.shouldPresent(
                 snapshot: ExistingICloudDataSnapshot(
                     hasPrivateZoneData: true,
                     hasOutgoingShare: true,
@@ -435,7 +435,7 @@ final class ExistingICloudDataRecoveryPlanTests: XCTestCase {
 
     func testDefersAutomaticSyncWhileFreshInstallCloudDecisionIsUnresolved() {
         XCTAssertTrue(
-            ExistingICloudDataRecoveryPlan.shouldDeferAutomaticSync(
+            ExistingICloudDataRecoveryPolicy.shouldDeferAutomaticSync(
                 hasResolvedPrompt: false,
                 hasStartedPairing: false,
                 partnerShareOwnerID: nil,
@@ -444,7 +444,7 @@ final class ExistingICloudDataRecoveryPlanTests: XCTestCase {
             )
         )
         XCTAssertFalse(
-            ExistingICloudDataRecoveryPlan.shouldDeferAutomaticSync(
+            ExistingICloudDataRecoveryPolicy.shouldDeferAutomaticSync(
                 hasResolvedPrompt: true,
                 hasStartedPairing: false,
                 partnerShareOwnerID: nil,
@@ -462,7 +462,7 @@ final class ExistingICloudDataRecoveredStateTests: XCTestCase {
         let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 23, hour: 9)))
         let avatar = MemberAvatar(text: "小鱼", background: nil, imageData: nil)
 
-        let state = ExistingICloudDataRecoveryPlan.recoveredState(
+        let state = ExistingICloudDataRecoveryPolicy.recoveredState(
             shareRootCreatedAt: rootCreatedAt,
             ownProfile: CloudKitMemberProfile(ownerMemberID: "_me", displayName: "  阿狸 ", updatedAt: now, avatar: avatar),
             now: now,
@@ -477,7 +477,7 @@ final class ExistingICloudDataRecoveredStateTests: XCTestCase {
     func testLeavesEverythingUnsetWhenNothingUsableIsInTheCloud() {
         let now = Date(timeIntervalSince1970: 1_000)
 
-        let state = ExistingICloudDataRecoveryPlan.recoveredState(
+        let state = ExistingICloudDataRecoveryPolicy.recoveredState(
             shareRootCreatedAt: nil,
             ownProfile: CloudKitMemberProfile(ownerMemberID: "_me", displayName: "   ", updatedAt: now),
             now: now
@@ -489,7 +489,7 @@ final class ExistingICloudDataRecoveredStateTests: XCTestCase {
     func testIgnoresAFutureRootCreationDate() {
         let now = Date(timeIntervalSince1970: 1_000)
 
-        let state = ExistingICloudDataRecoveryPlan.recoveredState(
+        let state = ExistingICloudDataRecoveryPolicy.recoveredState(
             shareRootCreatedAt: now.addingTimeInterval(86_400),
             ownProfile: nil,
             now: now
@@ -499,19 +499,19 @@ final class ExistingICloudDataRecoveredStateTests: XCTestCase {
     }
 }
 
-final class PartnerScopedDataPlanTests: XCTestCase {
+final class PartnerScopedDataPolicyTests: XCTestCase {
     func testOnlyARealUserRecordIDOutsideThePairIsForeign() {
-        XCTAssertTrue(PartnerScopedDataPlan.isForeign("_ex", currentMemberID: "_me", partnerID: "_partner"))
-        XCTAssertFalse(PartnerScopedDataPlan.isForeign("_me", currentMemberID: "_me", partnerID: "_partner"))
-        XCTAssertFalse(PartnerScopedDataPlan.isForeign(" _partner ", currentMemberID: "_me", partnerID: "_partner"))
-        XCTAssertFalse(PartnerScopedDataPlan.isForeign(MemberIDPlan.unknownPartnerID, currentMemberID: "_me", partnerID: nil))
-        XCTAssertFalse(PartnerScopedDataPlan.isForeign(MemberIDPlan.unsyncedMemberID, currentMemberID: "_me", partnerID: nil))
-        XCTAssertFalse(PartnerScopedDataPlan.isForeign("", currentMemberID: "_me", partnerID: nil))
+        XCTAssertTrue(PartnerScopedDataPolicy.isForeign("_ex", currentMemberID: "_me", partnerID: "_partner"))
+        XCTAssertFalse(PartnerScopedDataPolicy.isForeign("_me", currentMemberID: "_me", partnerID: "_partner"))
+        XCTAssertFalse(PartnerScopedDataPolicy.isForeign(" _partner ", currentMemberID: "_me", partnerID: "_partner"))
+        XCTAssertFalse(PartnerScopedDataPolicy.isForeign(MemberIDPolicy.unknownPartnerID, currentMemberID: "_me", partnerID: nil))
+        XCTAssertFalse(PartnerScopedDataPolicy.isForeign(MemberIDPolicy.unsyncedMemberID, currentMemberID: "_me", partnerID: nil))
+        XCTAssertFalse(PartnerScopedDataPolicy.isForeign("", currentMemberID: "_me", partnerID: nil))
     }
 
     func testWithoutAPartnerOnlyMyOwnRecordsPass() {
-        XCTAssertTrue(PartnerScopedDataPlan.isForeign("_old", currentMemberID: "_me", partnerID: nil))
-        XCTAssertFalse(PartnerScopedDataPlan.isForeign("_me", currentMemberID: "_me", partnerID: nil))
+        XCTAssertTrue(PartnerScopedDataPolicy.isForeign("_old", currentMemberID: "_me", partnerID: nil))
+        XCTAssertFalse(PartnerScopedDataPolicy.isForeign("_me", currentMemberID: "_me", partnerID: nil))
     }
 
     func testScopesCommentsInvitationsAndRequestsByEitherParty() {
@@ -528,16 +528,16 @@ final class PartnerScopedDataPlanTests: XCTestCase {
             CalendarAccessRequest(requesterMemberID: "_me", ownerMemberID: "_partner", requestedStartDate: .distantPast, requestedEndDate: .distantFuture)
         ]
 
-        XCTAssertEqual(PartnerScopedDataPlan.scoped(comments, currentMemberID: "_me", partnerID: "_partner").map(\.body), ["partner"])
-        XCTAssertEqual(PartnerScopedDataPlan.scoped(invitations, currentMemberID: "_me", partnerID: "_partner").map(\.title), ["from partner"])
-        XCTAssertEqual(PartnerScopedDataPlan.scoped(requests, currentMemberID: "_me", partnerID: "_partner").map(\.ownerMemberID), ["_partner"])
+        XCTAssertEqual(PartnerScopedDataPolicy.scoped(comments, currentMemberID: "_me", partnerID: "_partner").map(\.body), ["partner"])
+        XCTAssertEqual(PartnerScopedDataPolicy.scoped(invitations, currentMemberID: "_me", partnerID: "_partner").map(\.title), ["from partner"])
+        XCTAssertEqual(PartnerScopedDataPolicy.scoped(requests, currentMemberID: "_me", partnerID: "_partner").map(\.ownerMemberID), ["_partner"])
     }
 }
 
-final class PairingSafetyEducationPlanTests: XCTestCase {
+final class PairingSafetyEducationPolicyTests: XCTestCase {
     func testShowsOneTimePairingSafetyNoticeAfterNicknameAndPartnerNoteFlow() {
         XCTAssertTrue(
-            PairingSafetyEducationPlan.shouldPresentNotice(
+            PairingSafetyEducationPolicy.shouldPresentNotice(
                 pairingStatus: .paired,
                 hasPromptedPartnerNoteForCurrentPairing: true,
                 hasShownPairingSafetyNoticeForCurrentPairing: false
@@ -547,21 +547,21 @@ final class PairingSafetyEducationPlanTests: XCTestCase {
 
     func testDoesNotShowPairingSafetyNoticeBeforePairingFinishesOrWhenAlreadyShown() {
         XCTAssertFalse(
-            PairingSafetyEducationPlan.shouldPresentNotice(
+            PairingSafetyEducationPolicy.shouldPresentNotice(
                 pairingStatus: .waitingForPartnerToShare,
                 hasPromptedPartnerNoteForCurrentPairing: true,
                 hasShownPairingSafetyNoticeForCurrentPairing: false
             )
         )
         XCTAssertFalse(
-            PairingSafetyEducationPlan.shouldPresentNotice(
+            PairingSafetyEducationPolicy.shouldPresentNotice(
                 pairingStatus: .paired,
                 hasPromptedPartnerNoteForCurrentPairing: false,
                 hasShownPairingSafetyNoticeForCurrentPairing: false
             )
         )
         XCTAssertFalse(
-            PairingSafetyEducationPlan.shouldPresentNotice(
+            PairingSafetyEducationPolicy.shouldPresentNotice(
                 pairingStatus: .paired,
                 hasPromptedPartnerNoteForCurrentPairing: true,
                 hasShownPairingSafetyNoticeForCurrentPairing: true
@@ -570,37 +570,37 @@ final class PairingSafetyEducationPlanTests: XCTestCase {
     }
 
     func testShowsPersistentWarningOnlyWhenPairingIsActive() {
-        XCTAssertFalse(PairingSafetyEducationPlan.shouldShowPersistentWarning(pairingStatus: .notPaired))
-        XCTAssertTrue(PairingSafetyEducationPlan.shouldShowPersistentWarning(pairingStatus: .waitingForPartner))
-        XCTAssertTrue(PairingSafetyEducationPlan.shouldShowPersistentWarning(pairingStatus: .paired))
+        XCTAssertFalse(PairingSafetyEducationPolicy.shouldShowPersistentWarning(pairingStatus: .notPaired))
+        XCTAssertTrue(PairingSafetyEducationPolicy.shouldShowPersistentWarning(pairingStatus: .waitingForPartner))
+        XCTAssertTrue(PairingSafetyEducationPolicy.shouldShowPersistentWarning(pairingStatus: .paired))
     }
 }
 
-final class SharedPeoplePresentationPlanTests: XCTestCase {
+final class SharedPeoplePresentationPolicyTests: XCTestCase {
     func testOpensOfficialSharingOnlyWhenCloudKitIsAvailableAndNotBusy() {
         XCTAssertTrue(
-            SharedPeoplePresentationPlan.canOpenOfficialSharing(
+            SharedPeoplePresentationPolicy.canOpenOfficialSharing(
                 isCloudKitEnabled: true,
                 isPreparingShare: false,
                 isStoppingShare: false
             )
         )
         XCTAssertFalse(
-            SharedPeoplePresentationPlan.canOpenOfficialSharing(
+            SharedPeoplePresentationPolicy.canOpenOfficialSharing(
                 isCloudKitEnabled: false,
                 isPreparingShare: false,
                 isStoppingShare: false
             )
         )
         XCTAssertFalse(
-            SharedPeoplePresentationPlan.canOpenOfficialSharing(
+            SharedPeoplePresentationPolicy.canOpenOfficialSharing(
                 isCloudKitEnabled: true,
                 isPreparingShare: true,
                 isStoppingShare: false
             )
         )
         XCTAssertFalse(
-            SharedPeoplePresentationPlan.canOpenOfficialSharing(
+            SharedPeoplePresentationPolicy.canOpenOfficialSharing(
                 isCloudKitEnabled: true,
                 isPreparingShare: false,
                 isStoppingShare: true
@@ -609,13 +609,13 @@ final class SharedPeoplePresentationPlanTests: XCTestCase {
     }
 }
 
-final class PairingDatePlanTests: XCTestCase {
+final class PairingDatePolicyTests: XCTestCase {
     func testNormalizesPairingDateToStartOfDay() throws {
         let calendar = Calendar(identifier: .gregorian)
         let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8, hour: 19, minute: 30)))
         let expected = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8)))
 
-        XCTAssertEqual(PairingDatePlan.normalizedPairingDate(date, calendar: calendar), expected)
+        XCTAssertEqual(PairingDatePolicy.normalizedPairingDate(date, calendar: calendar), expected)
     }
 
     func testPairingDayCountUsesCalendarDays() throws {
@@ -624,8 +624,8 @@ final class PairingDatePlanTests: XCTestCase {
         let sameDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8, hour: 23)))
         let laterDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 11, hour: 1)))
 
-        XCTAssertEqual(PairingDatePlan.dayCount(since: pairingDate, now: sameDay, calendar: calendar), 0)
-        XCTAssertEqual(PairingDatePlan.dayCount(since: pairingDate, now: laterDate, calendar: calendar), 3)
+        XCTAssertEqual(PairingDatePolicy.dayCount(since: pairingDate, now: sameDay, calendar: calendar), 0)
+        XCTAssertEqual(PairingDatePolicy.dayCount(since: pairingDate, now: laterDate, calendar: calendar), 3)
     }
 
     func testPairingOrdinalDayNumberStartsAtOneOnThePairingDay() throws {
@@ -634,15 +634,15 @@ final class PairingDatePlanTests: XCTestCase {
         let sameDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8, hour: 23)))
         let nextMorning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 9, hour: 0, minute: 5)))
 
-        XCTAssertEqual(PairingDatePlan.ordinalDayNumber(since: pairingDate, now: sameDay, calendar: calendar), 1)
-        XCTAssertEqual(PairingDatePlan.ordinalDayNumber(since: pairingDate, now: nextMorning, calendar: calendar), 2)
+        XCTAssertEqual(PairingDatePolicy.ordinalDayNumber(since: pairingDate, now: sameDay, calendar: calendar), 1)
+        XCTAssertEqual(PairingDatePolicy.ordinalDayNumber(since: pairingDate, now: nextMorning, calendar: calendar), 2)
     }
 
     func testDefaultHistoryRequestRangeEndsBeforePairingDate() throws {
         let calendar = Calendar(identifier: .gregorian)
         let pairingDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 8)))
 
-        let range = PairingDatePlan.defaultHistoryRequestRange(pairingDate: pairingDate, calendar: calendar)
+        let range = PairingDatePolicy.defaultHistoryRequestRange(pairingDate: pairingDate, calendar: calendar)
 
         XCTAssertEqual(range.start, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9))))
         XCTAssertEqual(range.end, try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7))))
@@ -657,7 +657,7 @@ final class SettingsStoreIdentityMigrationTests: XCTestCase {
 
         let firstLaunchSettings = SettingsStore(defaults: defaults)
 
-        XCTAssertEqual(firstLaunchSettings.currentMemberID, MemberIDPlan.unsyncedMemberID)
+        XCTAssertEqual(firstLaunchSettings.currentMemberID, MemberIDPolicy.unsyncedMemberID)
         XCTAssertFalse(firstLaunchSettings.hasSyncedMemberID)
 
         firstLaunchSettings.currentMemberID = "_cloudKitUser"
@@ -686,7 +686,7 @@ final class SettingsStoreIdentityMigrationTests: XCTestCase {
         XCTAssertNil(settings.partnerShareOwnerID)
         XCTAssertTrue(settings.outgoingShareParticipantIDs.isEmpty)
         XCTAssertFalse(settings.hasStartedPairing)
-        XCTAssertEqual(settings.currentMemberID, MemberIDPlan.unsyncedMemberID)
+        XCTAssertEqual(settings.currentMemberID, MemberIDPolicy.unsyncedMemberID)
         XCTAssertEqual(settings.currentDisplayName, "Display")
         XCTAssertEqual(settings.selectedCalendarIDs, ["calendar-1"])
         XCTAssertTrue(settings.consumeLegacyLocalDataPurgeFlag())
@@ -822,9 +822,9 @@ final class ShareCalAcceptedShareSignalTests: XCTestCase {
     }
 }
 
-final class MemberDisplayNamePlanTests: XCTestCase {
+final class MemberDisplayNamePolicyTests: XCTestCase {
     func testSelfMemberUsesCurrentDisplayName() {
-        let name = MemberDisplayNamePlan.displayName(
+        let name = MemberDisplayNamePolicy.displayName(
             forMemberID: "_me",
             currentMemberID: "_me",
             currentDisplayName: "Wanli",
@@ -836,7 +836,7 @@ final class MemberDisplayNamePlanTests: XCTestCase {
     }
 
     func testSelfMemberFallsBackWhenDisplayNameBlank() {
-        let name = MemberDisplayNamePlan.displayName(
+        let name = MemberDisplayNamePolicy.displayName(
             forMemberID: "_me",
             currentMemberID: "_me",
             currentDisplayName: "   ",
@@ -848,7 +848,7 @@ final class MemberDisplayNamePlanTests: XCTestCase {
     }
 
     func testPartnerMemberUsesPartnerDisplayName() {
-        let name = MemberDisplayNamePlan.displayName(
+        let name = MemberDisplayNamePolicy.displayName(
             forMemberID: "_82828b1d87c3d5e8685ae3b8c5a6c80a",
             currentMemberID: "_me",
             currentDisplayName: "Wanli",
@@ -861,7 +861,7 @@ final class MemberDisplayNamePlanTests: XCTestCase {
 
     func testNeverReturnsRawMemberID() {
         let partnerID = "_82828b1d87c3d5e8685ae3b8c5a6c80a"
-        let name = MemberDisplayNamePlan.displayName(
+        let name = MemberDisplayNamePolicy.displayName(
             forMemberID: partnerID,
             currentMemberID: "_me",
             currentDisplayName: nil,
@@ -874,12 +874,12 @@ final class MemberDisplayNamePlanTests: XCTestCase {
     }
 }
 
-final class MemberIDPlanTests: XCTestCase {
+final class MemberIDPolicyTests: XCTestCase {
     func testNormalizedTrimsWhitespaceAndDropsBlankValues() {
-        XCTAssertEqual(MemberIDPlan.normalized("  _owner \n"), "_owner")
-        XCTAssertNil(MemberIDPlan.normalized("   "))
-        XCTAssertNil(MemberIDPlan.normalized(""))
-        XCTAssertNil(MemberIDPlan.normalized(nil))
-        XCTAssertEqual(MemberIDPlan.normalizedList([" a ", "", "b", "\t"]), ["a", "b"])
+        XCTAssertEqual(MemberIDPolicy.normalized("  _owner \n"), "_owner")
+        XCTAssertNil(MemberIDPolicy.normalized("   "))
+        XCTAssertNil(MemberIDPolicy.normalized(""))
+        XCTAssertNil(MemberIDPolicy.normalized(nil))
+        XCTAssertEqual(MemberIDPolicy.normalizedList([" a ", "", "b", "\t"]), ["a", "b"])
     }
 }

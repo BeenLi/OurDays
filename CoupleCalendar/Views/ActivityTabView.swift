@@ -11,7 +11,7 @@ struct ActivityTabView: View {
     @State private var seenSnapshot: Date?
 
     private var items: [ActivityFeedItem] {
-        ActivityFeedPlan.items(
+        ActivityFeedPolicy.items(
             comments: comments,
             mirrors: mirrors,
             invitations: invitations,
@@ -37,7 +37,7 @@ struct ActivityTabView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             } else {
-                ForEach(ActivityFeedSectionPlan.sections(items)) { section in
+                ForEach(ActivityFeedSectionPolicy.sections(items)) { section in
                     Section {
                         ForEach(section.items) { item in
                             Button {
@@ -77,7 +77,7 @@ struct ActivityTabView: View {
     }
 
     /// A feed row maps to either a regular event (mirror) or a joint event (invitation);
-    /// open the matching detail. Mirrors the anchor resolution in `ActivityFeedPlan`.
+    /// open the matching detail. Mirrors the anchor resolution in `ActivityFeedPolicy`.
     private func open(_ item: ActivityFeedItem) {
         if let mirror = mirror(for: item.eventMirrorID) {
             selectedEvent = mirror
@@ -140,7 +140,7 @@ struct ActivityTabView: View {
     }
 
     private func authorName(for item: ActivityFeedItem) -> String {
-        MemberDisplayNamePlan.displayName(
+        MemberDisplayNamePolicy.displayName(
             forMemberID: item.latestCommentAuthorMemberID,
             currentMemberID: settings.currentMemberID,
             currentDisplayName: settings.currentDisplayName,

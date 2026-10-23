@@ -70,7 +70,7 @@ final class CoupleCalendarUITests: XCTestCase {
         app.launchArguments = ["-ShareCalSeedProfileName", "SmokePartner", "-ShareCalForceSync"]
         app.launch()
 
-        // Mirrors ShareCalSmokeTestEventPlan.title; app sources are not compiled into
+        // Mirrors ShareCalSmokeTestEventPolicy.title; app sources are not compiled into
         // the UI-test target, so the string is intentionally duplicated here.
         let ownerEventTitle = "ShareCal E2E Smoke Test"
         // Match any element whose label contains the title: depending on the active

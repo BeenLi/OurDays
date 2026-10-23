@@ -22,8 +22,8 @@ joint（共同日程）事件由 accepted `EventInvitation` 派生，不携带 `
 - 不新增 SwiftData 实体；尽量不改部署 schema（必要时用 recordName 前缀区分，仿 `history-access-request:`）。
 
 ## Spike 结论 + 落地（2026-06-20，已实现）
-- **路由可行**：`fetchEventComments` 同时读 private + shared zone（`CloudKitCoupleSpaceService.swift:2480`）。以 `EventCommentAnchorPlan.anchor(forInvitation:)` 得 `key=invitation.id`、`ownerMemberID=invitation.creatorMemberID`、`recordName=invitation.id`；`CloudKitCommentWritePlan.destination` 用 ownerMemberID 与 currentMemberID 比相等：creator→private zone，partner→creator 的 shared zone。双方读回两 zone ⇒ 对称。**无需新 record type / schema 改动**。
+- **路由可行**：`fetchEventComments` 同时读 private + shared zone（`CloudKitCoupleSpaceService.swift:2480`）。以 `EventCommentAnchorPolicy.anchor(forInvitation:)` 得 `key=invitation.id`、`ownerMemberID=invitation.creatorMemberID`、`recordName=invitation.id`；`CloudKitCommentWritePolicy.destination` 用 ownerMemberID 与 currentMemberID 比相等：creator→private zone，partner→creator 的 shared zone。双方读回两 zone ⇒ 对称。**无需新 record type / schema 改动**。
 - `creatorMemberID` 接收方无法解读不影响路由——只用到「是否等于自己」的相等判断。
-- **代码**：`Models.swift`（`EventCommentAnchor` + `EventCommentAnchorPlan`）、`RootView.swift`（抽出 `EventCommentsSection`、新增 `JointEventDetailView`、日视图 joint 块加 `onTapGesture`、`CalendarTabView` 加 `selectedJointEvent` sheet）。
-- **单测**：`EventCommentAnchorPlanTests`（锚映射 + 双角色 destination）。全量 `CoupleCalendarTests` TEST SUCCEEDED。
+- **代码**：`Models.swift`（`EventCommentAnchor` + `EventCommentAnchorPolicy`）、`RootView.swift`（抽出 `EventCommentsSection`、新增 `JointEventDetailView`、日视图 joint 块加 `onTapGesture`、`CalendarTabView` 加 `selectedJointEvent` sheet）。
+- **单测**：`EventCommentAnchorPolicyTests`（锚映射 + 双角色 destination）。全量 `CoupleCalendarTests` TEST SUCCEEDED。
 - **未完**：两真机端到端对称性验证（见 open-questions V1）。

@@ -9,9 +9,9 @@
 2. **对方半天日程没更新**，用户怀疑对方是不是把 App 关了；问「ShareCal 后台能否同步本地日历」。
 
 ## 根因（已核实，见代码引用）
-- **问题 1（语义错配）**：可见推送来自 `CKDatabaseSubscription`，在**任一**记录变更时由 APNs 直接展示通用文案「有新的共享日程动态 · New shared activity」（`CloudKitCoupleSpaceService.swift:2766-2780`）。但「动态」tab 只聚合**评论**（`ActivityFeedPlan.items` / `unreadCount`，`Models.swift:1435-1480`；feed 范围见 [activity-feed/decisions/0001](../../activity-feed/decisions/0001-feed-scope.md)）。对方改**日历事件**（最常见）→ `EventMirror` 写入 → 触发 shared DB 订阅 → 用户收到推送，但变更其实在**日历 tab**，于是点进动态 tab「无变化」。
+- **问题 1（语义错配）**：可见推送来自 `CKDatabaseSubscription`，在**任一**记录变更时由 APNs 直接展示通用文案「有新的共享日程动态 · New shared activity」（`CloudKitCoupleSpaceService.swift:2766-2780`）。但「动态」tab 只聚合**评论**（`ActivityFeedPolicy.items` / `unreadCount`，`Models.swift:1435-1480`；feed 范围见 [activity-feed/decisions/0001](../../activity-feed/decisions/0001-feed-scope.md)）。对方改**日历事件**（最常见）→ `EventMirror` 写入 → 触发 shared DB 订阅 → 用户收到推送，但变更其实在**日历 tab**，于是点进动态 tab「无变化」。
   - **CloudKit 硬约束**：shared database 只支持 `CKDatabaseSubscription`（不支持 `CKQuerySubscription`），且**无法按记录类型过滤、无法把字段塞进 payload**。⇒ 「只为评论推送」在订阅层做不到。
-  - 已排除「重复写造成的噪声」：上传是变更门控的（`CloudKitMirrorSyncPlan.mirrorsNeedingUpload` + shadow `lastUploadedAt`，`AppServices.swift:522/594`），推送对应**真实**变更，只是被错误标注/导向。
+  - 已排除「重复写造成的噪声」：上传是变更门控的（`CloudKitMirrorSyncPolicy.mirrorsNeedingUpload` + shadow `lastUploadedAt`，`AppServices.swift:522/594`），推送对应**真实**变更，只是被错误标注/导向。
 - **问题 2（架构限制）**：唯一同步管道 `SyncCoordinator.foregroundSync` 的所有调用都门控于 `scenePhase == .active` / 切 tab / 实时信号（`RootView.swift:147-160`）。**无任何后台执行路径**（无 `BGTaskScheduler`、无 `performFetchWithCompletionHandler`）。推送是**可见 alert 而非静默**，不会唤醒 App 拉取。⇒ 改了日历的一方**必须打开 App**，其 EventKit 变更才会镜像上云——这正是「对方半天没更新」。
 
 ## 决定
@@ -19,12 +19,12 @@
 
 ### A. 抑制纯事件推送（问题 1）
 - 订阅改回**静默**（`shouldSendContentAvailable = true`，去掉 `title`/`alertBody`/`soundName`/`shouldBadge`）。APNs 不再画横幅。
-- 唤醒后跑同步，由**既有** `LocalNotificationPlan`（`Models.swift:1516`，只有「评论我的事件 / 邀请 / 邀请回复 / 历史访问」4 类，**无**「对方改了日历事件」case）决定发什么本地通知。⇒ 纯事件变更 → **零通知**；用户拿到的每条通知都真实、准确。
+- 唤醒后跑同步，由**既有** `LocalNotificationPolicy`（`Models.swift:1516`，只有「评论我的事件 / 邀请 / 邀请回复 / 历史访问」4 类，**无**「对方改了日历事件」case）决定发什么本地通知。⇒ 纯事件变更 → **零通知**；用户拿到的每条通知都真实、准确。
 - 抑制逻辑本就存在且正确，本次只是**停止那条无脑可见推送**绕过它。
 
 ### B. 后台同步（问题 2）—— 静默推送唤醒 + BGAppRefresh 兜底
 - `didReceiveRemoteNotification:fetchCompletionHandler:` 需在**后台**真正跑同步：当前仅 `notifyChanged()` 依赖**存活的** SwiftUI 视图，挂起时无效。让 app delegate 直接持有共享 `ModelContainer` + `SyncCoordinator`，跑 `foregroundSync` 后回调 `completionHandler`。管道尾部 `postPendingNotifications` 负责发富本地通知。
-- 注册 `BGAppRefreshTask`（新增 `BackgroundRefreshSchedulePlan` 纯枚举 + glue）作为兜底：后台调度、每次跑完重排、跑同一同步。`Info.plist` 增加 `BGTaskSchedulerPermittedIdentifiers`（已有 `fetch`/`remote-notification`）。
+- 注册 `BGAppRefreshTask`（新增 `BackgroundRefreshSchedulePolicy` 纯枚举 + glue）作为兜底：后台调度、每次跑完重排、跑同一同步。`Info.plist` 增加 `BGTaskSchedulerPermittedIdentifiers`（已有 `fetch`/`remote-notification`）。
 
 ### C. 可靠性上限（**接受**，用户已知情）
 - 静默推送**可被节流/丢弃**；唤醒后仅约 **~30s 预算**，超时进程被杀（可能同步到一半）；**App 被强杀**则静默推送与 BGAppRefresh **都不会运行**。
@@ -45,8 +45,8 @@ BGAppRefresh 兜底原挂在 `UIApplicationDelegate.applicationDidEnterBackgroun
 - `CloudKitCoupleSpaceService.swift:2766` `ensureDatabaseSubscription` → 静默。
 - `CoupleCalendarApp.swift:54-63` 后台同步真正落地 + BGTask 注册/调度；`:201` `@main` 共享容器对 delegate 可见。
 - `Info.plist` `BGTaskSchedulerPermittedIdentifiers`。
-- 新增 `BackgroundRefreshSchedulePlan`（纯）+ 单测；`LocalNotificationPlan` 针对「纯事件变更集 → 空」补测。
+- 新增 `BackgroundRefreshSchedulePolicy`（纯）+ 单测；`LocalNotificationPolicy` 针对「纯事件变更集 → 空」补测。
 
 ## 验证
-- 单测：`BackgroundRefreshSchedulePlan` 调度决策；`LocalNotificationPlan` 纯事件变更不发通知。
+- 单测：`BackgroundRefreshSchedulePolicy` 调度决策；`LocalNotificationPolicy` 纯事件变更不发通知。
 - 两真机 + 两 iCloud：静默推送唤醒 → 后台同步 → 仅评论/邀请/访问类弹通知；纯日历改动不弹（思路见 `Scripts/dev-pairing-smoke.sh`）。

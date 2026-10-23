@@ -17,7 +17,7 @@
 ## Status
 - Status: **✅ Done / Landed**（2026-06-14）
 - Evidence: 6 个 `ActivityFeedPlanTests` 通过；全套 215 单测通过；模拟器启动验证 tab 顺序为 日历→动态→邀请→设置，无崩溃。
-- Current Phase: landed
+- Current Phase: landed；随 v1.3 上架。1.5 的 UI 重设计（#3）把动态流改成按天分组的聊天卡片，逻辑不变（见 [ui-redesign](../ui-redesign/)）。
 
 ## Resolved questions（见 decision 0002）
 - OQ1 未读 → 本地 `SettingsStore.lastSeenActivityAt`；不复用同步的 `isRead`，不复用 `MemberProfile.lastSeenAt`。

@@ -18,7 +18,6 @@
 
 ## 文件地图
 - [roadmap.md](roadmap.md) — Done / In Progress / Next / Deferred + 三 phase 状态。
-- [implementation-status.md](implementation-status.md) — 操作性 handoff（仅 In Progress 期间维护）。
 - [open-questions.md](open-questions.md) — 未决问题（主要是 req1 评论路由）。
 - topics/
   - [req3-now-indicator.md](topics/req3-now-indicator.md)
@@ -27,6 +26,10 @@
 - decisions/
   - [0001-joint-event-comments-shared-thread.md](decisions/0001-joint-event-comments-shared-thread.md)
   - [0002-optimistic-invite-send.md](decisions/0002-optimistic-invite-send.md)
+
+## Status
+- **✅ 已发布**：随 v1.3 (build 27) 公开外测、build 30 上架 App Store（2026-06）。implementation-status.md 已删除（只在 In Progress 期间维护）。
+- 遗留：周视图共同日程块点击（[open-questions V2](open-questions.md)）、共同日程评论的推送语义，汇总在 [ideas idea-004](../../ideas/inbox.md)。
 
 ## 阅读路径
 1. 本 README（范围/边界）。

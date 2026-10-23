@@ -66,6 +66,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #26 | 2026-10-23 | README 精简同步架构、重画图、新增数据安全 | [docs-and-site](plans/docs-and-site/) |
 | #27 | 未合并 | 版本号 1.6 (35) | [releases](plans/releases/) |
 | #28 | 未合并 | README 代码结构合成一棵树 | [docs-and-site](plans/docs-and-site/) |
+| #29 | 未合并 | `Plans/` → `Policies/`、`…Plan` → `…Policy`；源码按 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 分目录 | [code-structure](plans/code-structure/) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

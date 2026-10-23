@@ -1,7 +1,7 @@
 # Roadmap — code-structure
 
 ## In Progress
-- 🚧 **`Plans/` → `Policies/`、`…Plan` → `…Policy` 重命名**（2026-10-23 用户选定）。合并后要同步 `CLAUDE.md`、README 代码结构树和本树里的用词。
+- 🚧 **#29 `Plans/` → `Policies/`、`…Plan` → `…Policy` 重命名**（86 个枚举；2026-10-23 用户在 Policies / Common / Routine / Utils 里选了 Policies），同时把 `CoupleCalendar/` 分成 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 七个目录（pbxproj 分组、Info.plist / entitlements 路径、冒烟脚本路径一并改）。#29 自带 CLAUDE.md / README 更新；合并后把本树里的 `Plans/` 用词改掉即可。
 
 ## Done
 - ✅ **#1**（2026-06-23）CI：`xcodebuild test` 加 `-retry-tests-on-failure -test-iterations 3`；三个启动相关 UI 测试的 3 s 等待改为 30 s 过渡超时。起因是过载 runner 上 `app.launch()` 等了 45 s，零改动重跑即过。

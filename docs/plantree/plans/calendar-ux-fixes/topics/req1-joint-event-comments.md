@@ -5,9 +5,9 @@
 
 ## 代码现状（核实 2026-06-20）
 - 绿色「共同日程」块 `DayTimelineJointEventBlock`（`RootView.swift:2115`）与 `JointEventCard`（`RootView.swift:2193`）**没有任何点击手势**，因此点不开。对比：普通 lane 事件 `DayTimelineLane`（`RootView.swift:2010`）有 `onSelect(event)`。
-- joint 事件来源：`JointSchedulePlan.jointEvents`（`EventServices.swift:461`）由 **accepted `EventInvitation`** 生成，`JointScheduleEvent.id = invitation.id`，**不携带 `EventMirror`**（`EventServices.swift:450`）。
+- joint 事件来源：`JointSchedulePolicy.jointEvents`（`EventServices.swift:461`）由 **accepted `EventInvitation`** 生成，`JointScheduleEvent.id = invitation.id`，**不携带 `EventMirror`**（`EventServices.swift:450`）。
 - 详情/评论 UI `EventDetailView`（`RootView.swift:2802`）只接 `EventMirror`，评论按 `EventComment.eventMirrorID == event.id` 过滤（`RootView.swift:2819`），`canComment` 仅排除 transient 显示 mirror（`Models.swift:1316`）。
-- 评论同步：`saveCommentForSync`（`CloudKitCoupleSpaceService.swift:2171`）按 `CloudKitCommentWritePlan.destination` 路由（我的事件→private zone；对方事件→shared zone）。
+- 评论同步：`saveCommentForSync`（`CloudKitCoupleSpaceService.swift:2171`）按 `CloudKitCommentWritePolicy.destination` 路由（我的事件→private zone；对方事件→shared zone）。
 - **关键不对齐**：joint 事件下，双方各有一份 `EventMirror`（mirror id 不同），评论按 mirror id 索引 ⇒ 各写各的，不同串。普通「对方事件」之所以能同串，是因为双方引用的是**同一个 owner 记录 id**；joint 没有这个共同 id —— 除了 `invitation.id`（双方 import 后 recordName 相同，见 `InvitationRecordMapper` / `CloudKitCoupleSpaceService.swift:869`）。
 
 ## 决策
@@ -26,10 +26,10 @@
 - 单测：joint 锚解析（invitation→锚）、评论按 `invitation.id` 过滤、路由 Plan 的 destination 选择。
 
 ## 回归修复（2026-06-20，Codex stop-time review 发现）
-- **Bug**：joint 评论锚到 `invitation.id`（无 `EventMirror`）。`ActivityFeedPlan.items` 旧逻辑 `guard let mirror = mirrorsByID[id]` 把 joint 评论**丢弃**，但 `unreadCount` 旧逻辑统计**所有**非自己评论 ⇒ 角标 +1 但「动态」tab 显示不出来（幽灵未读）。
-- **修复**：`ActivityFeedPlan.items`/`unreadCount` 都改为按 **mirror ∪ invitation** 解析锚（`threadTitle`/`displayableAnchors`）。joint 评论用 invitation.title 进 feed 并计入未读；orphan（既无 mirror 也无 invitation）不再计入角标（顺带修了删 mirror 残留评论的旧隐患）。`ActivityTabView` 加 `selectedJointEvent` sheet，点 joint 动态行开 `JointEventDetailView`。`RootView` 补 `@Query mirrors` 给 `unreadActivityCount`。
-- **单测**：`ActivityFeedPlanTests` 新增 `testSurfacesJointEventCommentsViaInvitationAndCountsThemUnread` + `testUnreadCountIgnoresUndisplayableOrphanComments`；其余 items/unreadCount 测试同步签名。
-- **遗留（Deferred，非本次）**：`LocalNotificationPlan`「partner 评论了我的事件」要求 `mirror.ownerMemberID == currentMemberID`，joint 评论无 mirror ⇒ 目前**不发本地推送**。joint 推送语义（「我们的共同事件」）需单独设计，见 roadmap Deferred。
+- **Bug**：joint 评论锚到 `invitation.id`（无 `EventMirror`）。`ActivityFeedPolicy.items` 旧逻辑 `guard let mirror = mirrorsByID[id]` 把 joint 评论**丢弃**，但 `unreadCount` 旧逻辑统计**所有**非自己评论 ⇒ 角标 +1 但「动态」tab 显示不出来（幽灵未读）。
+- **修复**：`ActivityFeedPolicy.items`/`unreadCount` 都改为按 **mirror ∪ invitation** 解析锚（`threadTitle`/`displayableAnchors`）。joint 评论用 invitation.title 进 feed 并计入未读；orphan（既无 mirror 也无 invitation）不再计入角标（顺带修了删 mirror 残留评论的旧隐患）。`ActivityTabView` 加 `selectedJointEvent` sheet，点 joint 动态行开 `JointEventDetailView`。`RootView` 补 `@Query mirrors` 给 `unreadActivityCount`。
+- **单测**：`ActivityFeedPolicyTests` 新增 `testSurfacesJointEventCommentsViaInvitationAndCountsThemUnread` + `testUnreadCountIgnoresUndisplayableOrphanComments`；其余 items/unreadCount 测试同步签名。
+- **遗留（Deferred，非本次）**：`LocalNotificationPolicy`「partner 评论了我的事件」要求 `mirror.ownerMemberID == currentMemberID`，joint 评论无 mirror ⇒ 目前**不发本地推送**。joint 推送语义（「我们的共同事件」）需单独设计，见 roadmap Deferred。
 
 ## 风险 / 注意
 - **这是三个 phase 里最深的**：触碰评论同步与两人制路由，先解 open-questions Q1/Q2 的 spike 再写代码（避免 figure-it-out-while-coding）。

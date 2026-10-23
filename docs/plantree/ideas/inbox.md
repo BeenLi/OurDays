@@ -8,7 +8,7 @@
 - **录入**：2026-06-14
 - **状态**：✅ 已提升 → [plans/activity-feed/](../plans/activity-feed/)（2026-06-14，内容范围=仅评论互动）
 - **原话**：在「日历」和「邀请」之间加一个「动态」tab，凸显对方评论了我的日程，我也能接着互动。
-- **可行性快照（已核实）**：数据已具备（`EventComment` 含 `isRead`，CloudKit 已同步）；tab/角标基础设施已存在。主要新增 = 一个聚合视图 + 一个「动态流排序/未读」Plan enum（遵循项目 Plan enum 约定）+ 本地化字符串 + `ShareCalTab` 新增 case。**不需要新基础设施**。
+- **可行性快照（已核实）**：数据已具备（`EventComment` 含 `isRead`，CloudKit 已同步）；tab/角标基础设施已存在。主要新增 = 一个聚合视图 + 一个「动态流排序/未读」Policy enum（遵循项目 Policy enum 约定）+ 本地化字符串 + `ShareCalTab` 新增 case。**不需要新基础设施**。
 - **开放问题**：
   - Q1 动态流内容范围：仅评论互动？还是合并邀请/历史访问请求？（用户原话暗示保留独立「邀请」tab）
   - Q2 未读如何呈现：动态 tab 角标用 `isRead` 聚合？是否需要 `lastSeenAt`？

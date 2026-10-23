@@ -12,6 +12,6 @@
 - (否决) 只标记未读：更符合「红点=待处理」的直觉、看过即消，但与用户明确选择相悖，且引入与「动态」tab 未读逻辑的耦合。
 
 ## 影响
-- 红点数据源 = `EventCommentIndicatorPlan.commentedAnchorKeys(comments)` 的存在性判断，不读 `isRead`。
-- 不改 `ActivityFeedPlan` / 未读角标逻辑。
+- 红点数据源 = `EventCommentIndicatorPolicy.commentedAnchorKeys(comments)` 的存在性判断，不读 `isRead`。
+- 不改 `ActivityFeedPolicy` / 未读角标逻辑。
 - 若日后想要「未读」变体，可在同一 Plan 上加 `unreadAnchorKeys` 分支，不影响本决策落地。

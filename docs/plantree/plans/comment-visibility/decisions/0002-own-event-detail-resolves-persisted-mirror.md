@@ -20,9 +20,9 @@
 ## 影响
 - `EventDetailInteractionPlan.canComment` 语义改变（需同步改单测）。
 - 未同步（无孪生）的我方新建事件：不显示评论区（对方此时也不可能已评论）；「同步后可评论」提示列 Deferred。
-- 不改评论写入/路由（`CloudKitCommentWritePlan`）、不改 schema。
+- 不改评论写入/路由（`CloudKitCommentWritePolicy`）、不改 schema。
 
 ## 落地（2026-07-04，已实现）
-- 比「放宽 `canComment`」更进一步：直接**移除** `EventDetailInteractionPlan.canComment`，新增 `EventDetailMirrorResolutionPlan.persistedTwin(for:in:)`（`Models.swift`）。`EventDetailView` 用 `if let commentMirror = persistedTwin(for: event, in: mirrors)` **一步合并**「是否显示评论区」与「评论锚绑定」——门槛=孪生存在，锚=真实 mirror，杜绝「用 display id 建错锚」的整类 bug。real mirror 解析为自身；display mirror 按 `mirrorKey` 找非-display 孪生；无孪生返回 nil。
-- 单测：`EventDetailMirrorResolutionPlanTests`（real→自身 / display→孪生 / 无孪生→nil）；原 `canComment` 的「孤立 display mirror 不可评论」断言迁移为 `XCTAssertNil(persistedTwin(..., in: []))`。
+- 比「放宽 `canComment`」更进一步：直接**移除** `EventDetailInteractionPlan.canComment`，新增 `EventDetailMirrorResolutionPolicy.persistedTwin(for:in:)`（`Models.swift`）。`EventDetailView` 用 `if let commentMirror = persistedTwin(for: event, in: mirrors)` **一步合并**「是否显示评论区」与「评论锚绑定」——门槛=孪生存在，锚=真实 mirror，杜绝「用 display id 建错锚」的整类 bug。real mirror 解析为自身；display mirror 按 `mirrorKey` 找非-display 孪生；无孪生返回 nil。
+- 单测：`EventDetailMirrorResolutionPolicyTests`（real→自身 / display→孪生 / 无孪生→nil）；原 `canComment` 的「孤立 display mirror 不可评论」断言迁移为 `XCTAssertNil(persistedTwin(..., in: []))`。
 - 全量 `CoupleCalendarTests` TEST SUCCEEDED。**未完**：两真机 e2e（见 open-questions V1）。

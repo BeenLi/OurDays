@@ -1,7 +1,10 @@
 # Roadmap — docs-and-site
 
 ## In Progress
-- 🚧 **#28** README「代码结构」由两个代码块合成一棵以仓库根为顶的树，补 `CoupleCalendar.xcodeproj`、`.github/workflows/ios-ci.yml`、`CLAUDE.md` 三行。
+- （无）
+
+## Done（2026-10-23 下午）
+- ✅ **#28** README「代码结构」由两个代码块合成一棵以仓库根为顶的树，补 `CoupleCalendar.xcodeproj`、`.github/workflows/ios-ci.yml`、`CLAUDE.md` 三行。
 
 ## Done
 - ✅ **#11**（2026-10-22）ourdays.cn：四张旧 PNG 换成 promo 源页渲染的 WebP（dayview / comments / pairing / profile，资源从 ~760 KB 降到 ~255 KB）；九张功能卡，六张标「1.5 新」；新增「三步开始」与「开源、免费、没有服务器」；support 页去掉 TestFlight；部署文档改为单连接 `tar | ssh tencent 'tar x'`（服务器限制 SSH 频率，`COPYFILE_DISABLE=1`）。同日由用户在 Terminal 部署。

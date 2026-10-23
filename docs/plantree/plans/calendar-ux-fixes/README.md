@@ -2,7 +2,7 @@
 
 「日历」体验三连修：joint 事件可评论、邀请乐观发送、今天 now-indicator 红线。
 
-链接 baseline：[../../baseline/README.md](../../baseline/README.md)（权威 baseline 仍是仓库根 `CLAUDE.md`：两人制、userRecordID 身份、Plan enum 约定、单条 CKShare）。
+链接 baseline：[../../baseline/README.md](../../baseline/README.md)（权威 baseline 仍是仓库根 `CLAUDE.md`：两人制、userRecordID 身份、Policy enum 约定、单条 CKShare）。
 
 ## 范围（Scope）
 本轮三个用户需求，作为同一 plan 的三个 phase（用户决定 2026-06-20，顺序 req3 → req2 → req1，由浅入深）：

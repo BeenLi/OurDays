@@ -8,7 +8,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 3. 读相关 plan root（见下表）或 `ideas/inbox.md`。
 
 ## Authority order（权威顺序，冲突时以高者为准）
-1. 代码本身 + 仓库根 `CLAUDE.md`（架构铁律：两人制、userRecordID 身份模型、纯规则类型约定）。
+1. 代码本身 + 仓库根 `CLAUDE.md`（架构铁律：两人制、userRecordID 身份模型、Policy enum 约定）。
 2. `baseline/`（从代码归纳出的稳定上下文）。
 3. 各 plan root 的 `decisions/` > `roadmap.md` > `topics/`。
 4. `ideas/inbox.md`（低承诺想法，未提升前不算计划）。
@@ -22,12 +22,12 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | Plan | Status | Current Phase | Last Landed | Next Target |
 |------|--------|---------------|-------------|-------------|
 | [releases](plans/releases/) | 🚧 1.6 待上传 | 1.6 (build 35) 版本号 PR 待合并 | 2026-10-21：1.5 (build 34) 上架 | archive/upload → 更新 App Store 截图 → 填发布说明 → 提交审核 |
-| [code-structure](plans/code-structure/) | 🚧 In Progress | 重构 A–E 已合并；`Plans/` → `Policies/`、`…Plan` → `…Policy` 重命名进行中 | 2026-10-22：#16 删除 CKSyncEngine（冒烟通过） | 重命名合并后同步 CLAUDE.md / README / 本树用词 |
-| [docs-and-site](plans/docs-and-site/) | 🚧 In Progress | README 已对齐 main 至 #23；代码结构合成一棵树（#28）待合并 | 2026-10-23：#26 精简同步架构 + 数据安全 + PNG 图 | #28 合并；1.6 上架后刷新官网与 README 的版本说明 |
+| [docs-and-site](plans/docs-and-site/) | 🚧 In Progress | README 已对齐 main 至 #29 | 2026-10-23：#28 代码结构合成一棵树；#29 随改名更新 README / CLAUDE.md | 1.6 上架后刷新官网与 README 的版本说明 |
 
 ## Landed plans（已落地 / 已发布，只在回归时回看）
 | Plan | Status | 发布于 | 备注 |
 |------|--------|--------|------|
+| [code-structure](plans/code-structure/) | ✅ Code landed | 1.6 起 | 瘦身 #8–#10、架构 A–E #12–#16、`Plans/` → `Policies/` 改名与分层目录 #29 |
 | [pairing-sync-integrity](plans/pairing-sync-integrity/) | ✅ Code landed | #4 随 1.5；#20 #22 #23 随 1.6 | 配对冲突改由用户选择；共享记录只在变化时保存；重装恢复；解除配对清理前任数据 |
 | [invitation-lifecycle](plans/invitation-lifecycle/) | ✅ Code landed | 1.6 | 已结束的日程不可邀请、待处理邀请会过期、发起方可撤销 |
 | [comment-visibility](plans/comment-visibility/) | ✅ 已发布 + 扩展 | 1.4；#24 随 1.6 | 评论红点、我的日程可看/可回评论；#24 起未同步也可先发起评论 |
@@ -65,8 +65,8 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #25 | 2026-10-23 | README 全面更新（同步架构、记录类型、代码结构） | [docs-and-site](plans/docs-and-site/) |
 | #26 | 2026-10-23 | README 精简同步架构、重画图、新增数据安全 | [docs-and-site](plans/docs-and-site/) |
 | #27 | 未合并 | 版本号 1.6 (35) | [releases](plans/releases/) |
-| #28 | 未合并 | README 代码结构合成一棵树 | [docs-and-site](plans/docs-and-site/) |
-| #29 | 未合并 | `Plans/` → `Policies/`、`…Plan` → `…Policy`；源码按 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 分目录 | [code-structure](plans/code-structure/) |
+| #28 | 2026-10-23 | README 代码结构合成一棵树 | [docs-and-site](plans/docs-and-site/) |
+| #29 | 2026-10-23 | `Plans/` → `Policies/`、`…Plan` → `…Policy`；源码按 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 分目录 | [code-structure](plans/code-structure/) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

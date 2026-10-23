@@ -12,7 +12,7 @@
 
 ## 影响
 - 数据源仅 `EventComment`（已 CloudKit 同步、含 `isRead`）。
-- 邀请角标逻辑（`PendingActionBadgePlan`）保持不变；动态未读需独立计算（见 plan OQ4）。
+- 邀请角标逻辑（`PendingActionBadgePolicy`）保持不变；动态未读需独立计算（见 plan OQ4）。
 
 ## 备选（未采纳）
 - 「评论 + 邀请」合并流 / 「统一动态中心」（评论+邀请+访问请求）：信息更全但与邀请 tab 职责重叠、复杂度更高。

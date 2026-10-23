@@ -16,14 +16,14 @@
 1. `createInvite()`：本地 `save()` 成功后**立即** `inviteSuccessMessage = strings.invitationSentMessage`、`isSendingInvite = false`、可关闭 sheet。
 2. CloudKit 上传放后台 `Task`（不 await 在 UI 关键路径上）；上传失败**不回滚本地邀请**，仅记日志（必要时一个不打断的轻提示），靠下次同步重传。
 3. **前置必做（否则丢邀请）**：补「新建邀请上传失败自愈」。
-   - 现状：`foregroundSync`（`AppServices.swift`）已有 `InvitationReuploadPlan.responsesNeedingReupload`（`AppServices.swift:715`）只重传**响应（accept/reject）**，未覆盖「本地存在但服务器没有的新建 pending 邀请」。
+   - 现状：`foregroundSync`（`AppServices.swift`）已有 `InvitationReuploadPolicy.responsesNeedingReupload`（`AppServices.swift:715`）只重传**响应（accept/reject）**，未覆盖「本地存在但服务器没有的新建 pending 邀请」。
 
 ### ⚠️ 实现发现（核实 2026-06-20，推翻原「diff cloudInvitations」方案）
-- 创建方自己的邀请路由到**创建方 private zone**（`CloudKitInvitationWritePlan.destination → .privateOwnerZone`，`CloudKitCoupleSpaceService.swift:2132`）。
+- 创建方自己的邀请路由到**创建方 private zone**（`CloudKitInvitationWritePolicy.destination → .privateOwnerZone`，`CloudKitCoupleSpaceService.swift:2132`）。
 - 但 `foregroundSync` 只从 **shared zone** 拉邀请（`fetchEventInvitations(sharedZoneIDs:)`，`AppServices.swift:693`）——那是**对方**的数据。
 - ⇒ 创建方自己的新建邀请**永远不会出现在 `cloudInvitations` 里**，无法用「local 有 / cloud 无 → 重传」来判断是否上传成功（否则每次同步都重传＝churn）。这也是为什么既有 `responsesNeedingReupload` 只对**响应**成立：invitee 的响应写进 creator 的 zone，对 invitee 而言那是 shared zone，能被拉回来对比。
 - **机制：用户选定 (A) 本地标记（2026-06-20），已实现。**
-  - **(A) 本地 `needsCloudKitUpload` 标记** ✅：`EventInvitation` 加一个**本地 only**（不进 CloudKit mapper/部署 schema）的 Bool；创建时置 true，后台上传成功置 false，`foregroundSync` 重传所有仍为 true 的「我创建的」邀请（`InvitationReuploadPlan.creationsNeedingReupload`）。自限、幂等。SwiftData 模型加字段（additive，默认 false，轻量迁移；本地缓存 `cloudKitDatabase:.none`，不影响部署 schema）。
+  - **(A) 本地 `needsCloudKitUpload` 标记** ✅：`EventInvitation` 加一个**本地 only**（不进 CloudKit mapper/部署 schema）的 Bool；创建时置 true，后台上传成功置 false，`foregroundSync` 重传所有仍为 true 的「我创建的」邀请（`InvitationReuploadPolicy.creationsNeedingReupload`）。自限、幂等。SwiftData 模型加字段（additive，默认 false，轻量迁移；本地缓存 `cloudKitDatabase:.none`，不影响部署 schema）。
   - (B) 私有库读回比对（未采用）：新增「拉创建方 private zone 邀请」的 fetch，与本地比对缺失的重传。较重。
 
 ## 验收

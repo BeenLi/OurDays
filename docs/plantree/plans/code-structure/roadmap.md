@@ -1,9 +1,12 @@
 # Roadmap — code-structure
 
 ## In Progress
-- 🚧 **#29 `Plans/` → `Policies/`、`…Plan` → `…Policy` 重命名**（86 个枚举；2026-10-23 用户在 Policies / Common / Routine / Utils 里选了 Policies），同时把 `CoupleCalendar/` 分成 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 七个目录（pbxproj 分组、Info.plist / entitlements 路径、冒烟脚本路径一并改）。#29 自带 CLAUDE.md / README 更新；合并后把本树里的 `Plans/` 用词改掉即可。
+- （无）
 
-## Done
+## Done（2026-10-23）
+- ✅ **#29 `Plans/` → `Policies/`、`…Plan` → `…Policy` 重命名**（86 个枚举；2026-10-23 用户在 Policies / Common / Routine / Utils 里选了 Policies），同时把 `CoupleCalendar/` 分成 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 七个目录（pbxproj 分组、Info.plist / entitlements 路径、冒烟脚本路径一并改）。#29 自带 CLAUDE.md / README 更新；本树里仍存在的类型名已同步改为 `…Policy`，已删除的旧类型（如 `EventDetailInteractionPlan`）保留原名作历史记录。
+
+## Done（2026-06 ～ 10-22）
 - ✅ **#1**（2026-06-23）CI：`xcodebuild test` 加 `-retry-tests-on-failure -test-iterations 3`；三个启动相关 UI 测试的 3 s 等待改为 30 s 过渡超时。起因是过载 runner 上 `app.launch()` 等了 45 s，零改动重跑即过。
 - ✅ **#8**（2026-10-22）RootView 6,079 行拆成 18 个文件进 `Views/`（RootView 只剩 tab 容器与 sheet/alert 路由）。唯一非搬动改动：`Color(hex:)` 从 file-private 改 internal。
 - ✅ **#9**（2026-10-22）Models 3,395 行拆为 @Model 类 + 字符串 + 按领域的规则文件；CloudKit 记录映射独立成文件；5,670 行的单测拆成 9 个文件，77 个测试类名不变。
@@ -22,4 +25,4 @@
 - 两个线程都要用模拟器时冒烟要串行跑（脚本会卸载重装 App）。
 
 ## Deferred
-- 把规则层按领域再拆目录（现在是一层平铺 12 个文件），等重命名落地后再看。
+- 把 `Policies/` 按领域再拆子目录（现在是一层平铺 12 个文件），等文件继续变大再看。

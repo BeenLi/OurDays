@@ -7,7 +7,7 @@
 
 ## Non-goals
 - 不改两人制身份模型、不新增 SwiftData 实体、不改部署 CloudKit schema（复用现有 `EventComment` + 锚路由）。
-- 不改「动态」tab 的未读聚合逻辑（`ActivityFeedPlan`）；红点语义是「有评论」而非「未读」（见 decision 0001）。
+- 不改「动态」tab 的未读聚合逻辑（`ActivityFeedPolicy`）；红点语义是「有评论」而非「未读」（见 decision 0001）。
 - 不做评论编辑/富文本/@提醒等增强。
 
 ## 根因（核实 2026-07-03，见 topics）

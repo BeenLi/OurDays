@@ -26,7 +26,8 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | [public-launch](plans/public-launch/) | 🚧 In Progress | Track B/C 已上线；Track A v1.3 build 27 提交外测 | 2026-06-20：v1.3 (build 27) 上传 VALID + 加入外测组 `friends` + 提交 Beta Review（WAITING_FOR_REVIEW）。含 calendar-ux-fixes 三特性 | build 27 审核通过 → 公开链接自动服务 |
 | [calendar-ux-fixes](plans/calendar-ux-fixes/) | ✅ 已发布 | 3 phase 落地 + 两真机 e2e 跑通；已随 v1.3 build 27 提交公开外测 | 2026-06-20：commit `aadd4bb`，推 origin/main，archive+upload，build 27 VALID 提交 Beta Review | （可选）周视图 joint 点击 Deferred；离线乐观自愈分支单独验 |
 | [comment-visibility](plans/comment-visibility/) | ✅ 已提交 App Store 审核 | 代码+回归+新路径均验证；随 v1.4 build 33 提交 | 2026-07-04：合并 main → build 33（修 TestFlight 导出 internal-only bug）→ archive/upload → v1.4 提交 App Store（WAITING_FOR_REVIEW，发布说明含评论功能） | Apple 审核通过 → 手动发布上线 |
-| v1.5 release（PR #3 UI 重设计 + #4 配对更换修复 + #5 日视图打磨） | 🚧 已上传 App Store Connect | 1.5 (build 34) 已 archive + upload，处理中 | 2026-10-21：三个 PR 合并 main；`MemberProfile.avatar*` 三字段已部署到 Production（cktool 核对）；archive/upload 成功 | build 34 处理完成 → 填发布说明 → 提交 App Store 审核 |
+| v1.5 release（PR #3 UI 重设计 + #4 配对更换修复 + #5 日视图打磨） | ✅ 已上架 | 1.5 (build 34) 2026-10-21 上架 | 2026-10-21：三个 PR 合并 main；`MemberProfile.avatar*` 三字段已部署到 Production（cktool 核对）；archive/upload → 提交审核 → 自动发布上架 | — |
+| v1.6 release（#7 评论头像 + #20 头像同步乒乓修复 + #21 邀请过期/撤回 + #22 重装恢复 + #23 解除配对清理 + #24 自己日程可评论） | 🚧 版本号已升级 | 1.6 (build 35) 版本号 PR | 2026-10-23：#26 README 合并后基于 main 升级版本号；schema 自 1.5 无变化，无需部署 Production | archive/upload → 更新截图 → 填发布说明 → 提交审核 |
 
 顺序：先 activity-feed，后 notifications（用户决定，2026-06-14）。v2（上线后反馈修复）见 [decision 0002](plans/notifications/decisions/0002-silent-push-and-background-sync.md)（2026-06-16）。
 

@@ -3,13 +3,13 @@ import Foundation
 
 /// Which hours the day timeline draws. Night hours before the first event of either
 /// person are folded into one "both free" band instead of a screen of empty lanes.
-enum DayTimelineCollapsePlan {
+enum DayTimelineCollapsePolicy {
     static func visibleStartHour(
         eventStartDates: [Date],
         dayStart: Date,
         now: Date,
         isExpanded: Bool,
-        defaultStartHour: Int = DayTimelineScrollTargetPlan.defaultStartHour,
+        defaultStartHour: Int = DayTimelineScrollTargetPolicy.defaultStartHour,
         calendar: Calendar = .current
     ) -> Int {
         guard !isExpanded else { return 0 }
@@ -42,7 +42,7 @@ struct DayTimelineJointPlacement: Equatable {
     let columnCount: Int
 }
 
-enum DayTimelineJointLayoutPlan {
+enum DayTimelineJointLayoutPolicy {
     static func placements(for events: [JointScheduleEvent]) -> [String: DayTimelineJointPlacement] {
         var placements: [String: DayTimelineJointPlacement] = [:]
         let sortedEvents = events.sorted {
@@ -90,7 +90,7 @@ struct DayTimelineJointSpan: Equatable {
     static let full = DayTimelineJointSpan(yieldsMyLane: false, yieldsPartnerLane: false)
 }
 
-enum DayTimelineOverlapPlan {
+enum DayTimelineOverlapPolicy {
     static func jointSpans(
         jointEvents: [DayTimelineTimedSpan],
         myEvents: [DayTimelineTimedSpan],
@@ -124,7 +124,7 @@ enum DayTimelineOverlapPlan {
     }
 }
 
-enum DayTimelineScrollTargetPlan {
+enum DayTimelineScrollTargetPolicy {
     static let defaultStartHour = 8
     /// Minutes of context kept visible above the current time / first event
     /// so the target line does not sit flush against the top edge.
@@ -149,7 +149,7 @@ enum DayTimelineScrollTargetPlan {
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 60 * 60)
         let pointsPerMinute = hourHeight / 60
         let lead = CGFloat(leadMinutes) * pointsPerMinute
-        let dayHeight = DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight)
+        let dayHeight = DayTimelineLayoutPolicy.dayHeight(hourHeight: hourHeight)
 
         if now >= dayStart, now < dayEnd {
             let minutesFromStart = now.timeIntervalSince(dayStart) / 60
@@ -174,7 +174,7 @@ enum DayTimelineScrollTargetPlan {
         calendar: Calendar = .current
     ) -> CGFloat {
         guard !event.isAllDay else { return 0 }
-        return DayTimelineLayoutPlan.eventFrame(
+        return DayTimelineLayoutPolicy.eventFrame(
             startDate: event.startDate,
             endDate: event.endDate,
             dayStart: dayStart,
@@ -184,7 +184,7 @@ enum DayTimelineScrollTargetPlan {
     }
 }
 
-enum DayTimelineLayoutPlan {
+enum DayTimelineLayoutPolicy {
     static let hoursPerDay = 24
 
     static func dayHeight(hourHeight: CGFloat) -> CGFloat {
@@ -224,10 +224,10 @@ struct DayTimelineNowIndicator: Equatable {
 }
 
 /// Computes where (and whether) to draw the "now" line in the day timeline,
-/// mirroring `DayTimelineLayoutPlan`'s points-per-minute math. Returns nil unless
+/// mirroring `DayTimelineLayoutPolicy`'s points-per-minute math. Returns nil unless
 /// `now` falls inside the displayed day `[dayStart, dayStart + 1 day)`, so the
 /// indicator only appears when the user is actually looking at today.
-enum DayTimelineNowIndicatorPlan {
+enum DayTimelineNowIndicatorPolicy {
     static func indicator(
         now: Date,
         dayStart: Date,
@@ -241,7 +241,7 @@ enum DayTimelineNowIndicatorPlan {
         let pointsPerMinute = hourHeight / 60
         let minutesFromStart = now.timeIntervalSince(dayStart) / 60
         let rawY = CGFloat(minutesFromStart) * pointsPerMinute
-        let clampedY = min(max(rawY, 0), DayTimelineLayoutPlan.dayHeight(hourHeight: hourHeight))
+        let clampedY = min(max(rawY, 0), DayTimelineLayoutPolicy.dayHeight(hourHeight: hourHeight))
         return DayTimelineNowIndicator(y: clampedY, date: now)
     }
 }

@@ -5,7 +5,7 @@ struct PairingHistoryRequestRange: Equatable {
     let end: Date
 }
 
-enum PairingDatePlan {
+enum PairingDatePolicy {
     static func normalizedPairingDate(_ date: Date, calendar: Calendar = .current) -> Date {
         calendar.startOfDay(for: date)
     }
@@ -46,7 +46,7 @@ enum PairingDatePlan {
     }
 }
 
-enum PrePairingHistoryAccessPlan {
+enum PrePairingHistoryAccessPolicy {
     enum Direction {
         case partnerSharedToMe
         case meSharedToPartner
@@ -68,7 +68,7 @@ enum PrePairingHistoryAccessPlan {
         direction: Direction,
         calendar: Calendar = .current
     ) -> Date {
-        let normalizedPairingDate = PairingDatePlan.normalizedPairingDate(pairingDate, calendar: calendar)
+        let normalizedPairingDate = PairingDatePolicy.normalizedPairingDate(pairingDate, calendar: calendar)
         let intervals = approvedIntervals(
             accessRequests,
             currentMemberID: currentMemberID,
@@ -104,7 +104,7 @@ enum PrePairingHistoryAccessPlan {
             direction: .partnerSharedToMe,
             calendar: calendar
         )
-        let displayedEndDate = PairingDatePlan.displayedEndDate(
+        let displayedEndDate = PairingDatePolicy.displayedEndDate(
             forExclusiveEndDate: authorizedStartDate,
             calendar: calendar
         )
@@ -179,7 +179,7 @@ enum PrePairingHistoryAccessPlan {
         accessRequests.compactMap { request in
             guard request.status == .pending,
                   request.source != .privateOwnerZone,
-                  MemberIDPlan.normalized(request.requesterMemberID) == MemberIDPlan.normalized(currentMemberID),
+                  MemberIDPolicy.normalized(request.requesterMemberID) == MemberIDPolicy.normalized(currentMemberID),
                   matchesOwner(request, ownerMemberID: ownerMemberID) else {
                 return nil
             }
@@ -196,7 +196,7 @@ enum PrePairingHistoryAccessPlan {
         switch direction {
         case .partnerSharedToMe:
             return request.source != .privateOwnerZone
-                && MemberIDPlan.normalized(request.requesterMemberID) == MemberIDPlan.normalized(currentMemberID)
+                && MemberIDPolicy.normalized(request.requesterMemberID) == MemberIDPolicy.normalized(currentMemberID)
                 && matchesOwner(request, ownerMemberID: ownerMemberID)
         case .meSharedToPartner:
             return request.source == .privateOwnerZone
@@ -211,8 +211,8 @@ enum PrePairingHistoryAccessPlan {
     }
 
     private static func matchesOwner(_ request: CalendarAccessRequest, ownerMemberID: String?) -> Bool {
-        guard let ownerMemberID = MemberIDPlan.normalized(ownerMemberID) else { return true }
-        return MemberIDPlan.normalized(request.ownerMemberID) == ownerMemberID
+        guard let ownerMemberID = MemberIDPolicy.normalized(ownerMemberID) else { return true }
+        return MemberIDPolicy.normalized(request.ownerMemberID) == ownerMemberID
     }
 
     private static func mergedIntervals(_ intervals: [DateInterval]) -> [DateInterval] {
@@ -243,7 +243,7 @@ enum PrePairingHistoryAccessPlan {
     }
 }
 
-enum CalendarAccessRequestListPlan {
+enum CalendarAccessRequestListPolicy {
     private struct LogicalRequestKey: Hashable {
         let requesterMemberID: String
         let ownerMemberID: String
@@ -347,12 +347,12 @@ enum CalendarAccessRequestListPlan {
     }
 }
 
-enum CalendarAccessRequestCloudUploadPlan {
+enum CalendarAccessRequestCloudUploadPolicy {
     static func requestsNeedingUpload(
         _ requests: [CalendarAccessRequest],
         currentMemberID: String
     ) -> [CalendarAccessRequest] {
-        CalendarAccessRequestListPlan.pendingOutgoingRequestsNotSupersededByTerminalCopies(
+        CalendarAccessRequestListPolicy.pendingOutgoingRequestsNotSupersededByTerminalCopies(
             requests,
             currentMemberID: currentMemberID
         )
@@ -379,7 +379,7 @@ enum CalendarAccessRequestCloudUploadPlan {
 /// status is mutated locally and uploaded asynchronously (access requests AND
 /// invitations — both have the same stale-overwrite race). Generalized rather than
 /// duplicated per type so a new status-bearing record can't silently miss the guard.
-enum StatusMergePlan {
+enum StatusMergePolicy {
     static func shouldApplyIncoming(
         existingIsTerminal: Bool,
         existingUpdatedAt: Date,
@@ -395,14 +395,14 @@ enum StatusMergePlan {
     }
 }
 
-enum CalendarAccessRequestImportMergePlan {
+enum CalendarAccessRequestImportMergePolicy {
     static func shouldApplyIncoming(
         existingStatus: CalendarAccessRequestStatus,
         existingUpdatedAt: Date,
         incomingStatus: CalendarAccessRequestStatus,
         incomingUpdatedAt: Date
     ) -> Bool {
-        StatusMergePlan.shouldApplyIncoming(
+        StatusMergePolicy.shouldApplyIncoming(
             existingIsTerminal: existingStatus != .pending,
             existingUpdatedAt: existingUpdatedAt,
             incomingIsTerminal: incomingStatus != .pending,
@@ -415,14 +415,14 @@ enum CalendarAccessRequestImportMergePlan {
 /// uploads fire-and-forget, so a concurrent sync re-reading the still-`pending` server
 /// copy would roll the decision back. `pending` is the only non-terminal invitation
 /// status; accepted/declined/canceled are terminal.
-enum InvitationImportMergePlan {
+enum InvitationImportMergePolicy {
     static func shouldApplyIncoming(
         existingStatus: InvitationStatus,
         existingUpdatedAt: Date,
         incomingStatus: InvitationStatus,
         incomingUpdatedAt: Date
     ) -> Bool {
-        StatusMergePlan.shouldApplyIncoming(
+        StatusMergePolicy.shouldApplyIncoming(
             existingIsTerminal: existingStatus != .pending,
             existingUpdatedAt: existingUpdatedAt,
             incomingIsTerminal: incomingStatus != .pending,
@@ -436,10 +436,10 @@ enum InvitationImportMergePlan {
 /// accepting/declining an invitation) uploads fire-and-forget, so a failed/missed
 /// one-shot upload would be PERMANENT now that the merge guard refuses to let the stale
 /// server `pending` copy resurface it (the old rollback was perversely self-correcting).
-/// After a sync imports the server's current copies, these plans return the local
+/// After a sync imports the server's current copies, these policies return the local
 /// terminal decisions the server hasn't caught up to, to be re-uploaded. Self-limiting:
 /// once the server's copy matches, nothing is returned, so there is no per-sync churn.
-enum CalendarAccessRequestReuploadPlan {
+enum CalendarAccessRequestReuploadPolicy {
     static func ownerDecisionsNeedingReupload(
         local: [CalendarAccessRequest],
         cloud: [CalendarAccessRequest],
@@ -462,7 +462,7 @@ enum CalendarAccessRequestReuploadPlan {
     }
 }
 
-enum InvitationReuploadPlan {
+enum InvitationReuploadPolicy {
     static func responsesNeedingReupload(
         local: [EventInvitation],
         cloud: [EventInvitation],
@@ -476,7 +476,7 @@ enum InvitationReuploadPlan {
             // The invitee is "anyone who is not the creator": the stamped
             // `inviteeMemberID` is the partner's hashed CloudKit ID and never equals the
             // recipient's own member ID, so identity must key off the creator (see
-            // InvitationInteractionPlan.canRespond).
+            // InvitationInteractionPolicy.canRespond).
             //
             // Re-push my accept/decline ONLY while the creator's zone copy is still
             // `pending` (my upload never landed). If it already holds a terminal value
@@ -512,7 +512,7 @@ enum InvitationReuploadPlan {
 /// Keeps an invitation's end time trailing its start time by the previously
 /// chosen duration (at least one hour), matching the system calendar editor so
 /// moving Start no longer leaves End behind.
-enum InviteTimeAdjustmentPlan {
+enum InviteTimeAdjustmentPolicy {
     static let minimumDuration: TimeInterval = 60 * 60
 
     static func endDate(
@@ -529,7 +529,7 @@ enum InviteTimeAdjustmentPlan {
 /// event's end has passed there is nothing left to propose, so no invitation can be
 /// sent for it, a pending one can no longer be answered, and the list shows it as
 /// expired instead of waiting for a reply that cannot come.
-enum InvitationTimingPlan {
+enum InvitationTimingPolicy {
     /// Whether an event with this end has already finished at `now`. All-day events
     /// store their end as a time inside the last day (EventKit uses 23:59:59), so the
     /// day is treated as ending at the next midnight to avoid off-by-a-second edges.
@@ -573,7 +573,7 @@ enum InvitationTimingPlan {
     }
 }
 
-enum InvitationInteractionPlan {
+enum InvitationInteractionPolicy {
     static func canRespond(
         to invitation: EventInvitation,
         currentMemberID: String,
@@ -585,7 +585,7 @@ enum InvitationInteractionPlan {
         // identify the invitee by "not the creator" instead.
         invitation.status == .pending
             && invitation.creatorMemberID != currentMemberID
-            && !InvitationTimingPlan.isExpired(invitation, now: now)
+            && !InvitationTimingPolicy.isExpired(invitation, now: now)
     }
 
     /// The creator may take back an invitation while it is still pending and still
@@ -598,11 +598,11 @@ enum InvitationInteractionPlan {
     ) -> Bool {
         invitation.status == .pending
             && invitation.creatorMemberID == currentMemberID
-            && !InvitationTimingPlan.isExpired(invitation, now: now)
+            && !InvitationTimingPolicy.isExpired(invitation, now: now)
     }
 }
 
-enum InvitationLocalEventSyncPlan {
+enum InvitationLocalEventSyncPolicy {
 
     static func cancelAcceptedInvitationsMissingLocalEvents(
         _ invitations: [EventInvitation],
@@ -653,7 +653,7 @@ enum InvitationDisplayStatus: Equatable {
     case expired
 }
 
-enum InvitationListPlan {
+enum InvitationListPolicy {
     static func visibleInvitations(_ invitations: [EventInvitation]) -> [EventInvitation] {
         invitations.filter { $0.archivedAt == nil }
     }
@@ -661,7 +661,7 @@ enum InvitationListPlan {
     static func displayStatus(for invitation: EventInvitation, now: Date = .now) -> InvitationDisplayStatus {
         switch invitation.status {
         case .pending:
-            return InvitationTimingPlan.isExpired(invitation, now: now) ? .expired : .pending
+            return InvitationTimingPolicy.isExpired(invitation, now: now) ? .expired : .pending
         case .accepted:
             return .accepted
         case .declined:
@@ -725,12 +725,12 @@ enum CreateInviteValidationError: LocalizedError, Equatable {
     }
 }
 
-enum CreateInvitePlan {
+enum CreateInvitePolicy {
     static func localCalendarDraft(from draft: CreateInviteDraft, now: Date = .now) throws -> LocalCalendarEventDraft {
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw CreateInviteValidationError.emptyTitle }
         guard draft.endDate > draft.startDate else { throw CreateInviteValidationError.invalidDateRange }
-        guard InvitationTimingPlan.canInvite(endDate: draft.endDate, isAllDay: draft.isAllDay, now: now) else {
+        guard InvitationTimingPolicy.canInvite(endDate: draft.endDate, isAllDay: draft.isAllDay, now: now) else {
             throw CreateInviteValidationError.alreadyEnded
         }
 
@@ -778,7 +778,7 @@ enum CreateInvitePlan {
             "\(Int(localDraft.endDate.timeIntervalSince1970.rounded()))",
             localDraft.title
         ].joined(separator: "|")
-        let mirrorKey = EventMirrorKeyPlan.makeMirrorKey(
+        let mirrorKey = EventMirrorKeyPolicy.makeMirrorKey(
             calendarIdentifier: createdEvent.calendarIdentifier,
             eventIdentifier: createdEvent.eventIdentifier,
             occurrenceStartDate: localDraft.startDate,
@@ -813,9 +813,9 @@ enum CreateInvitePlan {
     ) throws -> EventMirror {
         let createdEvent = CreatedCalendarEvent(
             eventIdentifier: "new-invite-candidate",
-            calendarIdentifier: ShareCalCalendarBootstrapPlan.calendarTitle,
-            calendarTitle: ShareCalCalendarBootstrapPlan.calendarTitle,
-            calendarColorHex: ShareCalCalendarBootstrapPlan.calendarColorHex
+            calendarIdentifier: ShareCalCalendarBootstrapPolicy.calendarTitle,
+            calendarTitle: ShareCalCalendarBootstrapPolicy.calendarTitle,
+            calendarColorHex: ShareCalCalendarBootstrapPolicy.calendarColorHex
         )
         return try mirror(from: draft, createdEvent: createdEvent, ownerMemberID: ownerMemberID)
     }
@@ -827,7 +827,7 @@ enum CreateInvitePlan {
     }
 }
 
-enum InvitationConflictPlan {
+enum InvitationConflictPolicy {
     static func conflicts(
         for event: EventMirror,
         partnerMemberID: String,
@@ -853,7 +853,7 @@ enum InvitationConflictPlan {
     }
 }
 
-enum AcceptedInvitationMirrorPlan {
+enum AcceptedInvitationMirrorPolicy {
     static func mirror(
         from invitation: EventInvitation,
         createdEvent: CreatedCalendarEvent,
@@ -867,7 +867,7 @@ enum AcceptedInvitationMirrorPlan {
             "\(Int(invitation.endDate.timeIntervalSince1970.rounded()))",
             invitation.title
         ].joined(separator: "|")
-        let mirrorKey = EventMirrorKeyPlan.makeMirrorKey(
+        let mirrorKey = EventMirrorKeyPolicy.makeMirrorKey(
             calendarIdentifier: createdEvent.calendarIdentifier,
             eventIdentifier: createdEvent.eventIdentifier,
             occurrenceStartDate: invitation.startDate,

@@ -138,7 +138,7 @@ struct CreateInviteView: View {
             let previousStart = startDate
             let previousEnd = endDate
             startDate = newStart
-            endDate = InviteTimeAdjustmentPlan.endDate(
+            endDate = InviteTimeAdjustmentPolicy.endDate(
                 forNewStart: newStart,
                 previousStart: previousStart,
                 previousEnd: previousEnd
@@ -197,14 +197,14 @@ struct CreateInviteView: View {
         let draft = currentDraft()
 
         do {
-            _ = try CreateInvitePlan.localCalendarDraft(from: draft)
+            _ = try CreateInvitePolicy.localCalendarDraft(from: draft)
 
             if !skipConflictCheck {
-                let candidate = try CreateInvitePlan.conflictCandidateMirror(
+                let candidate = try CreateInvitePolicy.conflictCandidateMirror(
                     from: draft,
                     ownerMemberID: settings.currentMemberID
                 )
-                let conflicts = InvitationConflictPlan.conflicts(
+                let conflicts = InvitationConflictPolicy.conflicts(
                     for: candidate,
                     partnerMemberID: settings.partnerOwnerIDForLocalData,
                     mirrors: mirrors
@@ -212,7 +212,7 @@ struct CreateInviteView: View {
                 if let firstConflict = conflicts.first {
                     conflictMessage = settings.strings.invitationConflictMessage(
                         eventTitle: firstConflict.title,
-                        timeText: EventTimeRangeTextPlan.text(for: firstConflict, strings: settings.strings),
+                        timeText: EventTimeRangeTextPolicy.text(for: firstConflict, strings: settings.strings),
                         additionalConflictCount: conflicts.count - 1
                     )
                     isShowingConflict = true
@@ -221,14 +221,14 @@ struct CreateInviteView: View {
             }
 
             isSending = true
-            let localDraft = try CreateInvitePlan.localCalendarDraft(from: draft)
+            let localDraft = try CreateInvitePolicy.localCalendarDraft(from: draft)
             let createdEvent = try services.calendarAccess.createShareCalEvent(from: localDraft)
-            let mirror = try CreateInvitePlan.mirror(
+            let mirror = try CreateInvitePolicy.mirror(
                 from: draft,
                 createdEvent: createdEvent,
                 ownerMemberID: settings.currentMemberID
             )
-            let invitation = try CreateInvitePlan.invitation(
+            let invitation = try CreateInvitePolicy.invitation(
                 from: draft,
                 creatorMemberID: settings.currentMemberID,
                 inviteeMemberID: settings.partnerOwnerIDForLocalData
@@ -236,7 +236,7 @@ struct CreateInviteView: View {
             invitation.createdLocalEventID = createdEvent.eventIdentifier
             try EventMirrorStore.upsert(mirror, modelContext: modelContext)
             modelContext.insert(invitation)
-            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
+            settings.selectedCalendarIDs = ShareCalCalendarBootstrapPolicy.selectedCalendarIDs(
                 afterEnsuring: CalendarDescriptor(
                     id: createdEvent.calendarIdentifier,
                     title: createdEvent.calendarTitle,

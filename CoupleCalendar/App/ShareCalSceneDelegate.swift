@@ -30,7 +30,7 @@ enum ShareCalPendingShareReplacement {
 enum ShareCalCloudKitShareAcceptanceHandler {
     static func handle(metadata: CKShare.Metadata) {
         let incomingOwnerID = metadata.share.recordID.zoneID.ownerName
-        if ShareAcceptanceGuardPlan.requiresReplacementConfirmation(
+        if ShareAcceptanceGuardPolicy.requiresReplacementConfirmation(
             incomingOwnerID: incomingOwnerID,
             storedPartnerID: SettingsStore.storedPartnerShareOwnerID(),
             outgoingParticipantIDs: SettingsStore.storedOutgoingShareParticipantIDs()
@@ -88,7 +88,7 @@ final class ShareCalSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 }
 
-enum ShareCalSceneDelegateConfigurationPlan {
+enum ShareCalSceneDelegateConfigurationPolicy {
     static let configurationName = "Default Configuration"
     static let acceptsColdStartShareMetadata = true
 

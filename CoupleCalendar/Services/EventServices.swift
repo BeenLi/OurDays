@@ -17,8 +17,8 @@ struct EventMirrorService {
                 return Self.isEvent(event, inside: sharingWindows)
             }
             .map { event in
-                let fingerprint = EventMirrorKeyPlan.fingerprint(for: event)
-                let mirrorKey = EventMirrorKeyPlan.makeMirrorKey(
+                let fingerprint = EventMirrorKeyPolicy.fingerprint(for: event)
+                let mirrorKey = EventMirrorKeyPolicy.makeMirrorKey(
                     calendarIdentifier: event.calendarIdentifier,
                     eventIdentifier: event.eventIdentifier,
                     occurrenceStartDate: event.occurrenceStartDate,
@@ -62,8 +62,8 @@ struct EventMirrorService {
                 return Self.isEvent(event, inside: sharingWindows)
             }
             .map { event in
-                let fingerprint = EventMirrorKeyPlan.fingerprint(for: event)
-                let mirrorKey = EventMirrorKeyPlan.makeMirrorKey(
+                let fingerprint = EventMirrorKeyPolicy.fingerprint(for: event)
+                let mirrorKey = EventMirrorKeyPolicy.makeMirrorKey(
                     calendarIdentifier: event.calendarIdentifier,
                     eventIdentifier: event.eventIdentifier,
                     occurrenceStartDate: event.occurrenceStartDate,
@@ -145,7 +145,7 @@ struct EventMirrorService {
         mirrors
             .filter { $0.deletedAt == nil }
             .filter { mirror in
-                !CalendarSharingWindowPlan.contains(mirror.occurrenceStartDate, in: sharingWindows)
+                !CalendarSharingWindowPolicy.contains(mirror.occurrenceStartDate, in: sharingWindows)
             }
     }
 
@@ -193,7 +193,7 @@ struct EventMirrorService {
     }
 
     private static func isEvent(_ event: CalendarSourceEvent, inside sharingWindows: [DateInterval]) -> Bool {
-        CalendarSharingWindowPlan.contains(event.occurrenceStartDate, in: sharingWindows)
+        CalendarSharingWindowPolicy.contains(event.occurrenceStartDate, in: sharingWindows)
     }
 }
 

@@ -73,7 +73,7 @@ struct PairingStatusCard: View {
 
             if status == .paired {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(strings.pairingDayHeadline(pairingDate.map { PairingDatePlan.ordinalDayNumber(since: $0) } ?? 1))
+                    Text(strings.pairingDayHeadline(pairingDate.map { PairingDatePolicy.ordinalDayNumber(since: $0) } ?? 1))
                         .font(OurDaysTheme.displayFont(32))
                         .foregroundStyle(OurDaysTheme.ink)
                         .lineLimit(1)

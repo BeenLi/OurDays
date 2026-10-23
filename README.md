@@ -45,7 +45,7 @@ App 为四个 Tab 的标准 iOS 结构：
 | 云同步 | CloudKit 原生 API（`CKModifyRecordsOperation` 写、`CKFetchRecordZoneChangesOperation` 读）：私有数据库自有 `CoupleSpace` zone + CKShare 层级共享；两条 `CKDatabaseSubscription` 静默推送 + `BGAppRefresh` 兜底。**不使用 CKSyncEngine、不使用 SwiftData 的 CloudKit 自动同步** |
 | 系统日历 | EventKit（读取所选日历、为接受的邀请创建日程） |
 | 身份 | CloudKit `userRecordID` 作为唯一成员 ID（即共享 zone 的 ownerName，无自建账号体系） |
-| 测试 | XCTest 单测（约 300 个用例，决策逻辑收敛在无状态 "Plan enum" 中直接单测）+ 少量 XCUITest + 双模拟器配对冒烟脚本 |
+| 测试 | XCTest 单测（约 300 个用例，决策逻辑收敛在无状态 "Policy enum" 中直接单测）+ 少量 XCUITest + 双模拟器配对冒烟脚本 |
 | 最低系统 | iOS 18.0 |
 
 ## 数据同步架构
@@ -79,9 +79,9 @@ CloudKit 里只有 6 种记录类型（schema 见 [`CloudKit/ShareCalSchema.ckdb
 
 **App 升级后数据还在吗？** 在。升级不动 iCloud，本地缓存走 SwiftData 轻量迁移，配对状态保存在 UserDefaults 里；就算缓存损坏，下次同步也会从 EventKit 和对方的 zone 重建出来。CloudKit schema 在发版前部署到 Production，新字段对旧版本只是"看不见"，不会互相破坏。
 
-**解除配对后数据有什么变化？** 「我们」页的解除配对按顺序做三件事：删除我的 CKShare（对方立刻失去读我 zone 的权限）；从我的私有 zone 删掉所有**不是我写的评论**以及**全部**邀请和历史申请记录（两人空间里这些必然与前任有关，我写在自己日程上的评论保留）；清掉本地缓存里对方的镜像、评论、邀请和配对状态。对方那一侧的 share 不动，由对方自己解除。之所以要删 zone 里的记录，是因为下一条 CKShare 会把整个 zone 原样共享给下一个人；即使这一步失败（比如离线），同步导入时的 `PartnerScopedDataPlan` 仍会把"另一方既不是我也不是当前对方"的记录挡在外面，双保险。配对冲突里选择"换成新来的人"走同一条清理路径。
+**解除配对后数据有什么变化？** 「我们」页的解除配对按顺序做三件事：删除我的 CKShare（对方立刻失去读我 zone 的权限）；从我的私有 zone 删掉所有**不是我写的评论**以及**全部**邀请和历史申请记录（两人空间里这些必然与前任有关，我写在自己日程上的评论保留）；清掉本地缓存里对方的镜像、评论、邀请和配对状态。对方那一侧的 share 不动，由对方自己解除。之所以要删 zone 里的记录，是因为下一条 CKShare 会把整个 zone 原样共享给下一个人；即使这一步失败（比如离线），同步导入时的 `PartnerScopedDataPolicy` 仍会把"另一方既不是我也不是当前对方"的记录挡在外面，双保险。配对冲突里选择"换成新来的人"走同一条清理路径。
 
-**删除 App 后数据有什么变化？** 手机上的缓存和设置随 App 一起没了，iCloud 里的 zone、share 和对方的 share 都还在。重装后首次启动，App 探测到这个 Apple ID 下已有数据，会弹「继续使用现有 iCloud 数据」或「删除」二选一，在你决定前不自动同步。选继续：从根记录的创建时间恢复配对日，从自己的 `MemberProfile` 恢复昵称与头像，配对不需要重做；第一次同步会用云端自己的镜像做一遍删除比对，把 App 不在期间从系统日历删掉的日程补上墓碑，对方不会一直看到幽灵日程（`OwnMirrorReconciliationPlan`）。真正的全清是「删除我的 iCloud 数据」：删我的 share、删整个私有 zone、退出对方的 share、清本地，系统日历不受影响。
+**删除 App 后数据有什么变化？** 手机上的缓存和设置随 App 一起没了，iCloud 里的 zone、share 和对方的 share 都还在。重装后首次启动，App 探测到这个 Apple ID 下已有数据，会弹「继续使用现有 iCloud 数据」或「删除」二选一，在你决定前不自动同步。选继续：从根记录的创建时间恢复配对日，从自己的 `MemberProfile` 恢复昵称与头像，配对不需要重做；第一次同步会用云端自己的镜像做一遍删除比对，把 App 不在期间从系统日历删掉的日程补上墓碑，对方不会一直看到幽灵日程（`OwnMirrorReconciliationPolicy`）。真正的全清是「删除我的 iCloud 数据」：删我的 share、删整个私有 zone、退出对方的 share、清本地，系统日历不受影响。
 
 ### 一次同步做了什么
 
@@ -102,7 +102,7 @@ CloudKit 里只有 6 种记录类型（schema 见 [`CloudKit/ShareCalSchema.ckdb
 - **对方写了数据**：私有库和共享库各一条 `CKDatabaseSubscription`，发 content-available 静默推送，`ShareCalBackgroundSyncRunner.runSync` 立即跑一遍完整管线，不受 60 s 节流。
 - **推送被系统丢弃**：`BGAppRefreshTask` 兜底，每次运行先排下一次；iOS 的最短间隔约 15 min。
 
-推送做成静默而不是可见通知，是因为数据库订阅对 zone 里任何记录变化都会触发、无法按类型过滤；由同步完成后的 `LocalNotificationPlan` 决定哪些变化值得打扰用户。
+推送做成静默而不是可见通知，是因为数据库订阅对 zone 里任何记录变化都会触发、无法按类型过滤；由同步完成后的 `LocalNotificationPolicy` 决定哪些变化值得打扰用户。
 
 ## 开发
 
@@ -126,7 +126,7 @@ Debug 配置带 `LOCAL_SIGNING` 编译条件，CloudKit 整体关闭（`AppServi
 
 ### 代码结构
 
-`CoupleCalendar/` 下没有第三方依赖，依赖方向固定为 **Views → Services/Stores → Plans → Models**，Plans 从不反向引用服务或存储（2026-10 重构后文件级反向依赖为 0）：
+`CoupleCalendar/` 下没有第三方依赖，依赖方向固定为 **Views → Services/Stores → Policies → Models**，Policies 从不反向引用服务或存储（2026-10 重构后文件级反向依赖为 0）：
 
 ```text
 OurDays/
@@ -146,17 +146,17 @@ OurDays/
 │   │   ├── HierarchicalDatePickerSheet.swift  年/月/日层级选日期
 │   │   ├── DesignSystem.swift         OurDaysTheme、卡片/按钮样式、头像视图
 │   │   └── CloudSharingController.swift   UICloudSharingController 封装
-│   ├── Plans/                         "Plan" = 只做决定、不动手：无状态 enum + 纯 static 函数，输入值、输出"该怎么办"，不碰 I/O；服务层按它的答案执行
-│   │   ├── PairingPlans.swift         TwoPersonPairingPlan、ShareAcceptanceGuardPlan、ExistingICloudDataRecoveryPlan（重装恢复）、PartnerScopedDataPlan（前任数据过滤）
-│   │   ├── SyncPlans.swift            ForegroundSyncPlan（节流）、CloudKitMirrorSyncPlan（哪些 mirror 要上传）、OwnMirrorReconciliationPlan（重装补墓碑）、BackgroundRefreshSchedulePlan
-│   │   ├── CloudKitPlans.swift        写入去向、共享层级、根记录元数据、导入过滤、停止共享、解除配对时清理前任记录
-│   │   ├── InvitationAndAccessRequestPlans.swift  邀请时效/撤销/合并/重传、历史申请、配对日、共享时间窗
-│   │   ├── CommentPlans.swift         评论线程锚点（mirrorKey / 邀请 id）、详情页是否可评论、红点
-│   │   ├── ActivityAndNotificationPlans.swift     动态流聚合、LocalNotificationPlan（四类通知）
-│   │   ├── CalendarSourcePlans.swift  EventKit 授权状态、EventMirrorKeyPlan、日历选择
-│   │   ├── CalendarDisplayPlans.swift 时间文案、DateFormatterCache、CalendarDisplayMirrorPlan（自己日程的即时展示）
-│   │   ├── CalendarNavigationPlans.swift / DayTimelinePlans.swift / AgendaPlans.swift  日期导航、双列布局、共同日程、周议程
-│   │   └── MemberIdentityPlans.swift  MemberIDPlan 归一化、头像与显示名
+│   ├── Policies/                      "Policy" = 只做决定、不动手：无状态 enum + 纯 static 函数，输入值、输出"该怎么办"，不碰 I/O；服务层按它的答案执行
+│   │   ├── PairingPolicies.swift         TwoPersonPairingPolicy、ShareAcceptanceGuardPolicy、ExistingICloudDataRecoveryPolicy（重装恢复）、PartnerScopedDataPolicy（前任数据过滤）
+│   │   ├── SyncPolicies.swift            ForegroundSyncPolicy（节流）、CloudKitMirrorSyncPolicy（哪些 mirror 要上传）、OwnMirrorReconciliationPolicy（重装补墓碑）、BackgroundRefreshSchedulePolicy
+│   │   ├── CloudKitPolicies.swift        写入去向、共享层级、根记录元数据、导入过滤、停止共享、解除配对时清理前任记录
+│   │   ├── InvitationAndAccessRequestPolicies.swift  邀请时效/撤销/合并/重传、历史申请、配对日、共享时间窗
+│   │   ├── CommentPolicies.swift         评论线程锚点（mirrorKey / 邀请 id）、详情页是否可评论、红点
+│   │   ├── ActivityAndNotificationPolicies.swift     动态流聚合、LocalNotificationPolicy（四类通知）
+│   │   ├── CalendarSourcePolicies.swift  EventKit 授权状态、EventMirrorKeyPolicy、日历选择
+│   │   ├── CalendarDisplayPolicies.swift 时间文案、DateFormatterCache、CalendarDisplayMirrorPolicy（自己日程的即时展示）
+│   │   ├── CalendarNavigationPolicies.swift / DayTimelinePolicies.swift / AgendaPolicies.swift  日期导航、双列布局、共同日程、周议程
+│   │   └── MemberIdentityPolicies.swift  MemberIDPolicy 归一化、头像与显示名
 │   ├── SettingsStore.swift            UserDefaults 持久化的设置与配对状态（@Observable）
 │   ├── SyncCoordinator.swift          foregroundSync：唯一的同步管线；ShareCalBackgroundSyncRunner（推送 / BGAppRefresh 入口）；通知调度
 │   ├── AppServices.swift              服务容器
@@ -178,14 +178,14 @@ OurDays/
 ├── Scripts/                       CloudKit schema 导入、双模拟器配对冒烟脚本、App Store / TestFlight 导出配置
 ├── docs/                          开发流程、隐私政策、官网源码（docs/site）、README 架构图源文件（docs/diagrams）、审核记录、规划树（docs/plantree）
 ├── .github/workflows/ios-ci.yml   CI：macOS runner 构建并跑全部测试
-└── CLAUDE.md                      代码架构与约定（身份模型、CloudKit 布局、Plan 约定）
+└── CLAUDE.md                      代码架构与约定（身份模型、CloudKit 布局、Policy 约定）
 ```
 
-"Plan" 是这个代码库的核心约定：所有决策逻辑写成 `enum XxxPlan` 里的纯 static 函数（例如 `TwoPersonPairingPlan.resolve` 输入三组 ID，输出"对方是谁、该退出哪些 zone、有没有冲突"），自己不发请求、不读写存储；`SyncCoordinator` 和各 Service 先问 Plan 再执行。单元测试因此几乎只测 Plans，不需要模拟 CloudKit。
+"Policy" 是这个代码库的核心约定：所有决策逻辑写成 `enum XxxPolicy` 里的纯 static 函数（例如 `TwoPersonPairingPolicy.resolve` 输入三组 ID，输出"对方是谁、该退出哪些 zone、有没有冲突"），自己不发请求、不读写存储；`SyncCoordinator` 和各 Service 先问 Policy 再执行。单元测试因此几乎只测 Policies，不需要模拟 CloudKit。
 
 新增非 UI 文件时要同时加进 App 和 Test 两个 target（test target 直接编译源码）；UI 文件只进 App target。
 
-- 代码架构与约定（身份模型、CloudKit 布局、Plan 约定、共享 helper）见 [CLAUDE.md](CLAUDE.md)。
+- 代码架构与约定（身份模型、CloudKit 布局、Policy 约定、共享 helper）见 [CLAUDE.md](CLAUDE.md)。
 - CloudKit Schema 部署、固定双模拟器冒烟测试、停止共享隐私验证等运维流程见 [docs/development.md](docs/development.md)。
 - CI：[`.github/workflows/ios-ci.yml`](.github/workflows/ios-ci.yml) 在 macOS runner 上构建并跑全部单元与 UI 测试（push 到 main 与针对 main 的 PR）。冒烟测试需要登录 iCloud 的模拟器，只在本地跑。
 

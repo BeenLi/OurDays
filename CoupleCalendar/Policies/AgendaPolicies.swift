@@ -12,9 +12,9 @@ struct CalendarFocusRequest: Identifiable, Equatable {
     }
 }
 
-enum CalendarFocusPlan {
+enum CalendarFocusPolicy {
     static func request(for invitation: EventInvitation) -> CalendarFocusRequest? {
-        guard InvitationListPlan.canOpenInCalendar(invitation) else { return nil }
+        guard InvitationListPolicy.canOpenInCalendar(invitation) else { return nil }
         return CalendarFocusRequest(invitationID: invitation.id, startDate: invitation.startDate)
     }
 }
@@ -22,7 +22,7 @@ enum CalendarFocusPlan {
 struct JointScheduleEvent: Identifiable, Equatable {
     let id: String
     let title: String
-    let calendarTitle: String = ShareCalCalendarBootstrapPlan.calendarTitle
+    let calendarTitle: String = ShareCalCalendarBootstrapPolicy.calendarTitle
     let startDate: Date
     let endDate: Date
     let isAllDay: Bool
@@ -30,7 +30,7 @@ struct JointScheduleEvent: Identifiable, Equatable {
     let notes: String?
 }
 
-enum JointSchedulePlan {
+enum JointSchedulePolicy {
     static func jointEvents(
         from invitations: [EventInvitation],
         currentMemberID: String,
@@ -107,7 +107,7 @@ struct WeekAgendaDay: Identifiable, Equatable {
     let items: [WeekAgendaItem]
 }
 
-enum WeekAgendaPlan {
+enum WeekAgendaPolicy {
     static func days(
         containing selectedDate: Date,
         mirrors: [EventMirror],
@@ -155,7 +155,7 @@ enum WeekAgendaPlan {
                         location: event.location,
                         notes: event.notes,
                         calendarTitle: event.calendarTitle,
-                        colorHex: ShareCalCalendarBootstrapPlan.calendarColorHex,
+                        colorHex: ShareCalCalendarBootstrapPolicy.calendarColorHex,
                         kind: .joint,
                         mirrorID: nil
                     )

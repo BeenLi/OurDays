@@ -7,7 +7,7 @@ struct CalendarDescriptor: Identifiable, Hashable {
     let allowsContentModifications: Bool
 }
 
-enum ShareCalSmokeTestEventPlan {
+enum ShareCalSmokeTestEventPolicy {
     static let title = "ShareCal E2E Smoke Test"
     static let notes = "Created by ShareCal simulator validation."
 
@@ -23,7 +23,7 @@ enum ShareCalSmokeTestEventPlan {
     }
 }
 
-enum ShareCalCalendarBootstrapPlan {
+enum ShareCalCalendarBootstrapPolicy {
     static let calendarTitle = "ShareCal"
     static let calendarColorHex = "#FF2D55"
 
@@ -99,9 +99,9 @@ enum CalendarAuthorizationState: Equatable {
 }
 
 /// Builds the stable key that identifies one EventKit occurrence across syncs.
-/// Shared by the mirror generator, the SwiftData models and the display plans, so
-/// it lives with the other calendar-source plans rather than in `EventMirrorService`.
-enum EventMirrorKeyPlan {
+/// Shared by the mirror generator, the SwiftData models and the display policies, so
+/// it lives with the other calendar-source policies rather than in `EventMirrorService`.
+enum EventMirrorKeyPolicy {
     static func makeMirrorKey(
         calendarIdentifier: String,
         eventIdentifier: String,

@@ -15,7 +15,7 @@ enum ShareCalRemoteChangeSignal {
 /// The OS glue (`BGTaskScheduler` register/submit, running the sync) lives in the app
 /// delegate; this enum holds only the decisions worth unit-testing: whether scheduling
 /// is even worthwhile, and the earliest the next refresh may run.
-enum BackgroundRefreshSchedulePlan {
+enum BackgroundRefreshSchedulePolicy {
     /// Must match the entry in Info.plist `BGTaskSchedulerPermittedIdentifiers`.
     static let taskIdentifier = "com.leeberty.CoupleCalendar.refresh"
 
@@ -91,7 +91,7 @@ enum SyncPhase: String {
     case failed
 }
 
-enum ForegroundSyncPlan {
+enum ForegroundSyncPolicy {
     // Re-foregrounding or switching tabs should reflect a partner's change
     // quickly. A short throttle keeps automatic syncs from stampeding while
     // still feeling live; manual pull-to-refresh bypasses this entirely.
@@ -110,7 +110,7 @@ enum ForegroundSyncPlan {
     }
 }
 
-enum CloudKitForegroundSyncPlan {
+enum CloudKitForegroundSyncPolicy {
     static func shouldRunCloudKit(
         iCloudSharingEnabled: Bool,
         hasStartedPairing: Bool,
@@ -121,12 +121,12 @@ enum CloudKitForegroundSyncPlan {
         guard iCloudSharingEnabled else { return false }
         if forceCloudKit { return true }
         if hasStartedPairing { return true }
-        if MemberIDPlan.normalized(partnerShareOwnerID) != nil { return true }
-        return outgoingShareParticipantIDs.contains { MemberIDPlan.normalized($0) != nil }
+        if MemberIDPolicy.normalized(partnerShareOwnerID) != nil { return true }
+        return outgoingShareParticipantIDs.contains { MemberIDPolicy.normalized($0) != nil }
     }
 }
 
-enum CloudKitMirrorSyncPlan {
+enum CloudKitMirrorSyncPolicy {
     static func mirrorsNeedingUpload(
         _ mirrors: [EventMirror],
         activeShadows: [LocalEventShadow],
@@ -187,7 +187,7 @@ enum CloudKitMirrorSyncPlan {
 /// "previous state" for the ordinary tombstone diff. Shadows are written before the
 /// cloud step, so "no shadows at all" would stop after the first attempt even if that
 /// attempt failed; the upload stamp is the signal that the memory is trustworthy.
-enum OwnMirrorReconciliationPlan {
+enum OwnMirrorReconciliationPolicy {
     static func shouldReconcileWithCloud(existingShadows: [LocalEventShadow]) -> Bool {
         !existingShadows.contains { $0.lastUploadedAt != nil }
     }
@@ -195,6 +195,6 @@ enum OwnMirrorReconciliationPlan {
     /// Cloud copies carry whatever `ownerMemberID` they were uploaded with; the
     /// current member ID is authoritative for the user's own zone.
     static func ownedMirrors(_ mirrors: [EventMirror], currentMemberID: String) -> [EventMirror] {
-        CloudKitSharedDatabaseImportPlan.identifiedMirrors(mirrors, sharedOwnerID: currentMemberID)
+        CloudKitSharedDatabaseImportPolicy.identifiedMirrors(mirrors, sharedOwnerID: currentMemberID)
     }
 }

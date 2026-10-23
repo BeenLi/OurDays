@@ -40,7 +40,7 @@ struct AvatarEditorSheet: View {
         self.identity = identity
         self.footnote = footnote
         self.onSave = onSave
-        let normalized = MemberAvatarPlan.normalized(avatar)
+        let normalized = MemberAvatarPolicy.normalized(avatar)
         _mode = State(initialValue: normalized?.imageData != nil ? .photo : .text)
         _imageData = State(initialValue: normalized?.imageData)
         _text = State(initialValue: normalized?.text ?? "")
@@ -55,7 +55,7 @@ struct AvatarEditorSheet: View {
         case .photo:
             return imageData.map { MemberAvatar(imageData: $0) }
         case .text:
-            return MemberAvatarPlan.normalized(MemberAvatar(text: text, background: background))
+            return MemberAvatarPolicy.normalized(MemberAvatar(text: text, background: background))
         }
     }
 
@@ -179,7 +179,7 @@ struct AvatarEditorSheet: View {
                             .stroke(OurDaysTheme.border, lineWidth: 1)
                     )
                     .onChange(of: text) { _, newValue in
-                        let limited = MemberAvatarPlan.normalizedText(newValue) ?? ""
+                        let limited = MemberAvatarPolicy.normalizedText(newValue) ?? ""
                         if limited != newValue.trimmingCharacters(in: .whitespacesAndNewlines) {
                             text = limited
                         }
@@ -233,7 +233,7 @@ enum AvatarImageRenderer {
         guard let image = UIImage(data: data) else { return nil }
         let side = min(image.size.width, image.size.height)
         guard side > 0 else { return nil }
-        let targetSide = MemberAvatarPlan.imagePixelSize
+        let targetSide = MemberAvatarPolicy.imagePixelSize
         let scale = targetSide / side
         let drawSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
         let origin = CGPoint(x: (targetSide - drawSize.width) / 2, y: (targetSide - drawSize.height) / 2)

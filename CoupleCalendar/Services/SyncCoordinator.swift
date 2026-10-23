@@ -54,7 +54,7 @@ struct UserNotificationScheduler: LocalNotificationScheduling {
 
         for planned in notifications {
             let content = UNMutableNotificationContent()
-            let text = LocalNotificationContentPlan.content(
+            let text = LocalNotificationContentPolicy.content(
                 for: planned.kind,
                 strings: strings,
                 partnerName: partnerName
@@ -107,7 +107,7 @@ struct SyncCoordinator {
 
         do {
             let syncedAt = Date()
-            var shouldRunCloudKit = CloudKitForegroundSyncPlan.shouldRunCloudKit(
+            var shouldRunCloudKit = CloudKitForegroundSyncPolicy.shouldRunCloudKit(
                 iCloudSharingEnabled: settings.iCloudSharingEnabled,
                 hasStartedPairing: settings.hasStartedPairing,
                 partnerShareOwnerID: settings.partnerShareOwnerID,
@@ -128,7 +128,7 @@ struct SyncCoordinator {
             }
             if settings.selectedCalendarIDs.isEmpty {
                 let calendar = try calendarAccess.ensureShareCalCalendar()
-                settings.selectedCalendarIDs = ShareCalCalendarBootstrapPlan.selectedCalendarIDs(
+                settings.selectedCalendarIDs = ShareCalCalendarBootstrapPolicy.selectedCalendarIDs(
                     afterEnsuring: calendar,
                     currentSelection: settings.selectedCalendarIDs
                 )
@@ -139,12 +139,12 @@ struct SyncCoordinator {
             if settings.hasStartedPairing || settings.partnerShareOwnerID != nil || !settings.outgoingShareParticipantIDs.isEmpty {
                 settings.markPairingDateIfNeeded(at: syncedAt)
             }
-            let pairingDate = settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(syncedAt)
-            let sharingWindows = CalendarSharingWindowPlan.effectiveWindows(
+            let pairingDate = settings.pairingDate ?? PairingDatePolicy.normalizedPairingDate(syncedAt)
+            let sharingWindows = CalendarSharingWindowPolicy.effectiveWindows(
                 now: pairingDate,
                 accessRequests: localAccessRequests
             )
-            let window = CalendarSharingWindowPlan.enclosingInterval(for: sharingWindows)
+            let window = CalendarSharingWindowPolicy.enclosingInterval(for: sharingWindows)
             let sourceEvents = calendarAccess.events(
                 from: window.start,
                 to: window.end,
@@ -207,7 +207,7 @@ struct SyncCoordinator {
             }
             let deletedMirrors = deletedMirrorByKey.keys.sorted().compactMap { deletedMirrorByKey[$0] }
             let mirrorsForSync = mirrors + deletedMirrors
-            let mirrorsNeedingCloudUpload = CloudKitMirrorSyncPlan.mirrorsNeedingUpload(
+            let mirrorsNeedingCloudUpload = CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
                 mirrorsForSync,
                 activeShadows: activeShadows,
                 existingShadows: existingShadows,
@@ -221,7 +221,7 @@ struct SyncCoordinator {
             try upsert(shadows: activeShadows + deletedShadows, modelContext: modelContext)
             timing.mark("localMirrorsUpserted mirrors=\(mirrorsForSync.count) shadows=\(activeShadows.count + deletedShadows.count)")
             let localInvitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
-            let canceledInvitations = InvitationLocalEventSyncPlan.cancelAcceptedInvitationsMissingLocalEvents(
+            let canceledInvitations = InvitationLocalEventSyncPolicy.cancelAcceptedInvitationsMissingLocalEvents(
                 localInvitations,
                 now: syncedAt,
                 localEventExists: { invitation in
@@ -255,7 +255,7 @@ struct SyncCoordinator {
                 let fetchedSharedZoneIDs = try await sharedZoneIDsTask
                 timing.mark("cloudSharedZonesFetched count=\(fetchedSharedZoneIDs.count)")
 
-                let resolution = TwoPersonPairingPlan.resolve(
+                let resolution = TwoPersonPairingPolicy.resolve(
                     storedPartnerID: settings.partnerShareOwnerID,
                     outgoingAcceptedParticipantIDs: outgoingParticipantIDs,
                     sharedZoneOwnerIDs: fetchedSharedZoneIDs.map(\.ownerName)
@@ -280,7 +280,7 @@ struct SyncCoordinator {
                 // while the app was gone would stay live in the cloud for the partner.
                 // Use our own cloud mirrors as that previous state instead.
                 var reconciledTombstones: [EventMirror] = []
-                if OwnMirrorReconciliationPlan.shouldReconcileWithCloud(existingShadows: existingShadows) {
+                if OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(existingShadows: existingShadows) {
                     let cloudOwnMirrors = try await cloudKit.fetchOwnEventMirrors(currentMemberID: settings.currentMemberID)
                     reconciledTombstones = eventMirrorService.deletedMirrorTombstones(
                         existingEventKeys: currentMirrorKeys,
@@ -293,7 +293,7 @@ struct SyncCoordinator {
                 }
                 let mirrorsToUpload = mirrorsNeedingCloudUpload + reconciledTombstones
 
-                let accessRequestsNeedingCloudUpload = CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
+                let accessRequestsNeedingCloudUpload = CalendarAccessRequestCloudUploadPolicy.requestsNeedingUpload(
                     localAccessRequests,
                     currentMemberID: settings.currentMemberID
                 )
@@ -362,7 +362,7 @@ struct SyncCoordinator {
                 // Import only what belongs to this pairing: a record whose other party is
                 // neither me nor the resolved partner is an ex-partner's leftover.
                 let fetchedAccessRequests = try await accessRequestsTask
-                let cloudAccessRequests = PartnerScopedDataPlan.scoped(
+                let cloudAccessRequests = PartnerScopedDataPolicy.scoped(
                     fetchedAccessRequests,
                     currentMemberID: settings.currentMemberID,
                     partnerID: resolution.partnerID
@@ -377,11 +377,11 @@ struct SyncCoordinator {
                     settings.markPairingDateIfNeeded(at: syncedAt)
                 }
                 let memberProfiles = try await memberProfilesTask
-                settings.partnerSyncedDisplayName = MemberProfileDisplayPlan.partnerSyncedDisplayName(
+                settings.partnerSyncedDisplayName = MemberProfileDisplayPolicy.partnerSyncedDisplayName(
                     from: memberProfiles,
                     partnerID: partnerShareOwnerID
                 )
-                let partnerSyncedAvatar = MemberProfileDisplayPlan.partnerSyncedAvatar(
+                let partnerSyncedAvatar = MemberProfileDisplayPolicy.partnerSyncedAvatar(
                     from: memberProfiles,
                     partnerID: partnerShareOwnerID
                 )
@@ -389,7 +389,7 @@ struct SyncCoordinator {
                     settings.partnerSyncedAvatar = partnerSyncedAvatar
                 }
                 let sharedMirrors = try await sharedMirrorsTask
-                let importableSharedMirrors = CloudKitSharedDatabaseImportPlan.importableMirrors(
+                let importableSharedMirrors = CloudKitSharedDatabaseImportPolicy.importableMirrors(
                     sharedMirrors,
                     currentMemberID: settings.currentMemberID
                 )
@@ -404,7 +404,7 @@ struct SyncCoordinator {
                 }
                 try upsert(mirrors: importableSharedMirrors, modelContext: modelContext)
                 let fetchedComments = try await commentsTask
-                let cloudComments = PartnerScopedDataPlan.scoped(
+                let cloudComments = PartnerScopedDataPolicy.scoped(
                     fetchedComments,
                     currentMemberID: settings.currentMemberID,
                     partnerID: resolution.partnerID
@@ -412,7 +412,7 @@ struct SyncCoordinator {
                 try upsert(comments: cloudComments, modelContext: modelContext)
                 timing.mark("cloudCommentsFetched count=\(cloudComments.count)")
                 let fetchedInvitations = try await invitationsTask
-                let cloudInvitations = PartnerScopedDataPlan.scoped(
+                let cloudInvitations = PartnerScopedDataPolicy.scoped(
                     fetchedInvitations,
                     currentMemberID: settings.currentMemberID,
                     partnerID: resolution.partnerID
@@ -432,7 +432,7 @@ struct SyncCoordinator {
                 // Compares against post-import local state; self-limiting once the
                 // server agrees. See decision 0003.
                 let localRequestsForReupload = try modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())
-                let requestsToReupload = CalendarAccessRequestReuploadPlan.ownerDecisionsNeedingReupload(
+                let requestsToReupload = CalendarAccessRequestReuploadPolicy.ownerDecisionsNeedingReupload(
                     local: localRequestsForReupload,
                     cloud: cloudAccessRequests,
                     currentMemberID: settings.currentMemberID
@@ -443,7 +443,7 @@ struct SyncCoordinator {
                 timing.mark("cloudAccessRequestDecisionsReuploaded count=\(requestsToReupload.count)")
 
                 let localInvitationsForReupload = try modelContext.fetch(FetchDescriptor<EventInvitation>())
-                let invitationsToReupload = InvitationReuploadPlan.responsesNeedingReupload(
+                let invitationsToReupload = InvitationReuploadPolicy.responsesNeedingReupload(
                     local: localInvitationsForReupload,
                     cloud: cloudInvitations,
                     currentMemberID: settings.currentMemberID
@@ -457,7 +457,7 @@ struct SyncCoordinator {
                 // never landed keeps `needsCloudKitUpload` set; re-push it and clear the
                 // flag on success so it stops retrying. Creator data lives in our private
                 // zone (never read back), so this is flag-driven, not diff-driven.
-                let creationsToReupload = InvitationReuploadPlan.creationsNeedingReupload(
+                let creationsToReupload = InvitationReuploadPolicy.creationsNeedingReupload(
                     local: localInvitationsForReupload,
                     currentMemberID: settings.currentMemberID
                 )
@@ -495,7 +495,7 @@ struct SyncCoordinator {
 
     /// After a sync imports the partner's latest data, surface anything new since the
     /// last check as system notifications, then advance the high-water mark. Runs only
-    /// once a baseline exists (first sync just sets the baseline — see LocalNotificationPlan).
+    /// once a baseline exists (first sync just sets the baseline — see LocalNotificationPolicy).
     private func postPendingNotifications(
         modelContext: ModelContext,
         settings: SettingsStore,
@@ -507,7 +507,7 @@ struct SyncCoordinator {
             let mirrors = try modelContext.fetch(FetchDescriptor<EventMirror>())
             let invitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
             let accessRequests = try modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())
-            planned = LocalNotificationPlan.pending(
+            planned = LocalNotificationPolicy.pending(
                 comments: comments,
                 mirrors: mirrors,
                 invitations: invitations,
@@ -541,7 +541,7 @@ struct SyncCoordinator {
         cloudKit: CloudKitCoupleSpaceService,
         settings: SettingsStore
     ) async throws {
-        guard let displayName = PairingSettingsPlan.normalizedDisplayName(settings.currentDisplayName) else {
+        guard let displayName = PairingSettingsPolicy.normalizedDisplayName(settings.currentDisplayName) else {
             return
         }
         try await cloudKit.saveMemberProfileForSync(
@@ -612,8 +612,8 @@ struct SyncCoordinator {
             if let existing = try modelContext.fetch(descriptor).first {
                 // Same status-aware guard as access requests: never let a stale `pending`
                 // server copy roll back a local accept/decline whose upload is still in
-                // flight. See InvitationImportMergePlan / decision 0003.
-                guard InvitationImportMergePlan.shouldApplyIncoming(
+                // flight. See InvitationImportMergePolicy / decision 0003.
+                guard InvitationImportMergePolicy.shouldApplyIncoming(
                     existingStatus: existing.status,
                     existingUpdatedAt: existing.updatedAt,
                     incomingStatus: invitation.status,
@@ -649,8 +649,8 @@ struct SyncCoordinator {
                 // Status-aware merge: a stale `pending` server copy must never roll back
                 // a local decision (e.g. a just-approved request whose upload hasn't
                 // landed), and a decision must always win over pending regardless of
-                // cross-device clock skew. See CalendarAccessRequestImportMergePlan.
-                guard CalendarAccessRequestImportMergePlan.shouldApplyIncoming(
+                // cross-device clock skew. See CalendarAccessRequestImportMergePolicy.
+                guard CalendarAccessRequestImportMergePolicy.shouldApplyIncoming(
                     existingStatus: existing.status,
                     existingUpdatedAt: existing.updatedAt,
                     incomingStatus: request.status,
@@ -726,7 +726,7 @@ enum ExistingICloudDataIdentityRecovery {
             settings.currentMemberID = memberID
         }
         let identity = await cloudKit.fetchExistingICloudIdentity(ownerMemberID: settings.currentMemberID)
-        let recovered = ExistingICloudDataRecoveryPlan.recoveredState(
+        let recovered = ExistingICloudDataRecoveryPolicy.recoveredState(
             shareRootCreatedAt: identity.shareRootCreatedAt,
             ownProfile: identity.ownProfile
         )
@@ -778,7 +778,7 @@ final class ShareCalBackgroundSyncRunner {
         // do (notifications decision 0001): never auto-sync/merge while the user has not
         // decided what to do with pre-existing iCloud data. The gate is a pure function
         // of SettingsStore, so the background path enforces it identically.
-        guard !ExistingICloudDataRecoveryPlan.shouldDeferAutomaticSync(
+        guard !ExistingICloudDataRecoveryPolicy.shouldDeferAutomaticSync(
             hasResolvedPrompt: settings.hasResolvedExistingICloudDataPrompt,
             hasStartedPairing: settings.hasStartedPairing,
             partnerShareOwnerID: settings.partnerShareOwnerID,
@@ -806,14 +806,14 @@ final class ShareCalBackgroundSyncRunner {
     /// for unpaired or CloudKit-disabled installs (nothing to fetch).
     func scheduleAppRefresh() {
         guard let settings, let services else { return }
-        guard BackgroundRefreshSchedulePlan.shouldSchedule(
+        guard BackgroundRefreshSchedulePolicy.shouldSchedule(
             isCloudKitEnabled: services.isCloudKitEnabled,
             hasStartedPairing: settings.hasStartedPairing,
             partnerShareOwnerID: settings.partnerShareOwnerID,
             outgoingShareParticipantIDs: settings.outgoingShareParticipantIDs
         ) else { return }
-        let request = BGAppRefreshTaskRequest(identifier: BackgroundRefreshSchedulePlan.taskIdentifier)
-        request.earliestBeginDate = BackgroundRefreshSchedulePlan.earliestBeginDate(from: Date())
+        let request = BGAppRefreshTaskRequest(identifier: BackgroundRefreshSchedulePolicy.taskIdentifier)
+        request.earliestBeginDate = BackgroundRefreshSchedulePolicy.earliestBeginDate(from: Date())
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {

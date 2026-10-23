@@ -21,7 +21,7 @@ enum CloudKitShareRootState {
     case created
 }
 
-enum CloudKitExpectedConfigurationPlan {
+enum CloudKitExpectedConfigurationPolicy {
     static var containerEnvironment: String {
         #if DEBUG
         "Development"
@@ -31,7 +31,7 @@ enum CloudKitExpectedConfigurationPlan {
     }
 }
 
-enum CloudKitSharePermissionPlan {
+enum CloudKitSharePermissionPolicy {
     static let linkInvitationPublicPermission: CKShare.ParticipantPermission = .readWrite
     static let controllerAvailablePermissions: UICloudSharingController.PermissionOptions = [
         .allowPrivate,
@@ -49,7 +49,7 @@ enum CloudKitSharePermissionPlan {
     }
 }
 
-enum CloudKitShareHierarchyPlan {
+enum CloudKitShareHierarchyPolicy {
     static func rootRecordID(zoneID: CKRecordZone.ID) -> CKRecord.ID {
         CKRecord.ID(recordName: CloudKitCoupleSpaceService.rootRecordName, zoneID: zoneID)
     }
@@ -60,7 +60,7 @@ enum CloudKitShareHierarchyPlan {
     }
 }
 
-enum CloudKitShareRootMetadataPlan {
+enum CloudKitShareRootMetadataPolicy {
     static let ownerMemberIDKey = "ownerMemberID"
 
     /// Writes the owner ID only when the root doesn't already carry it. Returns whether
@@ -75,7 +75,7 @@ enum CloudKitShareRootMetadataPlan {
     }
 }
 
-enum CloudKitSharedDatabaseImportPlan {
+enum CloudKitSharedDatabaseImportPolicy {
     static func coupleSpaceZoneIDs(from zones: [CKRecordZone], expectedZoneName: String) -> [CKRecordZone.ID] {
         zones
             .map(\.zoneID)
@@ -122,7 +122,7 @@ enum CloudKitInvitationWriteDestination: Equatable {
     case acceptedSharedZone
 }
 
-enum CloudKitCommentWritePlan {
+enum CloudKitCommentWritePolicy {
     static func destination(
         eventOwnerMemberID: String,
         currentMemberID: String
@@ -131,7 +131,7 @@ enum CloudKitCommentWritePlan {
     }
 }
 
-enum CloudKitInvitationWritePlan {
+enum CloudKitInvitationWritePolicy {
     static func destination(
         creatorMemberID: String,
         currentMemberID: String
@@ -145,7 +145,7 @@ enum CloudKitAccessRequestWriteDestination: Equatable {
     case acceptedSharedZone
 }
 
-enum CloudKitAccessRequestWritePlan {
+enum CloudKitAccessRequestWritePolicy {
     static func destination(
         for request: CalendarAccessRequest,
         currentMemberID: String
@@ -166,7 +166,7 @@ enum CloudKitAccessRequestWritePlan {
     }
 }
 
-enum CloudKitAccessRequestSharedZonePlan {
+enum CloudKitAccessRequestSharedZonePolicy {
     static func targetZoneID(
         ownerMemberID: String,
         acceptedSharedZoneIDs: [CKRecordZone.ID]
@@ -182,7 +182,7 @@ enum CloudKitAccessRequestSharedZonePlan {
     }
 }
 
-enum CloudKitStopSharingPlan {
+enum CloudKitStopSharingPolicy {
     static func shareRecordIDToDelete(from rootRecord: CKRecord) -> CKRecord.ID? {
         rootRecord.share?.recordID
     }
@@ -194,7 +194,7 @@ struct CloudKitShareParticipantIdentity: Equatable {
     let identifier: String?
 }
 
-enum CloudKitShareParticipantIdentityPlan {
+enum CloudKitShareParticipantIdentityPolicy {
     static func acceptedParticipantIDs(from share: CKShare) -> [String] {
         acceptedParticipantIDs(
             from: share.participants.map { participant in
@@ -220,18 +220,18 @@ enum CloudKitShareParticipantIdentityPlan {
         // Only the CloudKit user record name is comparable with shared-zone
         // owner names; the contact fallbacks just keep pairing status visible
         // when CloudKit withholds it.
-        if let userRecordName = MemberIDPlan.normalized(userIdentity.userRecordID?.recordName) {
+        if let userRecordName = MemberIDPolicy.normalized(userIdentity.userRecordID?.recordName) {
             return userRecordName
         }
-        if let emailAddress = MemberIDPlan.normalized(userIdentity.lookupInfo?.emailAddress) {
+        if let emailAddress = MemberIDPolicy.normalized(userIdentity.lookupInfo?.emailAddress) {
             return emailAddress
         }
-        if let phoneNumber = MemberIDPlan.normalized(userIdentity.lookupInfo?.phoneNumber) {
+        if let phoneNumber = MemberIDPolicy.normalized(userIdentity.lookupInfo?.phoneNumber) {
             return phoneNumber
         }
         if let nameComponents = userIdentity.nameComponents {
             let name = PersonNameComponentsFormatter.localizedString(from: nameComponents, style: .medium)
-            return MemberIDPlan.normalized(name)
+            return MemberIDPolicy.normalized(name)
         }
         return nil
     }
@@ -309,15 +309,15 @@ enum CloudKitSharingFailureMessage {
 /// request stored in my zone was exchanged with that partner, and every comment there
 /// not written by me is theirs; none of it may ride along into the next CKShare.
 /// My own comments on my own events stay: they are mine.
-enum CloudKitExPartnerCleanupPlan {
+enum CloudKitExPartnerCleanupPolicy {
     static func recordIDsToDelete(
         commentRecords: [CKRecord],
         invitationRecords: [CKRecord],
         currentMemberID: String
     ) -> [CKRecord.ID] {
-        let me = MemberIDPlan.normalized(currentMemberID)
+        let me = MemberIDPolicy.normalized(currentMemberID)
         let foreignComments = commentRecords.filter { record in
-            MemberIDPlan.normalized(record[CommentRecordMapper.Key.authorMemberID] as? String) != me
+            MemberIDPolicy.normalized(record[CommentRecordMapper.Key.authorMemberID] as? String) != me
         }
         return (foreignComments + invitationRecords).map(\.recordID)
     }

@@ -419,7 +419,7 @@ log "Partner sees the withdrawn invitation as canceled ✓"
 # survives in CloudKit. This proves the 「发现旧的 iCloud 数据 → 继续使用」 path (run through
 # its diagnostic twin) restores the pairing, the nickname and the imported data on a truly
 # fresh install, and that an event deleted WHILE the app was gone is tombstoned for the
-# partner (OwnMirrorReconciliationPlan) instead of living on as a ghost.
+# partner (OwnMirrorReconciliationPolicy) instead of living on as a ghost.
 log "Owner: syncing once so the next launch's automatic sync is throttled..."
 launch_app "$OWNER_UDID" "owner-presync" -ShareCalForceSync
 wait_for_console "$CONSOLE_LOG" "foregroundSync finished" $SYNC_TIMEOUT "owner pre-delete sync"

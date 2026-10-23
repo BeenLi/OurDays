@@ -126,48 +126,54 @@ Debug 配置带 `LOCAL_SIGNING` 编译条件，CloudKit 整体关闭（`AppServi
 
 ### 代码结构
 
-`CoupleCalendar/` 下没有第三方依赖，依赖方向固定为 **Views → Services/Stores → Policies → Models**，Policies 从不反向引用服务或存储（2026-10 重构后文件级反向依赖为 0）：
+`CoupleCalendar/` 下没有第三方依赖，按分层分目录，依赖方向固定为 **Views → Services → Policies → Models**，Policies 从不反向引用服务或存储（2026-10 重构后文件级反向依赖为 0）：
 
 ```text
 OurDays/
-├── CoupleCalendar/
-│   ├── CoupleCalendarApp.swift        @main、AppDelegate：BGTask 注册、静默推送入口、通知授权
-│   ├── RootView.swift                 四 Tab 容器、sheet/alert 路由、配对冲突与已有 iCloud 数据弹窗
-│   ├── Views/                         SwiftUI 界面，一屏一文件（仅 App target）
-│   │   ├── CalendarTabView.swift      日历 Tab：日/周切换、双列时间轴容器
-│   │   ├── DayTimeline/               对齐的双列日视图：Lane（单列）、Chrome（时间轴/当前时刻线）
-│   │   ├── WeekAgendaView.swift       周议程
-│   │   ├── EventDetail/               日程详情 + 评论区
-│   │   ├── ActivityTabView.swift      动态 Tab
-│   │   ├── InvitesTabView.swift       邀请 Tab（邀请 + 历史申请）
-│   │   ├── CreateInviteView.swift     发起邀请
-│   │   ├── Settings/                  我们 Tab：SettingsTabView、PairingStatusCard、AvatarEditorSheet、HistoryRequestSheet
-│   │   ├── OnboardingSheets.swift     首次启动引导、配对安全说明
-│   │   ├── HierarchicalDatePickerSheet.swift  年/月/日层级选日期
-│   │   ├── DesignSystem.swift         OurDaysTheme、卡片/按钮样式、头像视图
-│   │   └── CloudSharingController.swift   UICloudSharingController 封装
-│   ├── Policies/                      "Policy" = 只做决定、不动手：无状态 enum + 纯 static 函数，输入值、输出"该怎么办"，不碰 I/O；服务层按它的答案执行
-│   │   ├── PairingPolicies.swift         TwoPersonPairingPolicy、ShareAcceptanceGuardPolicy、ExistingICloudDataRecoveryPolicy（重装恢复）、PartnerScopedDataPolicy（前任数据过滤）
-│   │   ├── SyncPolicies.swift            ForegroundSyncPolicy（节流）、CloudKitMirrorSyncPolicy（哪些 mirror 要上传）、OwnMirrorReconciliationPolicy（重装补墓碑）、BackgroundRefreshSchedulePolicy
-│   │   ├── CloudKitPolicies.swift        写入去向、共享层级、根记录元数据、导入过滤、停止共享、解除配对时清理前任记录
+├── CoupleCalendar/                按分层分目录，依赖只能向下：App → Views → Services → Policies → Models
+│   ├── App/                       入口与进程级对象
+│   │   ├── CoupleCalendarApp.swift        @main、AppDelegate：BGTask 注册、静默推送入口、通知授权
+│   │   ├── ShareCalSceneDelegate.swift    场景代理、CKShare 接受处理、更换配对确认
+│   │   ├── AppServices.swift              服务容器
+│   │   └── Info.plist、*.entitlements     Debug/Local/Production 三套 entitlements
+│   ├── Models/
+│   │   └── Models.swift                   SwiftData 模型（EventMirror、LocalEventShadow、EventInvitation、EventComment、CalendarAccessRequest、MemberProfile）与本地清理
+│   ├── Policies/                  "Policy" = 只做决定、不动手：无状态 enum + 纯 static 函数，输入值、输出"该怎么办"，不碰 I/O；服务层按它的答案执行
+│   │   ├── PairingPolicies.swift          TwoPersonPairingPolicy、ShareAcceptanceGuardPolicy、ExistingICloudDataRecoveryPolicy（重装恢复）、PartnerScopedDataPolicy（前任数据过滤）
+│   │   ├── SyncPolicies.swift             ForegroundSyncPolicy（节流）、CloudKitMirrorSyncPolicy（哪些 mirror 要上传）、OwnMirrorReconciliationPolicy（重装补墓碑）、BackgroundRefreshSchedulePolicy
+│   │   ├── CloudKitPolicies.swift         写入去向、共享层级、根记录元数据、导入过滤、停止共享、解除配对时清理前任记录
 │   │   ├── InvitationAndAccessRequestPolicies.swift  邀请时效/撤销/合并/重传、历史申请、配对日、共享时间窗
-│   │   ├── CommentPolicies.swift         评论线程锚点（mirrorKey / 邀请 id）、详情页是否可评论、红点
+│   │   ├── CommentPolicies.swift          评论线程锚点（mirrorKey / 邀请 id）、详情页是否可评论、红点
 │   │   ├── ActivityAndNotificationPolicies.swift     动态流聚合、LocalNotificationPolicy（四类通知）
-│   │   ├── CalendarSourcePolicies.swift  EventKit 授权状态、EventMirrorKeyPolicy、日历选择
-│   │   ├── CalendarDisplayPolicies.swift 时间文案、DateFormatterCache、CalendarDisplayMirrorPolicy（自己日程的即时展示）
+│   │   ├── CalendarSourcePolicies.swift   EventKit 授权状态、EventMirrorKeyPolicy、日历选择
+│   │   ├── CalendarDisplayPolicies.swift  时间文案、DateFormatterCache、CalendarDisplayMirrorPolicy（自己日程的即时展示）
 │   │   ├── CalendarNavigationPolicies.swift / DayTimelinePolicies.swift / AgendaPolicies.swift  日期导航、双列布局、共同日程、周议程
-│   │   └── MemberIdentityPolicies.swift  MemberIDPolicy 归一化、头像与显示名
-│   ├── SettingsStore.swift            UserDefaults 持久化的设置与配对状态（@Observable）
-│   ├── SyncCoordinator.swift          foregroundSync：唯一的同步管线；ShareCalBackgroundSyncRunner（推送 / BGAppRefresh 入口）；通知调度
-│   ├── AppServices.swift              服务容器
-│   ├── CloudKitCoupleSpaceService.swift   全部 CloudKit I/O：zone / root / share / 订阅 / 查询 / 写入
-│   ├── CloudKitRecordMappers.swift    CKRecord ↔ 模型 的纯映射（只写变化字段）、批量 upsert 与查询计划
-│   ├── ShareCalSceneDelegate.swift    场景代理、CKShare 接受处理、更换配对确认
-│   ├── CalendarAccessService.swift    EventKit 访问
-│   ├── EventServices.swift            EventMirrorService / InvitationService / CommentService：生成与变更，不含决策
-│   ├── Models.swift                   SwiftData 模型（EventMirror、LocalEventShadow、EventInvitation、EventComment、CalendarAccessRequest、MemberProfile）与本地清理
-│   ├── ShareCalStrings.swift          手写中英文案
-│   └── Diagnostics/                   仅由启动参数驱动的探针与冒烟工具，正常运行不使用
+│   │   └── MemberIdentityPolicies.swift   MemberIDPolicy 归一化、头像与显示名
+│   ├── Services/                  动手的一层：I/O、持久化、同步管线；决策都问 Policies
+│   │   ├── SyncCoordinator.swift          foregroundSync：唯一的同步管线；ShareCalBackgroundSyncRunner（推送 / BGAppRefresh 入口）；通知调度
+│   │   ├── CloudKitCoupleSpaceService.swift   全部 CloudKit I/O：zone / root / share / 订阅 / 查询 / 写入
+│   │   ├── CloudKitRecordMappers.swift    CKRecord ↔ 模型 的纯映射（只写变化字段）、批量 upsert 与查询策略
+│   │   ├── CalendarAccessService.swift    EventKit 访问
+│   │   ├── EventServices.swift            EventMirrorService / InvitationService / CommentService：生成与变更，不含决策
+│   │   └── SettingsStore.swift            UserDefaults 持久化的设置与配对状态（@Observable）
+│   ├── Views/                     SwiftUI 界面，一屏一文件（仅 App target）
+│   │   ├── RootView.swift                 四 Tab 容器、sheet/alert 路由、配对冲突与已有 iCloud 数据弹窗
+│   │   ├── CalendarTabView.swift          日历 Tab：日/周切换、双列时间轴容器
+│   │   ├── DayTimeline/                   对齐的双列日视图：Lane（单列）、Chrome（时间轴/当前时刻线）
+│   │   ├── WeekAgendaView.swift           周议程
+│   │   ├── EventDetail/                   日程详情 + 评论区
+│   │   ├── ActivityTabView.swift          动态 Tab
+│   │   ├── InvitesTabView.swift           邀请 Tab（邀请 + 历史申请）
+│   │   ├── CreateInviteView.swift         发起邀请
+│   │   ├── Settings/                      我们 Tab：SettingsTabView、PairingStatusCard、AvatarEditorSheet、HistoryRequestSheet
+│   │   ├── OnboardingSheets.swift         首次启动引导、配对安全说明
+│   │   ├── HierarchicalDatePickerSheet.swift  年/月/日层级选日期
+│   │   ├── DesignSystem.swift             OurDaysTheme、卡片/按钮样式、头像视图
+│   │   └── CloudSharingController.swift   UICloudSharingController 封装
+│   ├── Diagnostics/               仅由启动参数驱动的探针与冒烟工具，正常运行不使用
+│   └── Resources/
+│       ├── Assets.xcassets                图标、颜色
+│       └── ShareCalStrings.swift          手写中英文案
 ├── CoupleCalendarTests/           XCTest，一个领域一个文件，直接编译非 UI 源码（无 @testable import）
 │                                  PairingTests / CloudKitTests / SyncTests / CalendarMirrorTests /
 │                                  InvitationAndAccessRequestTests / CommentTests /

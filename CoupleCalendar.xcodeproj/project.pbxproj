@@ -203,26 +203,13 @@
 		11A000220000000000000001 /* CoupleCalendar */ = {
 			isa = PBXGroup;
 			children = (
-				11B5450727913DFDBA049A83 /* Diagnostics */,
-				11B276FF0E19D22E500E7DAC /* SyncCoordinator.swift */,
-				11B21571EFF6DB73CEAAB6D5 /* SettingsStore.swift */,
-				11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */,
+				11C000010000000000000001 /* App */,
+				11C000020000000000000001 /* Models */,
 				11B499213B48EF2BC030CD31 /* Policies */,
-				11BFDB621FAA860BAFF077AB /* CloudKitRecordMappers.swift */,
-				11B762A754D40721B13B3DD2 /* ShareCalStrings.swift */,
+				11C000030000000000000001 /* Services */,
 				11BF340828C6AA81C3844EED /* Views */,
-				11A000020000000000000001 /* CoupleCalendarApp.swift */,
-				11A000520000000000000001 /* RootView.swift */,
-				11A000500000000000000001 /* AppServices.swift */,
-				11A000480000000000000001 /* Models.swift */,
-				11A0004A0000000000000001 /* EventServices.swift */,
-				11A0004E0000000000000001 /* CalendarAccessService.swift */,
-				11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */,
-				11A000160000000000000001 /* Info.plist */,
-				11A000170000000000000001 /* CoupleCalendar.entitlements */,
-				11A000570000000000000001 /* CoupleCalendarLocal.entitlements */,
-				11A000580000000000000001 /* CoupleCalendarProduction.entitlements */,
-				11A000040000000000000001 /* Assets.xcassets */,
+				11B5450727913DFDBA049A83 /* Diagnostics */,
+				11C000040000000000000001 /* Resources */,
 			);
 			path = CoupleCalendar;
 			sourceTree = "<group>";
@@ -264,6 +251,7 @@
 		11BF340828C6AA81C3844EED /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				11A000520000000000000001 /* RootView.swift */,
 				11BF559D75F2160305BCCA94 /* CloudSharingController.swift */,
 				11B609B2901DF1E7CD1180F5 /* WeekAgendaView.swift */,
 				11B10119F8CEB09342887F54 /* Settings */,
@@ -308,6 +296,50 @@
 				11B111CB1F6F19B395D69796 /* AvatarEditorSheet.swift */,
 			);
 			path = Settings;
+			sourceTree = "<group>";
+		};
+		11C000010000000000000001 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				11A000020000000000000001 /* CoupleCalendarApp.swift */,
+				11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */,
+				11A000500000000000000001 /* AppServices.swift */,
+				11A000160000000000000001 /* Info.plist */,
+				11A000170000000000000001 /* CoupleCalendar.entitlements */,
+				11A000570000000000000001 /* CoupleCalendarLocal.entitlements */,
+				11A000580000000000000001 /* CoupleCalendarProduction.entitlements */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		11C000020000000000000001 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				11A000480000000000000001 /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		11C000030000000000000001 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				11B276FF0E19D22E500E7DAC /* SyncCoordinator.swift */,
+				11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */,
+				11BFDB621FAA860BAFF077AB /* CloudKitRecordMappers.swift */,
+				11A0004E0000000000000001 /* CalendarAccessService.swift */,
+				11A0004A0000000000000001 /* EventServices.swift */,
+				11B21571EFF6DB73CEAAB6D5 /* SettingsStore.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		11C000040000000000000001 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				11A000040000000000000001 /* Assets.xcassets */,
+				11B762A754D40721B13B3DD2 /* ShareCalStrings.swift */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		11B499213B48EF2BC030CD31 /* Policies */ = {
@@ -700,14 +732,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = CoupleCalendar/CoupleCalendarLocal.entitlements;
+				CODE_SIGN_ENTITLEMENTS = CoupleCalendar/App/CoupleCalendarLocal.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 3SF92B92JF;
 				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = CoupleCalendar/Info.plist;
+				INFOPLIST_FILE = CoupleCalendar/App/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -730,14 +762,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = CoupleCalendar/CoupleCalendarProduction.entitlements;
+				CODE_SIGN_ENTITLEMENTS = CoupleCalendar/App/CoupleCalendarProduction.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 3SF92B92JF;
 				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = CoupleCalendar/Info.plist;
+				INFOPLIST_FILE = CoupleCalendar/App/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

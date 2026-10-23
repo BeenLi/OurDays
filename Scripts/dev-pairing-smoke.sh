@@ -150,7 +150,7 @@ if [ "${1:-}" != "--skip-build" ]; then
   xcodebuild -project "$ROOT_DIR/CoupleCalendar.xcodeproj" -scheme CoupleCalendar \
     -configuration Debug -destination "platform=iOS Simulator,id=$OWNER_UDID" \
     -derivedDataPath "$DERIVED" \
-    CODE_SIGN_ENTITLEMENTS=CoupleCalendar/CoupleCalendar.entitlements \
+    CODE_SIGN_ENTITLEMENTS=CoupleCalendar/App/CoupleCalendar.entitlements \
     "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
     build -quiet
 fi
@@ -281,7 +281,7 @@ TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
   -derivedDataPath "$DERIVED" \
   -resultBundlePath "$UI_RESULT" \
   -only-testing:CoupleCalendarUITests/CoupleCalendarUITests/testPairedPartnerCalendarShowsOwnerEvent \
-  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/CoupleCalendar.entitlements \
+  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/App/CoupleCalendar.entitlements \
   "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
   -quiet || fail "partner calendar UI did not render the owner's synced event (see $UI_RESULT)"
 log "Partner calendar UI rendered the owner's synced event (screenshot in $UI_RESULT)."
@@ -379,7 +379,7 @@ TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
   -derivedDataPath "$DERIVED" \
   -resultBundlePath "$JOINT_UI_RESULT" \
   -only-testing:CoupleCalendarUITests/CoupleCalendarUITests/testPairedPartnerCanOpenJointEventCommentThread \
-  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/CoupleCalendar.entitlements \
+  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/App/CoupleCalendar.entitlements \
   "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
   -quiet || fail "partner could not open the joint event's comment thread from the UI (see $JOINT_UI_RESULT)"
 log "Partner opened the joint event comment thread from the UI (screenshot in $JOINT_UI_RESULT)."

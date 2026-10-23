@@ -359,7 +359,14 @@ struct SyncCoordinator {
                 async let invitationsTask = cloudKit.fetchEventInvitations(sharedZoneIDs: activeSharedZoneIDs)
                 async let memberProfilesTask = cloudKit.fetchMemberProfiles(sharedZoneIDs: activeSharedZoneIDs)
 
-                let cloudAccessRequests = try await accessRequestsTask
+                // Import only what belongs to this pairing: a record whose other party is
+                // neither me nor the resolved partner is an ex-partner's leftover.
+                let fetchedAccessRequests = try await accessRequestsTask
+                let cloudAccessRequests = PartnerScopedDataPlan.scoped(
+                    fetchedAccessRequests,
+                    currentMemberID: settings.currentMemberID,
+                    partnerID: resolution.partnerID
+                )
                 try upsert(accessRequests: cloudAccessRequests, modelContext: modelContext)
                 timing.mark("cloudAccessRequestsFetched count=\(cloudAccessRequests.count)")
                 let previousPartnerShareOwnerID = settings.partnerShareOwnerID
@@ -396,12 +403,27 @@ struct SyncCoordinator {
                     )
                 }
                 try upsert(mirrors: importableSharedMirrors, modelContext: modelContext)
-                let cloudComments = try await commentsTask
+                let fetchedComments = try await commentsTask
+                let cloudComments = PartnerScopedDataPlan.scoped(
+                    fetchedComments,
+                    currentMemberID: settings.currentMemberID,
+                    partnerID: resolution.partnerID
+                )
                 try upsert(comments: cloudComments, modelContext: modelContext)
                 timing.mark("cloudCommentsFetched count=\(cloudComments.count)")
-                let cloudInvitations = try await invitationsTask
+                let fetchedInvitations = try await invitationsTask
+                let cloudInvitations = PartnerScopedDataPlan.scoped(
+                    fetchedInvitations,
+                    currentMemberID: settings.currentMemberID,
+                    partnerID: resolution.partnerID
+                )
                 try upsert(invitations: cloudInvitations, modelContext: modelContext)
                 timing.mark("cloudInvitationsFetched count=\(cloudInvitations.count)")
+                try ShareCalLocalDataCleanupService.purgeForeignPartnerData(
+                    currentMemberID: settings.currentMemberID,
+                    partnerID: resolution.partnerID,
+                    modelContext: modelContext
+                )
 
                 // Reliability for terminal decisions made in a tab (fire-and-forget
                 // upload): re-upload any local decision the just-fetched server copy

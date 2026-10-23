@@ -499,6 +499,41 @@ final class ExistingICloudDataRecoveredStateTests: XCTestCase {
     }
 }
 
+final class PartnerScopedDataPlanTests: XCTestCase {
+    func testOnlyARealUserRecordIDOutsideThePairIsForeign() {
+        XCTAssertTrue(PartnerScopedDataPlan.isForeign("_ex", currentMemberID: "_me", partnerID: "_partner"))
+        XCTAssertFalse(PartnerScopedDataPlan.isForeign("_me", currentMemberID: "_me", partnerID: "_partner"))
+        XCTAssertFalse(PartnerScopedDataPlan.isForeign(" _partner ", currentMemberID: "_me", partnerID: "_partner"))
+        XCTAssertFalse(PartnerScopedDataPlan.isForeign(MemberIDPlan.unknownPartnerID, currentMemberID: "_me", partnerID: nil))
+        XCTAssertFalse(PartnerScopedDataPlan.isForeign(MemberIDPlan.unsyncedMemberID, currentMemberID: "_me", partnerID: nil))
+        XCTAssertFalse(PartnerScopedDataPlan.isForeign("", currentMemberID: "_me", partnerID: nil))
+    }
+
+    func testWithoutAPartnerOnlyMyOwnRecordsPass() {
+        XCTAssertTrue(PartnerScopedDataPlan.isForeign("_old", currentMemberID: "_me", partnerID: nil))
+        XCTAssertFalse(PartnerScopedDataPlan.isForeign("_me", currentMemberID: "_me", partnerID: nil))
+    }
+
+    func testScopesCommentsInvitationsAndRequestsByEitherParty() {
+        let comments = [
+            EventComment(eventMirrorID: "e", authorMemberID: "_partner", body: "partner"),
+            EventComment(eventMirrorID: "e", authorMemberID: "_ex", body: "ex")
+        ]
+        let invitations = [
+            EventInvitation(creatorMemberID: "_me", inviteeMemberID: "_ex", title: "to ex", startDate: .distantPast, endDate: .distantFuture, location: nil, notes: nil),
+            EventInvitation(creatorMemberID: "_partner", inviteeMemberID: "_me", title: "from partner", startDate: .distantPast, endDate: .distantFuture, location: nil, notes: nil)
+        ]
+        let requests = [
+            CalendarAccessRequest(requesterMemberID: "_me", ownerMemberID: "_ex", requestedStartDate: .distantPast, requestedEndDate: .distantFuture),
+            CalendarAccessRequest(requesterMemberID: "_me", ownerMemberID: "_partner", requestedStartDate: .distantPast, requestedEndDate: .distantFuture)
+        ]
+
+        XCTAssertEqual(PartnerScopedDataPlan.scoped(comments, currentMemberID: "_me", partnerID: "_partner").map(\.body), ["partner"])
+        XCTAssertEqual(PartnerScopedDataPlan.scoped(invitations, currentMemberID: "_me", partnerID: "_partner").map(\.title), ["from partner"])
+        XCTAssertEqual(PartnerScopedDataPlan.scoped(requests, currentMemberID: "_me", partnerID: "_partner").map(\.ownerMemberID), ["_partner"])
+    }
+}
+
 final class PairingSafetyEducationPlanTests: XCTestCase {
     func testShowsOneTimePairingSafetyNoticeAfterNicknameAndPartnerNoteFlow() {
         XCTAssertTrue(

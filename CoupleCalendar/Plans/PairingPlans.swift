@@ -321,3 +321,50 @@ enum ShareAcceptanceGuardPlan {
         return !outgoingIDs.isEmpty && !outgoingIDs.contains(incomingOwnerID)
     }
 }
+
+/// Keeps a two-person space two-person across a partner change. Every record in my
+/// private zone hangs off the one share root, so the CKShare created for a new partner
+/// exposes everything the previous partner left there (their comments on my events, the
+/// invitations and history requests we exchanged). The UI renders every member ID that
+/// is not mine as "the partner", so on the new partner's device the old partner's words
+/// would read as mine, and my old pending invitations would be answerable by them.
+/// Two layers: delete the ex-partner's records from my zone when the partner leaves
+/// (`CloudKitExPartnerCleanupPlan`), and never import or keep a record whose other
+/// party is neither me nor the current partner.
+enum PartnerScopedDataPlan {
+    /// Only a real CloudKit userRecordID (`_`-prefixed) can be "someone else". The
+    /// placeholders used before identities are known ("local-user", "partner") name
+    /// nobody and are never treated as foreign.
+    static func isForeign(_ memberID: String, currentMemberID: String, partnerID: String?) -> Bool {
+        guard let id = MemberIDPlan.normalized(memberID), id.hasPrefix("_") else { return false }
+        if id == MemberIDPlan.normalized(currentMemberID) { return false }
+        if let partnerID = MemberIDPlan.normalized(partnerID), id == partnerID { return false }
+        return true
+    }
+
+    static func isForeign(_ comment: EventComment, currentMemberID: String, partnerID: String?) -> Bool {
+        isForeign(comment.authorMemberID, currentMemberID: currentMemberID, partnerID: partnerID)
+    }
+
+    static func isForeign(_ invitation: EventInvitation, currentMemberID: String, partnerID: String?) -> Bool {
+        isForeign(invitation.creatorMemberID, currentMemberID: currentMemberID, partnerID: partnerID)
+            || isForeign(invitation.inviteeMemberID, currentMemberID: currentMemberID, partnerID: partnerID)
+    }
+
+    static func isForeign(_ request: CalendarAccessRequest, currentMemberID: String, partnerID: String?) -> Bool {
+        isForeign(request.requesterMemberID, currentMemberID: currentMemberID, partnerID: partnerID)
+            || isForeign(request.ownerMemberID, currentMemberID: currentMemberID, partnerID: partnerID)
+    }
+
+    static func scoped(_ comments: [EventComment], currentMemberID: String, partnerID: String?) -> [EventComment] {
+        comments.filter { !isForeign($0, currentMemberID: currentMemberID, partnerID: partnerID) }
+    }
+
+    static func scoped(_ invitations: [EventInvitation], currentMemberID: String, partnerID: String?) -> [EventInvitation] {
+        invitations.filter { !isForeign($0, currentMemberID: currentMemberID, partnerID: partnerID) }
+    }
+
+    static func scoped(_ requests: [CalendarAccessRequest], currentMemberID: String, partnerID: String?) -> [CalendarAccessRequest] {
+        requests.filter { !isForeign($0, currentMemberID: currentMemberID, partnerID: partnerID) }
+    }
+}

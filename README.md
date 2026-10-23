@@ -11,13 +11,14 @@ OurDays（原名 ShareCal）是一款**严格两人配对**的情侣共享日历
 
 ## 功能特性
 
-- **两人配对**：通过 iCloud 共享链接配对，双向各建一条 CKShare。配对后若有第三人经旧链接加入、或收到陌生人的分享，App 不会悄悄踢人，而是弹出"配对冲突 / 更换配对"让你二选一；多余的历史共享 zone 自动退出。
+- **两人配对**：通过 iCloud 共享链接配对，双向各建一条 CKShare。配对后若有第三人经旧链接加入、或收到陌生人的分享，App 不会悄悄踢人，而是弹出"配对冲突 / 更换配对"让你二选一；多余的历史共享 zone 自动退出。**解除配对**会删掉我的 CKShare，并把前任留在我 zone 里的评论、邀请和历史申请一并清掉，不会带进下一段配对。
 - **日程同步**：从系统日历（EventKit）镜像所选日历的日程；每条日程四档可见性（完整详情 / 标题+地点 / 仅忙碌 / 隐藏）。本地日历的增删改在每次同步时自动收敛（删除以墓碑形式传给对方），后台由 iCloud 静默推送 + 后台刷新尽力补同步。
 - **日程邀请**：给对方发日程邀请，对方接受后自动写入其系统日历；状态（待处理 / 已接受 / 已拒绝 / 已取消）双向同步。只能为**尚未结束**的日程发邀请；日程结束仍无人回应的邀请在两端都显示为"已过期"；发起方可随时**撤销**待处理的邀请。
 - **日程评论与动态**：对任意一方的日程留言，支持编辑、删除与已读状态；自己的日程**还没同步也能先发起评论**，对方收到后接续回复。"动态" Tab 按事件聚合双方评论，气泡带各自头像，未读数显示在 Tab 角标。
 - **系统通知**：对方评论我的日程、收到 / 被回应邀请、历史申请及其回复会推送本地通知（仅这四类，纯日历改动不打扰）。
 - **历史日历申请**：默认只共享配对日之后的日程；想看配对前的历史需向对方发起申请，对方批准后按时间窗放行。
 - **昵称与头像**：对方显示为"备注名 > 对方同步的昵称 > 兜底"，头像可选图片或文字+底色并随 iCloud 同步，不展示邮箱等 iCloud 身份信息。"我们"页显示配对第 N 天。
+- **删除重装可恢复**：配对、评论、邀请都在自己的 iCloud 里。重装后首次启动若检测到已有数据，选「继续使用现有 iCloud 数据」即可找回配对日、昵称头像，不用重新配对；App 不在期间删掉的日程也会补发墓碑，对方那边不会残留。
 - **中英双语**：内置中 / 英文案，可在设置中切换。
 
 ## 产品 UI
@@ -49,40 +50,13 @@ App 为四个 Tab 的标准 iOS 结构：
 
 ## 数据同步架构
 
-两人各自拥有一个私有 `CoupleSpace` zone，所有记录挂在 `couple-space-root` 根记录下，由一条 CKShare 整体共享给对方；对方通过共享数据库（sharedCloudDatabase）读取。**zone 的 ownerName 就是数据归属的权威身份**。
+两人各自拥有一个私有 `CoupleSpace` zone，所有记录挂在 `couple-space-root` 根记录下，由一条 CKShare 整体共享给对方；对方通过共享数据库（sharedCloudDatabase）只读。**zone 的 ownerName 就是数据归属的权威身份。**
 
-```mermaid
-flowchart LR
-    subgraph DeviceA["📱 A 的设备"]
-        EKA["系统日历<br/>(EventKit)"] -->|"镜像生成 EventMirror"| SyncA["SyncCoordinator<br/>foregroundSync"]
-        SyncA <--> SDA[("SwiftData<br/>本地缓存")]
-        UIA["SwiftUI 四 Tab"] --- SDA
-    end
+![OurDays 数据同步架构：两个私有 zone，各自一条 CKShare，互相只读](docs/diagrams/sync-architecture.png)
 
-    subgraph iCloud["☁️ iCloud (CloudKit)"]
-        subgraph PrivA["A 的私有数据库 · CoupleSpace zone (owner = A 的 userRecordID)"]
-            RootA["couple-space-root"] --- RecA["EventMirror / EventInvitation<br/>EventComment / MemberProfile<br/>历史申请(以 Invitation 传输)"]
-            ShareA{{"CKShare<br/>(链接邀请)"}}
-        end
-        subgraph PrivB["B 的私有数据库 · CoupleSpace zone (owner = B 的 userRecordID)"]
-            RootB["couple-space-root"] --- RecB["EventMirror / EventInvitation<br/>EventComment / MemberProfile / ..."]
-            ShareB{{"CKShare"}}
-        end
-    end
-
-    subgraph DeviceB["📱 B 的设备"]
-        EKB["系统日历<br/>(EventKit)"] -->|镜像生成| SyncB["SyncCoordinator"]
-        SyncB <--> SDB[("SwiftData<br/>本地缓存")]
-        UIB["SwiftUI 四 Tab"] --- SDB
-    end
-
-    SyncA -->|"写入自己的日程/邀请/资料"| PrivA
-    SyncB -->|写入| PrivB
-    ShareA -.->|"B 接受分享后<br/>经共享数据库读取 A 的 zone"| SyncB
-    ShareB -.->|"A 经共享数据库读取 B 的 zone"| SyncA
-    SyncA -->|"对 B 日程的评论/邀请回应<br/>写入 B 的共享 zone"| PrivB
-    SyncB -->|"对 A 日程的评论/回应写入 A 的 zone"| PrivA
-```
+- **写入路径规则**：自己的数据写自己的私有 zone；针对对方数据的回应（评论、邀请状态、申请批复）写进对方的共享 zone。
+- **镜像是派生数据**：自己的 EventMirror 每次同步都从 EventKit 重建，SwiftData 只是缓存。
+- **mirrorKey 是跨设备的稳定锚点**：`日历ID:事件ID:发生时刻` 同时是 SwiftData 的 id、CloudKit 的 recordName 和评论线程的键，两端生成规则相同，所以还没同步的日程也能先被评论。
 
 ### 记录类型
 
@@ -99,95 +73,36 @@ CloudKit 里只有 6 种记录类型（schema 见 [`CloudKit/ShareCalSchema.ckdb
 
 本地 SwiftData 还有一个不上云的 `LocalEventShadow`：记录每条本地日程上次成功上传时的指纹与 `lastUploadedAt`，是"只上传有变化的 mirror"和"检测本地删除"的依据。
 
+### 数据安全
+
+**数据在哪里？** 只在两个地方：你自己 iCloud 私有数据库里的 `CoupleSpace` zone（上面那张表的全部记录），以及手机上的 SwiftData 缓存 + UserDefaults 设置。没有任何服务器经手，开发者也看不到任何人的数据。系统日历本身不被修改，App 只读取所选日历；唯一的写入是把你接受的邀请创建成日程。对方能看到的，只有你的 CKShare 共享给他的那一个 zone，而且是只读。
+
+**App 升级后数据还在吗？** 在。升级不动 iCloud，本地缓存走 SwiftData 轻量迁移，配对状态保存在 UserDefaults 里；就算缓存损坏，下次同步也会从 EventKit 和对方的 zone 重建出来。CloudKit schema 在发版前部署到 Production，新字段对旧版本只是"看不见"，不会互相破坏。
+
+**解除配对后数据有什么变化？** 「我们」页的解除配对按顺序做三件事：删除我的 CKShare（对方立刻失去读我 zone 的权限）；从我的私有 zone 删掉所有**不是我写的评论**以及**全部**邀请和历史申请记录（两人空间里这些必然与前任有关，我写在自己日程上的评论保留）；清掉本地缓存里对方的镜像、评论、邀请和配对状态。对方那一侧的 share 不动，由对方自己解除。之所以要删 zone 里的记录，是因为下一条 CKShare 会把整个 zone 原样共享给下一个人；即使这一步失败（比如离线），同步导入时的 `PartnerScopedDataPlan` 仍会把"另一方既不是我也不是当前对方"的记录挡在外面，双保险。配对冲突里选择"换成新来的人"走同一条清理路径。
+
+**删除 App 后数据有什么变化？** 手机上的缓存和设置随 App 一起没了，iCloud 里的 zone、share 和对方的 share 都还在。重装后首次启动，App 探测到这个 Apple ID 下已有数据，会弹「继续使用现有 iCloud 数据」或「删除」二选一，在你决定前不自动同步。选继续：从根记录的创建时间恢复配对日，从自己的 `MemberProfile` 恢复昵称与头像，配对不需要重做；第一次同步会用云端自己的镜像做一遍删除比对，把 App 不在期间从系统日历删掉的日程补上墓碑，对方不会一直看到幽灵日程（`OwnMirrorReconciliationPlan`）。真正的全清是「删除我的 iCloud 数据」：删我的 share、删整个私有 zone、退出对方的 share、清本地，系统日历不受影响。
+
 ### 一次同步做了什么
 
-整个 App 只有一条同步管线 `SyncCoordinator.foregroundSync`，不论前台还是后台触发都走同一段代码，全程在 main actor 上串行，天然互斥：
+整个 App 只有一条同步管线 `SyncCoordinator.foregroundSync`，前台和后台触发走同一段代码，全程在 main actor 上串行。顺序是刻意的：本机能算的先算完，**先裁决配对再碰云**，有冲突时一个字节也不上传、不导入，避免把新数据泄露给即将被拒绝的人。
 
-1. **身份**：首次需要 CloudKit 时取 `userRecordID` 作为自己的成员 ID；若取不到（未登录 iCloud），本次只做本地部分。
-2. **重建自己的镜像**：按"共享时间窗"（配对日起 + 已批准的历史时间窗）从 EventKit 读所选日历，重新生成全部 `EventMirror`。镜像是派生数据，每次都从源重建，不做增量 diff。
-3. **算出删除**：与 `LocalEventShadow` 和上次的本地 mirror 对比，消失的日程生成带 `deletedAt` 的墓碑；移出时间窗的日程做硬删除。
-4. **写本地缓存**：mirror、shadow 先落 SwiftData，UI 立刻可用；接受过但本地日程已被用户删掉的邀请标为已取消。
-5. **先裁决配对再碰云**：并行取"我的 share 有哪些参与者"和"我接受了谁的 zone"，交给 `TwoPersonPairingPlan.resolve`。有冲突（陌生人加入、多条 share）就停在这里弹窗，**一个字节也不上传、不导入**，避免把新数据泄露给即将被拒绝的人。
-6. **上传变化**：只上传 shadow 判定有变化的 mirror、墓碑、硬删除、取消的邀请和待发的历史申请；写完才给 shadow 盖 `lastUploadedAt`。根记录和 `MemberProfile` 只在字段真的变了时才保存（见下文"为什么要只写变化"）。
-7. **退出多余 zone**：裁决出的陈旧共享 zone 删掉，并清掉其本地数据。
-8. **并行导入对方 zone**：mirror、评论、邀请、历史申请、资料五路请求同时发（每路都是一次 change token 置空的 `CKFetchRecordZoneChangesOperation`，即按 zone 全量拉取、客户端按记录类型过滤，并只要 `desiredKeys` 里的字段）；导入时记录的 `ownerMemberID` 一律覆盖为 zone 的 ownerName（zone 拥有者才是权威）；对方已删的 mirror 从本地清掉。
-9. **自愈**：Tab 里"接受 / 拒绝 / 批准"是乐观写入、一次性上传，若上次上传失败，这一步把本地已决定但云端还没跟上的状态重传；新建邀请靠 `needsCloudKitUpload` 标志重传。
-10. **通知**：对比上次高水位，只为四类事件（对方评论我的日程、收到邀请、邀请被回应、历史申请及回复）发本地通知，再推进高水位。
+![OurDays 一次同步做了什么：先在本机算清楚，裁决配对，再碰云](docs/diagrams/sync-pipeline.png)
 
-```mermaid
-sequenceDiagram
-    participant A as A 的设备
-    participant CA as A 的私有 zone (iCloud)
-    participant CB as B 的私有 zone (iCloud)
-    participant B as B 的设备
+几处值得知道的细节：
 
-    rect rgb(235, 244, 255)
-    Note over A,B: ① 配对（双向各建一条 CKShare）
-    A->>CA: 创建 CoupleSpace zone + root + CKShare，生成邀请链接
-    A-->>B: 把链接发给对方（iMessage / 微信等）
-    B->>CA: 接受分享 → A 的 zone 出现在 B 的共享数据库
-    Note over B: 记下 partnerID = zone ownerName（A 的 userRecordID）
-    B->>CB: 同样发起分享，A 接受 → 双向建立
-    Note over A,B: 校验：我 share 的参与者 userRecordID == 我接受的 zone ownerName<br/>一致即配对成立；不一致弹"配对冲突"二选一；多余 zone 自动退出
-    end
-
-    rect rgb(235, 255, 240)
-    Note over A,B: ② 日程同步
-    A->>A: 从 EventKit 重新生成所选日历的 EventMirror（含删除墓碑）
-    A->>CA: 仅上传 shadow 判定有变化的 mirror
-    CA-->>B: 静默推送（B 订阅了共享数据库）→ 后台拉取
-    B->>CA: 从共享数据库拉取 A 的 mirror → 存入本地 SwiftData → 显示在"对方"列
-    end
-
-    rect rgb(255, 248, 235)
-    Note over A,B: ③ 日程邀请（只对未结束的日程）
-    A->>CA: 创建 EventInvitation（写入自己的 zone）
-    B->>CA: 读到邀请 → 接受/拒绝，状态写回 A 的共享 zone
-    B->>B: 接受后在自己的系统日历创建该日程
-    Note over A,B: A 可撤销待处理邀请（状态置为已取消）；<br/>日程结束仍未回应的两端显示为"已过期"
-    end
-
-    rect rgb(250, 240, 255)
-    Note over A,B: ④ 评论 / 历史申请（写入路径规则相同）
-    A->>CA: 评论自己的日程 → 写自己的 zone（以 mirrorKey 为线程键，未同步也能发）
-    A->>CB: 评论 B 的日程 → 写 B 的共享 zone
-    Note over A,B: 历史日历申请以带 history-access-request 前缀的<br/>EventInvitation 记录传输，批准后扩大共享时间窗
-    end
-```
+- 第 03 步的"删除"来自 `LocalEventShadow`：它记着每条本地日程上次成功上传时的指纹，消失的日程生成带 `deletedAt` 的墓碑，移出共享时间窗的做硬删除。
+- 第 05 步只上传 shadow 判定有变化的 mirror；根记录和 `MemberProfile` 只在字段真的变了时才保存。CloudKit 的记录只要 `save` 就会触发对方的订阅推送，哪怕没改字段，所以"每次都保存"会让两台手机互相唤醒、耗尽静默推送预算。
+- 第 06 步五路请求同时发，每路都是 change token 置空的 `CKFetchRecordZoneChangesOperation`（按 zone 全量拉、客户端按记录类型过滤、只取 `desiredKeys`）；导入时 `ownerMemberID` 一律覆盖为 zone 的 ownerName。
+- 第 07 步：Tab 里的"接受 / 拒绝 / 批准"是乐观写入、一次性上传，上传失败的决定在这里重传；之后只为四类事件（对方评论我的日程、收到邀请、邀请被回应、历史申请及回复）发本地通知。
 
 ### 同步什么时候触发
 
-| 触发 | 机制 | 节流 |
-| --- | --- | --- |
-| 打开 App / 切到某个 Tab / 编辑完成 | 界面调用 `SyncCoordinator.syncIfIdle` | 自动同步距上次至少 60 s（`ForegroundSyncPlan.automaticThrottleInterval`）；手动下拉 / 点"同步"不受限 |
-| 对方写了数据 | 两条 `CKDatabaseSubscription`（私有库一条、共享库一条）发 **content-available 静默推送**，`AppDelegate` 收到后调用 `ShareCalBackgroundSyncRunner.runSync` | 推送本身就是"有新数据"的信号，直接跳过 60 s 节流 |
-| 推送被系统丢弃 / 节流 | `BGAppRefreshTask`（`com.leeberty.CoupleCalendar.refresh`），每次运行先排下一次 | iOS 对后台刷新的最短间隔约 15 min，代码按此下限请求 |
+- **打开 App、切 Tab、编辑完成**：界面调用 `SyncCoordinator.syncIfIdle`；自动同步距上次至少 60 s，手动下拉或点"同步"不受限。
+- **对方写了数据**：私有库和共享库各一条 `CKDatabaseSubscription`，发 content-available 静默推送，`ShareCalBackgroundSyncRunner.runSync` 立即跑一遍完整管线，不受 60 s 节流。
+- **推送被系统丢弃**：`BGAppRefreshTask` 兜底，每次运行先排下一次；iOS 的最短间隔约 15 min。
 
-为什么是静默推送而不是可见推送：数据库订阅对 zone 里**任何**记录变化都会触发，无法按记录类型过滤，若做成可见通知就只能是一句笼统的"有新动态"，而且对方改一下日程也会响。所以推送只负责唤醒，由 `LocalNotificationPlan` 在同步完成后决定哪些变化值得打扰用户。
-
-### 为什么要只写变化
-
-CloudKit 的 `savePolicy: .changedKeys` 只跳过"没改过的字段"，但 `CKRecord` 一旦被 `save`，哪怕没有字段变化也会生成新的服务端版本并**触发对方的订阅推送**。1.5 之前每次同步都重新保存根记录和 `MemberProfile`（`updatedAt = now`），于是 A 同步 → B 收到推送 → B 同步时又保存了自己的根记录 → A 收到推送 → …… 两台手机互相唤醒，白白耗尽 iOS 的静默推送预算，真正的变化反而被延迟。现在：
-
-- `CloudKitShareRootMetadataPlan.applyOwnerMemberID` 和 `MemberProfileRecordMapper.apply` 只写与已取回记录不同的字段，返回"是否变了"；没变就不 `save`。
-- `EventMirror` 的上传由 `LocalEventShadow` 的指纹决定，未变的日程不会重复上传。
-- 新增任何写入共享记录的路径时，都应沿用"先比对再保存"的模式，否则会重新引入这个循环。
-
-### 为什么不用 CKSyncEngine
-
-早期版本曾挂过一个 `CKSyncEngine` 驱动，但它从未真正承担写入，只是额外注册了订阅、与手写管线各跑一套状态。2026-10 的重构把它删掉了，理由是：
-
-- 这个 App 的"真相"在系统日历里，自己的镜像每次都从 EventKit 重建，不需要引擎维护本地变更队列。
-- 两人制的配对裁决必须发生在**任何上传之前**（冲突时一个字节都不能传），引擎的自动推送模型放不进这个前置条件。
-- 对方的数据只读，每次把对方的 zone 全量拉一遍（`CKFetchRecordZoneChangesOperation` 不带 change token）比持久化 token、处理 token 过期更容易推理，而且规模只有两个人、几百条记录。
-
-### 要点
-
-- **配对身份只有一套**：成员 ID = CloudKit `userRecordID`，天然等于 zone 的 ownerName，没有本地 UUID、没有 pairingID，"对方是谁"由 `TwoPersonPairingPlan` 单点裁决。
-- **镜像是派生数据**：自己的 EventMirror 每次同步都从 EventKit 重建，SwiftData 只是缓存，删库重装后重新同步即可恢复。
-- **mirrorKey 是跨设备的稳定锚点**：`日历ID:事件ID:发生时刻` 同时是 SwiftData 的 id、CloudKit 的 recordName 和评论线程的键，两端生成规则相同，所以还没同步的日程也能先被评论。改期会换 key，等于开新线程。
-- **写入路径规则**：自己的数据写自己的私有 zone；针对对方数据的回应（评论、邀请状态、申请批复）写进对方的共享 zone。
-- **永不在活动 share 上把 `publicPermission` 改回 `.none`**：CloudKit 会连已加入的对方一起移除。
+推送做成静默而不是可见通知，是因为数据库订阅对 zone 里任何记录变化都会触发、无法按类型过滤；由同步完成后的 `LocalNotificationPlan` 决定哪些变化值得打扰用户。
 
 ## 开发
 
@@ -231,9 +146,9 @@ CoupleCalendar/
 │   ├── DesignSystem.swift         OurDaysTheme、卡片/按钮样式、头像视图
 │   └── CloudSharingController.swift   UICloudSharingController 封装
 ├── Plans/                         无状态 "Plan enum"：全部决策逻辑，纯函数，直接单测
-│   ├── PairingPlans.swift         TwoPersonPairingPlan、ShareAcceptanceGuardPlan、ExistingICloudDataRecoveryPlan
-│   ├── SyncPlans.swift            ForegroundSyncPlan（节流）、CloudKitMirrorSyncPlan（哪些 mirror 要上传）、BackgroundRefreshSchedulePlan
-│   ├── CloudKitPlans.swift        写入去向、共享层级、根记录元数据、导入过滤、停止共享
+│   ├── PairingPlans.swift         TwoPersonPairingPlan、ShareAcceptanceGuardPlan、ExistingICloudDataRecoveryPlan（重装恢复）、PartnerScopedDataPlan（前任数据过滤）
+│   ├── SyncPlans.swift            ForegroundSyncPlan（节流）、CloudKitMirrorSyncPlan（哪些 mirror 要上传）、OwnMirrorReconciliationPlan（重装补墓碑）、BackgroundRefreshSchedulePlan
+│   ├── CloudKitPlans.swift        写入去向、共享层级、根记录元数据、导入过滤、停止共享、解除配对时清理前任记录
 │   ├── InvitationAndAccessRequestPlans.swift  邀请时效/撤销/合并/重传、历史申请、配对日、共享时间窗
 │   ├── CommentPlans.swift         评论线程锚点（mirrorKey / 邀请 id）、详情页是否可评论、红点
 │   ├── ActivityAndNotificationPlans.swift     动态流聚合、LocalNotificationPlan（四类通知）
@@ -262,7 +177,7 @@ CoupleCalendarTests/               XCTest，一个领域一个文件，直接编
 CoupleCalendarUITests/             XCUITest：启动、滑动切日、首次引导，以及（配对模拟器上）对方日程与评论线程
 Scripts/                           CloudKit schema 导入、双模拟器配对冒烟脚本、App Store / TestFlight 导出配置
 CloudKit/ShareCalSchema.ckdb       CloudKit schema 源文件
-docs/                              开发流程、隐私政策、官网源码（docs/site）、审核记录、规划树（docs/plantree）
+docs/                              开发流程、隐私政策、官网源码（docs/site）、README 架构图源文件（docs/diagrams）、审核记录、规划树（docs/plantree）
 ```
 
 新增非 UI 文件时要同时加进 App 和 Test 两个 target（test target 直接编译源码）；UI 文件只进 App target。

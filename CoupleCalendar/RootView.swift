@@ -327,6 +327,7 @@ struct RootView: View {
                 try await cloudKit.deleteAcceptedSharedZones(ownerIDs: [oldPartnerID])
             }
             try await cloudKit.removeOutgoingShareParticipants(keeping: pending.incomingOwnerID)
+            try await cloudKit.purgeExPartnerRecordsFromPrivateZone(currentMemberID: settings.currentMemberID)
             try ShareCalLocalDataCleanupService.purgeSharedOwnerData(
                 ownerMemberIDs: ownerIDsToPurge,
                 modelContext: modelContext
@@ -375,6 +376,11 @@ struct RootView: View {
             // over to the new person.
             if let previousPartnerID, previousPartnerID != settings.partnerShareOwnerID {
                 clearPartnerPairingState()
+                try await cloudKit.purgeExPartnerRecordsFromPrivateZone(currentMemberID: settings.currentMemberID)
+                try ShareCalLocalDataCleanupService.purgeSharedOwnerData(
+                    ownerMemberIDs: ICloudSharingTeardownPlan.localOwnerIDsToPurge(partnerShareOwnerID: previousPartnerID),
+                    modelContext: modelContext
+                )
             }
             settings.pairingConflict = nil
             await runForegroundSync(consumingAcceptedShareSignal: false, forceCloudKit: true)

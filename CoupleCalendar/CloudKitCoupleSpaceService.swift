@@ -1159,6 +1159,47 @@ final class CloudKitCoupleSpaceService {
         return OwnMirrorReconciliationPlan.ownedMirrors(mirrors, currentMemberID: currentMemberID)
     }
 
+    /// Removes the previous partner's records from my private zone so they cannot be
+    /// exposed through the next share (see `PartnerScopedDataPlan`). Deletes the comments
+    /// not authored by me and every invitation / history-access-request transport record.
+    /// A missing zone means there is nothing to clean.
+    func purgeExPartnerRecordsFromPrivateZone(currentMemberID: String) async throws {
+        let commentRecords: [CKRecord]
+        let invitationRecords: [CKRecord]
+        do {
+            async let comments = fetchRecords(
+                recordType: CommentRecordMapper.recordType,
+                in: zoneID,
+                database: privateDatabase
+            )
+            async let invitations = fetchRecords(
+                recordType: InvitationRecordMapper.recordType,
+                in: zoneID,
+                database: privateDatabase
+            )
+            commentRecords = try await comments
+            invitationRecords = try await invitations
+        } catch {
+            guard CloudKitRecordQueryFailurePlan.isMissingZone(error) else { throw error }
+            cloudKitSharingInfo("purgeExPartnerRecordsFromPrivateZone zone missing; nothing to clean")
+            return
+        }
+        let recordIDs = CloudKitExPartnerCleanupPlan.recordIDsToDelete(
+            commentRecords: commentRecords,
+            invitationRecords: invitationRecords,
+            currentMemberID: currentMemberID
+        )
+        guard !recordIDs.isEmpty else {
+            cloudKitSharingInfo("purgeExPartnerRecordsFromPrivateZone nothing to delete")
+            return
+        }
+        // CloudKit caps one modify operation at 400 records.
+        for batch in stride(from: 0, to: recordIDs.count, by: 200).map({ Array(recordIDs[$0..<min($0 + 200, recordIDs.count)]) }) {
+            _ = try await modifyRecords(saving: [], deleting: batch, savePolicy: .changedKeys, atomically: false)
+        }
+        cloudKitSharingInfo("purgeExPartnerRecordsFromPrivateZone deleted records=\(recordIDs.count)")
+    }
+
     /// Best-effort read of what a fresh install can take back from its own private zone
     /// (see `ExistingICloudDataRecoveryPlan.recoveredState`). Failures are logged and
     /// yield nils: recovery must still proceed without them.

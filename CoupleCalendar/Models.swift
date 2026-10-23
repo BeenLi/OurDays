@@ -416,6 +416,13 @@ enum ShareCalLocalDataCleanupService {
             }
         }
 
+        // Comments the leaving partner wrote on MY events live in my zone and my cache
+        // (not under their mirrors), so they are matched by author, not by mirror.
+        let existingAuthoredComments = try modelContext.fetch(FetchDescriptor<EventComment>())
+        for comment in existingAuthoredComments where ownerMemberIDs.contains(comment.authorMemberID) {
+            modelContext.delete(comment)
+        }
+
         let existingInvitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
         for invitation in existingInvitations
             where ownerMemberIDs.contains(invitation.creatorMemberID)
@@ -431,6 +438,35 @@ enum ShareCalLocalDataCleanupService {
         }
 
         try modelContext.save()
+    }
+
+    /// Drops every cached comment / invitation / access request whose other party is
+    /// neither me nor the current partner (`PartnerScopedDataPlan`). Self-healing: runs
+    /// after each import so stale ex-partner rows never outlive a partner change.
+    static func purgeForeignPartnerData(
+        currentMemberID: String,
+        partnerID: String?,
+        modelContext: ModelContext
+    ) throws {
+        var didDelete = false
+        for comment in try modelContext.fetch(FetchDescriptor<EventComment>())
+            where PartnerScopedDataPlan.isForeign(comment, currentMemberID: currentMemberID, partnerID: partnerID) {
+            modelContext.delete(comment)
+            didDelete = true
+        }
+        for invitation in try modelContext.fetch(FetchDescriptor<EventInvitation>())
+            where PartnerScopedDataPlan.isForeign(invitation, currentMemberID: currentMemberID, partnerID: partnerID) {
+            modelContext.delete(invitation)
+            didDelete = true
+        }
+        for request in try modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())
+            where PartnerScopedDataPlan.isForeign(request, currentMemberID: currentMemberID, partnerID: partnerID) {
+            modelContext.delete(request)
+            didDelete = true
+        }
+        if didDelete {
+            try modelContext.save()
+        }
     }
 
     private static func deleteAll<Model: PersistentModel>(

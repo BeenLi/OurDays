@@ -341,6 +341,63 @@ final class CloudKitStopSharingPlanTests: XCTestCase {
         XCTAssertEqual(remainingComments, ["keep"])
     }
 
+    @MainActor
+    func testSharedOwnerDataCleanupAlsoDropsCommentsThePartnerWroteOnMyEvents() throws {
+        let container = try ShareCalModelContainer.make(isStoredInMemoryOnly: true)
+        let context = ModelContext(container)
+        context.insert(cleanupMirror(owner: "_me", key: "mine"))
+        context.insert(EventComment(eventMirrorID: "mine", authorMemberID: "_ex", body: "theirs on mine"))
+        context.insert(EventComment(eventMirrorID: "mine", authorMemberID: "_me", body: "mine on mine"))
+        context.insert(EventInvitation(
+            creatorMemberID: "_me", inviteeMemberID: "_ex", title: "old invite",
+            startDate: Date(timeIntervalSince1970: 1_000), endDate: Date(timeIntervalSince1970: 2_000),
+            location: nil, notes: nil
+        ))
+        try context.save()
+
+        try ShareCalLocalDataCleanupService.purgeSharedOwnerData(ownerMemberIDs: ["_ex"], modelContext: context)
+
+        XCTAssertEqual(try context.fetch(FetchDescriptor<EventComment>()).map(\.body), ["mine on mine"])
+        XCTAssertEqual(try context.fetch(FetchDescriptor<EventInvitation>()).count, 0)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<EventMirror>()).count, 1)
+    }
+
+    @MainActor
+    func testForeignPartnerDataCleanupKeepsMeAndCurrentPartnerAndPlaceholders() throws {
+        let container = try ShareCalModelContainer.make(isStoredInMemoryOnly: true)
+        let context = ModelContext(container)
+        context.insert(EventComment(eventMirrorID: "e", authorMemberID: "_me", body: "me"))
+        context.insert(EventComment(eventMirrorID: "e", authorMemberID: "_partner", body: "partner"))
+        context.insert(EventComment(eventMirrorID: "e", authorMemberID: "_ex", body: "ex"))
+        context.insert(EventInvitation(
+            creatorMemberID: "_me", inviteeMemberID: "partner", title: "placeholder invitee",
+            startDate: Date(timeIntervalSince1970: 1_000), endDate: Date(timeIntervalSince1970: 2_000),
+            location: nil, notes: nil
+        ))
+        context.insert(EventInvitation(
+            creatorMemberID: "_ex", inviteeMemberID: "_me", title: "from ex",
+            startDate: Date(timeIntervalSince1970: 1_000), endDate: Date(timeIntervalSince1970: 2_000),
+            location: nil, notes: nil
+        ))
+        context.insert(CalendarAccessRequest(
+            requesterMemberID: "_ex", ownerMemberID: "_me",
+            requestedStartDate: Date(timeIntervalSince1970: 1_000), requestedEndDate: Date(timeIntervalSince1970: 2_000)
+        ))
+        context.insert(CalendarAccessRequest(
+            requesterMemberID: "_partner", ownerMemberID: "_me",
+            requestedStartDate: Date(timeIntervalSince1970: 1_000), requestedEndDate: Date(timeIntervalSince1970: 2_000)
+        ))
+        try context.save()
+
+        try ShareCalLocalDataCleanupService.purgeForeignPartnerData(
+            currentMemberID: "_me", partnerID: "_partner", modelContext: context
+        )
+
+        XCTAssertEqual(try context.fetch(FetchDescriptor<EventComment>()).map(\.body).sorted(), ["me", "partner"])
+        XCTAssertEqual(try context.fetch(FetchDescriptor<EventInvitation>()).map(\.title), ["placeholder invitee"])
+        XCTAssertEqual(try context.fetch(FetchDescriptor<CalendarAccessRequest>()).map(\.requesterMemberID), ["_partner"])
+    }
+
     private func cleanupMirror(
         owner: String,
         key: String,
@@ -366,6 +423,29 @@ final class CloudKitStopSharingPlanTests: XCTestCase {
             deletedAt: nil,
             cloudKitRecordName: key
         )
+    }
+}
+
+final class CloudKitExPartnerCleanupPlanTests: XCTestCase {
+    func testDeletesForeignCommentsAndEveryInvitationRecordButKeepsMyOwnComments() {
+        let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
+        let mine = CKRecord(recordType: CommentRecordMapper.recordType, recordID: CKRecord.ID(recordName: "c-mine", zoneID: zoneID))
+        mine[CommentRecordMapper.Key.authorMemberID] = "_me" as CKRecordValue
+        let theirs = CKRecord(recordType: CommentRecordMapper.recordType, recordID: CKRecord.ID(recordName: "c-theirs", zoneID: zoneID))
+        theirs[CommentRecordMapper.Key.authorMemberID] = " _ex " as CKRecordValue
+        let invitation = CKRecord(recordType: InvitationRecordMapper.recordType, recordID: CKRecord.ID(recordName: "inv", zoneID: zoneID))
+        let transport = CKRecord(
+            recordType: CalendarAccessRequestRecordMapper.transportRecordType,
+            recordID: CKRecord.ID(recordName: "history-access-request:req", zoneID: zoneID)
+        )
+
+        let ids = CloudKitExPartnerCleanupPlan.recordIDsToDelete(
+            commentRecords: [mine, theirs],
+            invitationRecords: [invitation, transport],
+            currentMemberID: "_me"
+        )
+
+        XCTAssertEqual(ids.map(\.recordName).sorted(), ["c-theirs", "history-access-request:req", "inv"])
     }
 }
 

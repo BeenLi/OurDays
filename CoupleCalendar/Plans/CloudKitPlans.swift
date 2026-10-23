@@ -303,3 +303,22 @@ enum CloudKitSharingFailureMessage {
         return error.localizedDescription
     }
 }
+
+/// Which records to delete from MY private zone when the partner leaves (unpair, or a
+/// pairing replacement). In a two-person space every invitation and history-access
+/// request stored in my zone was exchanged with that partner, and every comment there
+/// not written by me is theirs; none of it may ride along into the next CKShare.
+/// My own comments on my own events stay: they are mine.
+enum CloudKitExPartnerCleanupPlan {
+    static func recordIDsToDelete(
+        commentRecords: [CKRecord],
+        invitationRecords: [CKRecord],
+        currentMemberID: String
+    ) -> [CKRecord.ID] {
+        let me = MemberIDPlan.normalized(currentMemberID)
+        let foreignComments = commentRecords.filter { record in
+            MemberIDPlan.normalized(record[CommentRecordMapper.Key.authorMemberID] as? String) != me
+        }
+        return (foreignComments + invitationRecords).map(\.recordID)
+    }
+}

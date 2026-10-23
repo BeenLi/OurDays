@@ -799,7 +799,7 @@ struct SettingsTabView: View {
         )
         var purgeError: Error?
         do {
-            try ShareCalLocalDataCleanupService.purgeSharedOwnerMirrors(
+            try ShareCalLocalDataCleanupService.purgeSharedOwnerData(
                 ownerMemberIDs: localOwnerIDsToPurge,
                 modelContext: modelContext
             )
@@ -842,9 +842,23 @@ struct SettingsTabView: View {
 
         do {
             try await cloudKit.stopSharing(ownerMemberID: settings.currentMemberID)
-            clearLocalPairingAfterSharingStopped()
         } catch {
             errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+            return
+        }
+        // The share is gone, so local pairing state must be cleared whatever happens
+        // next. The partner can no longer read my zone, but whatever they left in it
+        // would ride into the next share: clean it out now (PartnerScopedDataPlan); a
+        // failure here is reported, and the import-time filter still hides the leftovers.
+        var cleanupError: Error?
+        do {
+            try await cloudKit.purgeExPartnerRecordsFromPrivateZone(currentMemberID: settings.currentMemberID)
+        } catch {
+            cleanupError = error
+        }
+        clearLocalPairingAfterSharingStopped()
+        if let cleanupError {
+            errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: cleanupError)
         }
     }
 

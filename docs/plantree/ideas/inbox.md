@@ -8,7 +8,7 @@
 - **录入**：2026-06-14
 - **状态**：✅ 已提升 → [plans/activity-feed/](../plans/activity-feed/)（2026-06-14，内容范围=仅评论互动）
 - **原话**：在「日历」和「邀请」之间加一个「动态」tab，凸显对方评论了我的日程，我也能接着互动。
-- **可行性快照（已核实）**：数据已具备（`EventComment` 含 `isRead`，CloudKit 已同步）；tab/角标基础设施已存在。主要新增 = 一个聚合视图 + 一个「动态流排序/未读」Plan enum（遵循项目 Plan enum 约定）+ 本地化字符串 + `ShareCalTab` 新增 case。**不需要新基础设施**。
+- **可行性快照（已核实）**：数据已具备（`EventComment` 含 `isRead`，CloudKit 已同步）；tab/角标基础设施已存在。主要新增 = 一个聚合视图 + 一个「动态流排序/未读」Policy enum（遵循项目 Policy enum 约定）+ 本地化字符串 + `ShareCalTab` 新增 case。**不需要新基础设施**。
 - **开放问题**：
   - Q1 动态流内容范围：仅评论互动？还是合并邀请/历史访问请求？（用户原话暗示保留独立「邀请」tab）
   - Q2 未读如何呈现：动态 tab 角标用 `isRead` 聚合？是否需要 `lastSeenAt`？
@@ -30,3 +30,21 @@
   - Q4 APNs 环境：dev/prod entitlements 已分离，需确认 TestFlight(prod) 推送链路与证书。
 - **依赖**：通知文案/触发器依赖 idea-001 定义「什么算一条动态」。
 - **建议提升目标**：`plans/notifications/`（建议在 idea-001 落地后或同步规划）
+
+---
+
+## idea-003 App Store 截图换成新版 UI
+- **录入**：2026-10-22（用户）
+- **状态**：⏳ 待做，挂在 [plans/releases/](../plans/releases/) 1.6 的发布步骤里
+- **原话**：下个版本把 App Store 的截图更新成新 UI。
+- **可行性快照**：官网 / README 已用 `docs/site/assets/*.webp`（由 promo 源页渲染）；App Store 需要按设备尺寸出图，可沿用同一渲染流程。
+
+---
+
+## idea-004 各 plan 的 Deferred 汇总（未提升）
+- 周视图里共同日程块可点开评论串（calendar-ux-fixes V2）。
+- 动态流内联快速回复；已读状态跨自己多设备同步（activity-feed D1/D2）。
+- 共同日程评论的本地推送语义（calendar-ux-fixes / comment-visibility）。
+- 评论红点的 VoiceOver 语义（comment-visibility）。
+- 撤销邀请时通知对方（invitation-lifecycle）。
+- 解除配对 → 换人重新配对的端到端冒烟需要第三个 iCloud 账号（pairing-sync-integrity）。

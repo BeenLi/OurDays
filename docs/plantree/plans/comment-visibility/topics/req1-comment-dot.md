@@ -7,11 +7,11 @@
 ## 代码现状（核实 2026-07-03）
 - 显示事件三类：我的普通事件 = `localDisplayMirrors`（display mirror，`id="display:<mirrorKey>"`，`RootView.swift:882` / `Models.swift:1324`）；对方普通事件 = 真实持久化 mirror（`visiblePartnerMirrors`, `RootView.swift:891`）；共同日程 = `JointScheduleEvent`（`id=invitation.id`，`EventServices.swift:456`）。
 - 评论存储：`EventComment.eventMirrorID` = 锚 key（普通=真实 `mirror.id`；joint=`invitation.id`），`deletedAt` 标删除。`@Query comments` 已在多处可用（如 `RootView.swift:2686`）。
-- 锚映射既有：`EventCommentAnchorPlan`（`Models.swift:1378`）。
+- 锚映射既有：`EventCommentAnchorPolicy`（`Models.swift:1378`）。
 - **关键难点**：我的 display mirror 的 `id`（`display:...`）≠ 评论里存的真实 `mirror.id`，直接用 `mirror.id` 查会漏掉「对方评论了我的事件」的红点。display 与真实 mirror **共享 `mirrorKey`**（`Models.swift:1337,2514`），可据此在持久化 mirrors 里解析出真实 id。
 
 ## 方案
-1. 新 `EventCommentIndicatorPlan`（Plan enum，纯函数、可单测）：
+1. 新 `EventCommentIndicatorPolicy`（Policy enum，纯函数、可单测）：
    - `commentedAnchorKeys(comments)` → `Set<String>`（`deletedAt==nil` 的 `eventMirrorID`）。
    - `hasComments(mirror, commentedKeys, persistedIDByMirrorKey)`：resolvedKey = display 前缀 ? `persistedIDByMirrorKey[mirror.mirrorKey]` : `mirror.id`；命中即真。
    - `hasComments(jointEvent, commentedKeys)` = `commentedKeys.contains(jointEvent.id)`。

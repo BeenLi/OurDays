@@ -6,11 +6,11 @@
 ## 代码现状（核实 2026-06-20）
 - 日视图 `DayAlignedTimelineView`（`RootView.swift:1717`）：`ScrollView` 内 `ZStack(alignment: .topLeading)`，已叠 `DayTimelineHourGrid`（每小时分隔线，`RootView.swift:1991`）、两条 lane、joint 块。
 - rail：`DayTimelineHourRail`（`RootView.swift:1974`），右对齐显示 `%02d:00` 时刻文字，`offset(y: mark.y - 7)`。
-- 时间→y 的换算已存在：`DayTimelineLayoutPlan.eventFrame`（`Models.swift:894`），`pointsPerMinute = hourHeight / 60`，`y = minutesFromStart × pointsPerMinute`。`hourHeight = 58`，`dayHeight = 24 × hourHeight`。
+- 时间→y 的换算已存在：`DayTimelineLayoutPolicy.eventFrame`（`Models.swift:894`），`pointsPerMinute = hourHeight / 60`，`y = minutesFromStart × pointsPerMinute`。`hourHeight = 58`，`dayHeight = 24 × hourHeight`。
 - `dayStart` 已作为参数传入（即当前展示的那天的 0 点）。`Calendar.current.isDateInToday` 已在别处用（`RootView.swift:1168`）。
 
 ## 方案
-1. 新增纯逻辑 `enum DayTimelineNowIndicatorPlan`（放 `Models.swift`，遵循 Plan-enum 约定）：
+1. 新增纯逻辑 `enum DayTimelineNowIndicatorPolicy`（放 `Models.swift`，遵循 Policy-enum 约定）：
    - `static func placement(now: Date, dayStart: Date, hourHeight: CGFloat, calendar: Calendar = .current) -> DayTimelineNowIndicator?`
    - 返回 `nil` 当 `now` 不在 `[dayStart, dayStart+1day)`（即只在「今天且正展示今天」时显示）。
    - 否则返回 `{ y: CGFloat, /* 可选 */ timeText 由 View 用 .formatted 生成 }`，`y = (now - dayStart)/60 × (hourHeight/60)`，clamp 到 `[0, dayHeight]`。
@@ -24,7 +24,7 @@
 - 展示今天：在当前分钟位置出现红线 + 左侧红色时刻；分钟推进后红线下移（手动等 1 分钟或改系统时间验证）。
 - 切到非今天（左右翻天）：红线消失。
 - 0:00 / 23:59 边界 y 在 `[0, dayHeight]` 内，不溢出。
-- 单测覆盖 `DayTimelineNowIndicatorPlan`：今天/非今天、边界、y 计算与某已知值一致。
+- 单测覆盖 `DayTimelineNowIndicatorPolicy`：今天/非今天、边界、y 计算与某已知值一致。
 
 ## 风险 / 注意
 - `TimelineView(.everyMinute)` 只在视图可见时刷新，符合「每次打开看当前时刻」诉求；不需要常驻 timer。

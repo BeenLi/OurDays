@@ -24,5 +24,5 @@
 - 但未读角标只计 OQ1 定义的「对方发的、晚于 lastSeen」的评论；我自己发的不算未读。
 
 ## OQ4 角标并存 → 两套独立角标，互不重叠
-- 邀请 tab 继续用 `PendingActionBadgePlan`（邀请 + 历史访问请求），不动。
-- 动态 tab 用新的 `ActivityFeedPlan.unreadCount`。评论从不在邀请角标里，结构上不会重复计数。
+- 邀请 tab 继续用 `PendingActionBadgePolicy`（邀请 + 历史访问请求），不动。
+- 动态 tab 用新的 `ActivityFeedPolicy.unreadCount`。评论从不在邀请角标里，结构上不会重复计数。

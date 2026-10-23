@@ -20,7 +20,7 @@
 - 富文本/逐条详情仍来自:in-app 动态 feed + 前台同步时 `postPendingNotifications` 发的本地通知。
 - 去重:`willPresent` 对**远程推送**在前台返回 `[]`(本地富通知负责前台展示),本地通知正常展示。
 - 前台到达修订(2026-06-14,Codex review):纯 alert 推送在前台到达时 `didReceiveRemoteNotification` 不触发;`willPresent` 仅抑制横幅会导致**不触发同步、富通知不发**。故 `willPresent` 抑制前先 `ShareCalRemoteChangeSignal.notifyChanged()` 触发同步(前台场景 `scenePhase` 不变不会自动同步)。后台点击通知 → 场景激活 → `scenePhase` 同步,已覆盖。
-- 强制同步修订(2026-06-14,Codex review):推送信号原走 `syncAfterSceneBecameActiveIfNeeded`(受 `ForegroundSyncPlan.shouldRunAutomaticSync` 时间节流),刚同步过会被跳过 → 漏掉推送对应的新数据。改为 `runForegroundSync(forceCloudKit: true)` **强制**拉取(仅防并发,不做时间节流),因为推送本身即「确有新数据」的权威信号。
+- 强制同步修订(2026-06-14,Codex review):推送信号原走 `syncAfterSceneBecameActiveIfNeeded`(受 `ForegroundSyncPolicy.shouldRunAutomaticSync` 时间节流),刚同步过会被跳过 → 漏掉推送对应的新数据。改为 `runForegroundSync(forceCloudKit: true)` **强制**拉取(仅防并发,不做时间节流),因为推送本身即「确有新数据」的权威信号。
 - 恢复门修订(2026-06-14,Codex review):`runForegroundSync` 是无门禁的核心路径,强制调用会**绕过 existing-iCloud-data 恢复门**(`shouldDeferAutomaticSyncForExistingICloudDecision`)——用户尚未决定如何处理已有 iCloud 数据时不应同步/合并。修为:推送处理在强制同步前仍 `guard !shouldDeferAutomaticSyncForExistingICloudDecision`(保留绕过时间节流,但恢复该门)。原则:按触发可信度匹配同步激进度,但**安全门(数据恢复决策)对所有自动触发都要保留**。
 - 恢复门「核心 vs UI 收窄」修订(2026-06-14,Codex review 二次):`shouldDeferAutomaticSyncForExistingICloudDecision` 把两件事揉在一起——「恢复决策是否未解决」(数据安全事实)与「提示是否正显示」(`&& (!hasEvaluatedExistingICloudDataPrompt || activeRootSheet == .existingICloudDataRecovery)`,UI 时序)。异步推送可能恰好落在「已评估提示但 sheet 不在前台」的窗口 → 收窄后的 gate 返回 false → 推送同步仍会漏过未解决的决策。修为:抽出**核心** `hasUnresolvedExistingICloudRecoveryDecision`(只看决策是否未解决 + 本地态是否 fresh),推送处理 guard 这个核心,不受 sheet 呈现时序影响。
 - 全面收口(2026-06-14,Codex review 三次):scene-active / tab 切换路径(`syncAfterSceneBecameActiveIfNeeded`)同样用收窄 gate,同窗口也会漏过。确认解决路径(`continueUsingExistingICloudData`/`deleteExistingICloudData`)走**未门禁**的 `runForegroundSync` 且置 `hasResolved=true`,不会死锁。故删除收窄 composite,**所有自动触发(push + scene-active + tab)统一 guard 核心 fact**。
@@ -29,7 +29,7 @@
 ## 触发 4 的 source 语义（修订 2026-06-14，Codex review 发现）
 历史访问请求有三种 source：`localOutgoing`（我刚发出的本地副本）、`privateOwnerZone`（对方发来、落在我的 zone 的来件）、`acceptedSharedZone`（对方对我请求的**回复**副本，从对方 zone 导入）。
 - 「收到来件」通知 = `source == .privateOwnerZone && owner == 我 && status == pending`。
-- 「我的请求被回复」通知 = `source != .privateOwnerZone && requester == 我 && status != pending`（对齐 `CalendarAccessRequestListPlan.outgoing`）。
+- 「我的请求被回复」通知 = `source != .privateOwnerZone && requester == 我 && status != pending`（对齐 `CalendarAccessRequestListPolicy.outgoing`）。
 
 教训:初版把两个分支都套在 `source == .privateOwnerZone` 下,导致**回复通知永不触发**;且单测用例没设 source(默认 privateOwnerZone)与错误实现一致,所以没抓到——已改测试用真实 source 复现后再修。
 

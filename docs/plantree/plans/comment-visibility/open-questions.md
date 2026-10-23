@@ -6,7 +6,7 @@
 - **V1b — 新路径直接验证**：✅ **PASS（2026-07-04）**。新增 `-ShareCalSeedOrdinaryComment <body>` 诊断（`CoupleCalendarApp.swift` 的 `seedOrdinaryComment`：造一个**全新普通事件** "V1B Ordinary Event"（无对应 invitation，故不被当 joint）→ 同步得到我的持久化 mirror → 挂一条 `_smoke_partner` 作者的评论并上传）+ 新 XCUITest `testOwnOrdinaryEventShowsPartnerCommentAndReply`。
   - **req1 红点**：截图确认 "V1B Ordinary Event"（我的普通事件，有对方评论）右上角红点亮；joint 事件（有评论）也亮；对方无评论事件不亮（阴性对照正确）。
   - **req2 详情**：XCUITest 断言通过——点开我的普通事件详情同时显示「邀请对方」+ 对方评论 "V1B partner comment"（作者 SmokePartner）+「添加评论」回复框。截图佐证。
-  - 关键点：必须用**没有 invitation 的新普通事件**验，否则会被 `JointSchedulePlan.ordinaryMirrors` 当 joint 处理、走 `JointEventDetailView`，绕开本次改的 `EventDetailView` 路径。
+  - 关键点：必须用**没有 invitation 的新普通事件**验，否则会被 `JointSchedulePolicy.ordinaryMirrors` 当 joint 处理、走 `JointEventDetailView`，绕开本次改的 `EventDetailView` 路径。
   - 证据截图：[req1 红点](screenshots/req1-red-dot-on-my-event.png) · [req2 详情评论区](screenshots/req2-own-event-comment-thread.png)。
 
 ## 已解决

@@ -1,24 +1,15 @@
-# Baseline — ShareCal
+# Baseline — OurDays
 
-权威 baseline 是仓库根的 **`../../../CLAUDE.md`**（两人制、userRecordID 身份模型、CloudKit 布局、Plan enum 约定、同步流水线）。本文件只补充与当前 ideas 相关、且从代码核实过的局部事实。其余 baseline 维度（完整 module map / runtime flows / storage 边界 / 测试发布门禁 / 风险点）**需要时再做 inventory**，目前标记为 `Unknown / needs inventory`。
+权威 baseline 是仓库根的 **`../../../CLAUDE.md`**（两人制、userRecordID 身份模型、CloudKit 布局、纯规则类型约定、同步流水线、共享 helper）。面向读者的架构说明在仓库 `README.md` 的「同步架构」「记录类型」「数据安全」三节，配图源文件在 `docs/diagrams/`。本文件只保留**从代码核实过、且多个 plan 都会用到**的稳定事实；行号一律不写，以免过期。
 
-## 与当前 ideas 相关的已核实事实（2026-06-14）
-
-### Tab 结构（idea：新增「动态」tab）
-- `RootView.swift:5` `enum ShareCalTab { calendar, invites, settings }`。
-- `RootView.swift:69` `TabView` 按 calendar → invites → settings 顺序构建；invites tab 已有 `.badge(pendingInviteBadgeCount)`（`RootView.swift:94`）。
-- 角标逻辑在 `PendingActionBadgePlan`（`Models.swift:1367`），目前统计「可响应的邀请 + 待处理的历史访问请求」。
-
-### 评论数据（idea：动态流展示对方评论 + 互动）
-- `EventComment`（`Models.swift:2203`）已是 CloudKit 同步实体，含 `isRead`（`Models.swift:2211`）。
-- 评论读写映射见 `CommentRecordMapper`（`CloudKitCoupleSpaceService.swift` ~`958` 起）。
-- 已有按事件展示评论的 UI（事件详情内），但**没有跨事件的聚合「动态流」**，也没有基于 `isRead`/`lastSeenAt` 的未读聚合角标。
-
-### 通知现状（idea：系统级提醒）
-- `aps-environment` 推送权限已配置（dev + prod entitlements）。
-- `CKDatabaseSubscription`（`CloudKitCoupleSpaceService.swift:2752`，`shouldSendContentAvailable = true`，即**静默推送**）已定义，但 `configureDatabaseSubscription()` **从未被调用**（dead code）。
-- **缺失**：`registerForRemoteNotifications`、`didReceiveRemoteNotification` 处理、`UNUserNotificationCenter` 授权与本地通知发送、`remote-notification` 后台模式（待核实 pbxproj）。
-- 两人制数据流（来自 CLAUDE.md，影响订阅放在哪个库）：对方对「我的」事件的评论会落到**我的 private database**（对方作为参与者写入我的共享 zone）；我对「对方的」事件的评论写入对方的 shared zone。⇒ 用户级通知需要两端各自在自己的 private database 上订阅。
+## 已核实的稳定事实（2026-10-23，main @ #26）
+- **Tab**：日历 → 动态 → 邀请 → 我们（原「设置」，1.5 起改名）。动态角标 = 对方评论的未读数（本地 lastSeen），邀请角标 = 可响应的邀请 + 待处理的历史访问请求；两者不重叠。
+- **评论**：线程键是事件的 `mirrorKey`，它同时是 SwiftData id、CloudKit recordName 和评论锚（#24 起对自己的日程也成立，不必等同步）。共同日程（joint）的线程键是邀请 id。评论从我的 private zone 与对方的 shared zone 两边读。
+- **通知**：静默推送（private + shared 两个 CKDatabaseSubscription）唤醒 App → 拉取变更 → 发本地通知；BGAppRefresh 兜底。前台同步有 60 s 节流。
+- **共享记录写入规则**：根记录和 MemberProfile 在共享 zone 里，每次保存都会触发对方的静默推送；因此只在字段真正变化时才保存（#20）。新增任何"每次同步都写"的共享记录写入都会重新制造 sync → push → sync 乒乓。
+- **本地缓存是纯缓存**：SwiftData 里的一切都能从 CloudKit 重建；删除重装后走「发现旧的 iCloud 数据」提示恢复（#22）。只有 UserDefaults 里的本地偏好（对方备注名/本地头像覆盖、选中的日历、配对日期等）需要单独恢复。
+- **两人制**：我方分享出现伴侣之外的参与者时不再静默移除，而是报配对冲突让用户选择（#4）；解除配对会删掉我 zone 里与前任有关的评论/邀请/历史申请记录（#23）。
+- **工程**：Xcode 工程是 legacy PBXGroup；非 UI 源文件要同时加进 App 与 Test 两个 target（测试直接编译源码，不 `@testable import`）。CI 跑单元 + UI 测试；两模拟器配对冒烟只在本地跑（`Scripts/dev-pairing-smoke.sh`）。
 
 ## 其余 baseline 维度
-- module-map / runtime-flows / storage-and-state / test-and-release-gates / risk-hotspots：`Unknown / needs inventory`（提升 plan 时按需补）。
+- module-map / storage-and-state / risk-hotspots：以 `CLAUDE.md` 与 README 为准，不在此重复。

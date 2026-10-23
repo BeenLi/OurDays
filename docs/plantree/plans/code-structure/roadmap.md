@@ -1,10 +1,11 @@
 # Roadmap — code-structure
 
 ## In Progress
-- 🚧 **#31 CI 提速**（2026-10-23）。实测一次约 11 分钟里单元测试只占 20 秒：模拟器冷启动约 100 秒、xcodebuild 启动后静默约 2 分钟、从零编译约 3 分钟、UI 测试（装 Runner + 3 个真跑的用例）约 3 分 20 秒；最近 60 次运行约三分之一是纯文档改动。改为：`paths-ignore` 跳过 `**.md` / `docs/**` / `LICENSE`；PR 只跑 `CoupleCalendarTests`，UI 测试只在合并后的 main 和手动触发时跑（2026-10-23 用户选定）；模拟器只发起开机不等待，`build-for-testing` 与开机并行，再 `test-without-building`；关闭并行测试（免去克隆模拟器）；把 `developerservices2.apple.com` 指向本机作为实验，看能否消掉那 2 分钟静默。DerivedData 缓存不做：每次 checkout 都会刷新源文件修改时间，缓存几乎全失效，且项目没有 SPM 依赖。
-  - 实测（#31 自身的 CI）：PR 路径 8.4 分钟、含 UI 测试的完整路径 8.7 分钟（之前同类运行 9–16 分钟，多数 10–12）。xcodebuild 启动前的静默从约 2 分钟降到约 40 秒。剩下的大头是冷编译约 5–6 分钟，hosted runner 之间波动很大。试过"先等开机再编译"，反而更慢（9.2 分钟），已撤回。
+- （无）
 
 ## Done（2026-10-23）
+- ✅ **#31 CI 提速**（2026-10-23 合并）。实测一次约 11 分钟里单元测试只占 20 秒：模拟器冷启动约 100 秒、xcodebuild 启动后静默约 2 分钟、从零编译约 3 分钟、UI 测试（装 Runner + 3 个真跑的用例）约 3 分 20 秒；最近 60 次运行约三分之一是纯文档改动。改为：`paths-ignore` 跳过 `**.md` / `docs/**` / `LICENSE`；PR 只跑 `CoupleCalendarTests`，UI 测试只在合并后的 main 和手动触发时跑（2026-10-23 用户选定）；模拟器只发起开机不等待，`build-for-testing` 与开机并行，再 `test-without-building`；关闭并行测试（免去克隆模拟器）；把 `developerservices2.apple.com` 指向本机作为实验，看能否消掉那 2 分钟静默。DerivedData 缓存不做：每次 checkout 都会刷新源文件修改时间，缓存几乎全失效，且项目没有 SPM 依赖。
+  - 实测（#31 自身的 CI）：PR 路径 8.4 分钟、含 UI 测试的完整路径 8.7 分钟（之前同类运行 9–16 分钟，多数 10–12）。xcodebuild 启动前的静默从约 2 分钟降到约 40 秒。剩下的大头是冷编译约 5–6 分钟，hosted runner 之间波动很大。试过"先等开机再编译"，反而更慢（9.2 分钟），已撤回。
 - ✅ **#29 `Plans/` → `Policies/`、`…Plan` → `…Policy` 重命名**（86 个枚举；2026-10-23 用户在 Policies / Common / Routine / Utils 里选了 Policies），同时把 `CoupleCalendar/` 分成 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 七个目录（pbxproj 分组、Info.plist / entitlements 路径、冒烟脚本路径一并改）。#29 自带 CLAUDE.md / README 更新；本树里仍存在的类型名已同步改为 `…Policy`，已删除的旧类型（如 `EventDetailInteractionPlan`）保留原名作历史记录。
 
 ## Done（2026-06 ～ 10-22）

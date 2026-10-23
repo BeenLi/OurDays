@@ -1,12 +1,23 @@
 name: iOS CI
 
+# Docs-only changes (README, docs/plantree, docs/site, CLAUDE.md) can't break
+# the app, so they don't start a macOS runner at all. A PR that touches both
+# docs and code still runs: paths-ignore only skips when *every* file matches.
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   workflow_dispatch:
 
 permissions:
@@ -22,18 +33,29 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
 
+    env:
+      # PRs run only the unit tests (~20 s). The three CI-runnable UI tests cost
+      # ~3 min of runner install + automation-session setup, so they run after
+      # merge on main (and on manual dispatch), where nobody is waiting.
+      # The other three UI tests always XCTSkip outside Scripts/dev-pairing-smoke.sh.
+      ONLY_TESTING: ${{ github.event_name == 'pull_request' && '-only-testing:CoupleCalendarTests' || '' }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Show Xcode environment
-        run: |
-          xcodebuild -version
-          xcodebuild -showsdks
-          xcrun simctl list runtimes
-          xcrun simctl list devicetypes
+      - name: Show Xcode version
+        run: xcodebuild -version
 
-      - name: Create iOS simulator
+      # Experiment: on hosted runners xcodebuild has been sitting silent for ~2 min
+      # before printing anything, which matches it waiting on Apple's developer
+      # services endpoint. Builds here are unsigned, so nothing needs that host.
+      - name: Skip Apple developer services lookup
+        run: sudo sh -c 'echo "127.0.0.1 developerservices2.apple.com" >> /etc/hosts'
+
+      # Start the simulator booting but don't wait: the cold boot (~70 s) now
+      # overlaps the build instead of preceding it.
+      - name: Create and start booting iOS simulator
         id: simulator
         run: |
           set -euo pipefail
@@ -50,14 +72,28 @@ jobs:
 
           if [[ -z "${DEVICE_TYPE}" || -z "${RUNTIME_ID}" ]]; then
             echo "No available iOS simulator device type or runtime found." >&2
+            xcrun simctl list runtimes >&2
             exit 1
           fi
 
           SIMULATOR_UDID=$(xcrun simctl create "CoupleCalendar CI iPhone" "${DEVICE_TYPE}" "${RUNTIME_ID}")
           xcrun simctl boot "${SIMULATOR_UDID}" || true
-          xcrun simctl bootstatus "${SIMULATOR_UDID}" -b
 
           echo "udid=${SIMULATOR_UDID}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build for testing
+        run: |
+          set -euo pipefail
+          xcodebuild build-for-testing \
+            -project CoupleCalendar.xcodeproj \
+            -scheme CoupleCalendar \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath "${RUNNER_TEMP}/CoupleCalendarDerivedData" \
+            ${ONLY_TESTING} \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Wait for simulator boot
+        run: xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
 
       - name: Run tests
         run: |
@@ -68,11 +104,15 @@ jobs:
           # short XCUIElement waits expire mid-render, failing a healthy build.
           # Retry only the tests that fail so a transient slowdown can't sink the run;
           # a genuinely broken test still fails after exhausting its iterations.
-          xcodebuild test \
+          #
+          # Parallel testing is off: the unit tests finish in seconds, and turning it
+          # on makes xcodebuild clone the simulator first, which costs more than it saves.
+          xcodebuild test-without-building \
             -project CoupleCalendar.xcodeproj \
             -scheme CoupleCalendar \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
             -derivedDataPath "${RUNNER_TEMP}/CoupleCalendarDerivedData" \
+            ${ONLY_TESTING} \
+            -parallel-testing-enabled NO \
             -retry-tests-on-failure \
-            -test-iterations 3 \
-            CODE_SIGNING_ALLOWED=NO
+            -test-iterations 3

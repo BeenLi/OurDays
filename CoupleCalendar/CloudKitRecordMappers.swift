@@ -41,31 +41,63 @@ enum MemberProfileRecordMapper {
         )
         let record = existingRecord ?? CKRecord(recordType: recordType, recordID: recordID)
         CloudKitShareHierarchyPlan.attach(record, toShareRoot: parentRecordID)
-        record[Key.ownerMemberID] = normalizedRequired(profile.ownerMemberID) as CKRecordValue
-        record[Key.displayName] = normalizedDisplayName(profile.displayName) as CKRecordValue
-        record[Key.updatedAt] = profile.updatedAt as CKRecordValue
-        applyAvatar(profile.avatar, to: record)
+        apply(profile, to: record)
         return record
     }
 
-    /// Writes only the avatar keys whose value actually changed. The profile is re-saved on
-    /// every paired sync, so this keeps the photo bytes from being re-uploaded each time, and
-    /// a member without a custom avatar never sends the avatar fields at all (so an
-    /// environment whose schema predates them keeps syncing names).
-    static func applyAvatar(_ avatar: MemberAvatar?, to record: CKRecord) {
+    /// Writes only the keys whose value actually changed, and bumps `updatedAt` only
+    /// when one did. The profile is rebuilt on every paired sync; an unchanged profile
+    /// must leave the record untouched (nothing to save) because every save of a shared
+    /// record pushes the partner, whose push-driven sync saves their profile, which
+    /// pushes us back — a silent-push ping-pong that delays the changes that matter.
+    /// Returns whether anything changed.
+    @discardableResult
+    static func apply(_ profile: CloudKitMemberProfile, to record: CKRecord) -> Bool {
+        var didChange = false
+        let ownerMemberID = normalizedRequired(profile.ownerMemberID)
+        if (record[Key.ownerMemberID] as? String) != ownerMemberID {
+            record[Key.ownerMemberID] = ownerMemberID as CKRecordValue
+            didChange = true
+        }
+        let displayName = normalizedDisplayName(profile.displayName)
+        if (record[Key.displayName] as? String) != displayName {
+            record[Key.displayName] = displayName as CKRecordValue
+            didChange = true
+        }
+        if applyAvatar(profile.avatar, to: record) {
+            didChange = true
+        }
+        if didChange || record[Key.updatedAt] == nil {
+            record[Key.updatedAt] = profile.updatedAt as CKRecordValue
+            didChange = true
+        }
+        return didChange
+    }
+
+    /// Writes only the avatar keys whose value actually changed, so the photo bytes are
+    /// not re-uploaded each time, and a member without a custom avatar never sends the
+    /// avatar fields at all (so an environment whose schema predates them keeps syncing
+    /// names). Returns whether any avatar key changed.
+    @discardableResult
+    static func applyAvatar(_ avatar: MemberAvatar?, to record: CKRecord) -> Bool {
+        var didChange = false
         let avatar = MemberAvatarPlan.normalized(avatar)
         let imageData = avatar?.imageData
         if (record[Key.avatarImage] as? Data) != imageData {
             record[Key.avatarImage] = imageData.map { $0 as NSData }
+            didChange = true
         }
         let text = avatar?.text
         if (record[Key.avatarText] as? String) != text {
             record[Key.avatarText] = text.map { $0 as NSString }
+            didChange = true
         }
         let background = avatar?.background?.rawValue
         if (record[Key.avatarBackground] as? String) != background {
             record[Key.avatarBackground] = background.map { $0 as NSString }
+            didChange = true
         }
+        return didChange
     }
 
     static func avatar(from record: CKRecord) -> MemberAvatar? {

@@ -629,6 +629,30 @@ final class CloudKitShareRootMetadataPlanTests: XCTestCase {
 
         XCTAssertEqual(record["ownerMemberID"] as? String, "_me")
     }
+
+    func testReapplyingSameOwnerMemberIDLeavesRootUnchanged() {
+        // A root that already carries the owner ID must not be re-saved on every sync:
+        // each save of a shared record pushes the partner, whose sync saves their own
+        // root, which pushes us back (a silent-push ping-pong).
+        let record = CKRecord(recordType: "CoupleSpace")
+        record["ownerMemberID"] = "_me" as CKRecordValue
+        let changedBefore = Set(record.changedKeys())
+
+        let didChange = CloudKitShareRootMetadataPlan.applyOwnerMemberID("_me", to: record)
+
+        XCTAssertFalse(didChange)
+        XCTAssertEqual(Set(record.changedKeys()), changedBefore)
+    }
+
+    func testChangingOwnerMemberIDMarksRootForSave() {
+        let record = CKRecord(recordType: "CoupleSpace")
+        record["ownerMemberID"] = "_old" as CKRecordValue
+
+        let didChange = CloudKitShareRootMetadataPlan.applyOwnerMemberID("_me", to: record)
+
+        XCTAssertTrue(didChange)
+        XCTAssertEqual(record["ownerMemberID"] as? String, "_me")
+    }
 }
 
 final class MemberProfileRecordMapperTests: XCTestCase {
@@ -1181,6 +1205,84 @@ final class MemberProfileAvatarRecordTests: XCTestCase {
         XCTAssertNil(record[MemberProfileRecordMapper.Key.avatarText])
         XCTAssertNil(record[MemberProfileRecordMapper.Key.avatarBackground])
         XCTAssertNil(MemberProfileRecordMapper.avatar(from: record))
+    }
+
+    func testUnchangedProfileProducesNothingToSave() {
+        // The profile is rebuilt on every paired sync. When nothing the partner can see
+        // has changed, no key (not even updatedAt) may be touched, so the record is not
+        // saved and no silent push reaches the partner.
+        let photo = Data([0x01, 0x02, 0x03])
+        let existing = CKRecord(recordType: MemberProfileRecordMapper.recordType)
+        existing[MemberProfileRecordMapper.Key.ownerMemberID] = "_owner" as CKRecordValue
+        existing[MemberProfileRecordMapper.Key.displayName] = "Lee" as CKRecordValue
+        existing[MemberProfileRecordMapper.Key.updatedAt] = Date(timeIntervalSince1970: 1_000) as CKRecordValue
+        existing[MemberProfileRecordMapper.Key.avatarImage] = photo as NSData
+        let changedBefore = Set(existing.changedKeys())
+        let profile = CloudKitMemberProfile(
+            ownerMemberID: " _owner ",
+            displayName: " Lee ",
+            updatedAt: Date(timeIntervalSince1970: 2_000),
+            avatar: MemberAvatar(imageData: photo)
+        )
+
+        let didChange = MemberProfileRecordMapper.apply(profile, to: existing)
+
+        XCTAssertFalse(didChange)
+        XCTAssertEqual(Set(existing.changedKeys()), changedBefore)
+        XCTAssertEqual(existing[MemberProfileRecordMapper.Key.updatedAt] as? Date, Date(timeIntervalSince1970: 1_000))
+    }
+
+    func testChangedAvatarBumpsUpdatedAtAndNeedsSave() {
+        let existing = CKRecord(recordType: MemberProfileRecordMapper.recordType)
+        existing[MemberProfileRecordMapper.Key.ownerMemberID] = "_owner" as CKRecordValue
+        existing[MemberProfileRecordMapper.Key.displayName] = "Lee" as CKRecordValue
+        existing[MemberProfileRecordMapper.Key.updatedAt] = Date(timeIntervalSince1970: 1_000) as CKRecordValue
+        let profile = CloudKitMemberProfile(
+            ownerMemberID: "_owner",
+            displayName: "Lee",
+            updatedAt: Date(timeIntervalSince1970: 2_000),
+            avatar: MemberAvatar(text: "Lee", background: .teal)
+        )
+
+        let didChange = MemberProfileRecordMapper.apply(profile, to: existing)
+
+        XCTAssertTrue(didChange)
+        XCTAssertEqual(existing[MemberProfileRecordMapper.Key.updatedAt] as? Date, Date(timeIntervalSince1970: 2_000))
+        XCTAssertEqual(existing[MemberProfileRecordMapper.Key.avatarText] as? String, "Lee")
+    }
+
+    func testChangedDisplayNameBumpsUpdatedAt() {
+        let existing = CKRecord(recordType: MemberProfileRecordMapper.recordType)
+        existing[MemberProfileRecordMapper.Key.ownerMemberID] = "_owner" as CKRecordValue
+        existing[MemberProfileRecordMapper.Key.displayName] = "Lee" as CKRecordValue
+        existing[MemberProfileRecordMapper.Key.updatedAt] = Date(timeIntervalSince1970: 1_000) as CKRecordValue
+        let profile = CloudKitMemberProfile(
+            ownerMemberID: "_owner",
+            displayName: "Wild",
+            updatedAt: Date(timeIntervalSince1970: 2_000)
+        )
+
+        let didChange = MemberProfileRecordMapper.apply(profile, to: existing)
+
+        XCTAssertTrue(didChange)
+        XCTAssertEqual(existing[MemberProfileRecordMapper.Key.displayName] as? String, "Wild")
+        XCTAssertEqual(existing[MemberProfileRecordMapper.Key.updatedAt] as? Date, Date(timeIntervalSince1970: 2_000))
+    }
+
+    func testNewProfileRecordIsAlwaysSaved() {
+        let profile = CloudKitMemberProfile(
+            ownerMemberID: "_owner",
+            displayName: "Lee",
+            updatedAt: Date(timeIntervalSince1970: 2_000)
+        )
+
+        let record = MemberProfileRecordMapper.record(from: profile, zoneID: zoneID)
+
+        XCTAssertEqual(record[MemberProfileRecordMapper.Key.updatedAt] as? Date, Date(timeIntervalSince1970: 2_000))
+        XCTAssertEqual(
+            Set(record.changedKeys()),
+            [MemberProfileRecordMapper.Key.ownerMemberID, MemberProfileRecordMapper.Key.displayName, MemberProfileRecordMapper.Key.updatedAt]
+        )
     }
 
     func testPartnerSyncedAvatarComesFromNewestPartnerProfile() {

@@ -25,6 +25,11 @@ enum ShareCalLaunchDiagnosticPlan {
     static let seedInvitationArgument = "-ShareCalSeedInvitation"
     static let seedInvitationTitleArgument = "-ShareCalSeedInvitationTitle"
     static let acceptInvitationArgument = "-ShareCalAcceptInvitation"
+    /// Creator side: withdraw the pending invitation with the given id (`<arg> <id>`).
+    static let withdrawInvitationArgument = "-ShareCalWithdrawInvitation"
+    /// Either side: sync, then log every invitation as `<id>:<status>` for the smoke
+    /// script to assert on (e.g. that a withdrawn invitation reads `canceled`).
+    static let probeInvitationsArgument = "-ShareCalProbeInvitations"
     static let addJointCommentArgument = "-ShareCalAddJointComment"
     static let probeJointCommentsArgument = "-ShareCalProbeJointComments"
     /// V1b visual check: seed a partner-authored comment on a fresh ORDINARY (non-joint) event
@@ -68,6 +73,14 @@ enum ShareCalLaunchDiagnosticPlan {
 
     static func shouldAcceptInvitation(arguments: [String]) -> Bool {
         arguments.contains(acceptInvitationArgument)
+    }
+
+    static func withdrawInvitationID(arguments: [String]) -> String? {
+        value(after: withdrawInvitationArgument, arguments: arguments)
+    }
+
+    static func shouldProbeInvitations(arguments: [String]) -> Bool {
+        arguments.contains(probeInvitationsArgument)
     }
 
     static func jointCommentBody(arguments: [String]) -> String? {

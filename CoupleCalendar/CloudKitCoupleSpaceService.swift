@@ -1138,6 +1138,58 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
+    /// The user's own EventMirror records, read from their private zone. Used only by
+    /// the reinstall reconciliation (`OwnMirrorReconciliationPlan`): the regular sync
+    /// never reads its own zone because the local shadows already know what is there.
+    func fetchOwnEventMirrors(currentMemberID: String) async throws -> [EventMirror] {
+        let records: [CKRecord]
+        do {
+            records = try await fetchRecords(
+                recordType: EventMirrorRecordMapper.recordType,
+                in: zoneID,
+                database: privateDatabase
+            )
+        } catch {
+            guard CloudKitRecordQueryFailurePlan.isMissingZone(error) else { throw error }
+            cloudKitSharingInfo("fetchOwnEventMirrors zone missing; nothing to reconcile")
+            return []
+        }
+        let mirrors = try records.map { try EventMirrorRecordMapper.eventMirror(from: $0) }
+        cloudKitSharingInfo("fetchOwnEventMirrors fetched records=\(mirrors.count)")
+        return OwnMirrorReconciliationPlan.ownedMirrors(mirrors, currentMemberID: currentMemberID)
+    }
+
+    /// Best-effort read of what a fresh install can take back from its own private zone
+    /// (see `ExistingICloudDataRecoveryPlan.recoveredState`). Failures are logged and
+    /// yield nils: recovery must still proceed without them.
+    func fetchExistingICloudIdentity(ownerMemberID: String) async -> (shareRootCreatedAt: Date?, ownProfile: CloudKitMemberProfile?) {
+        var shareRootCreatedAt: Date?
+        var ownProfile: CloudKitMemberProfile?
+        do {
+            let rootRecordID = CloudKitShareHierarchyPlan.rootRecordID(zoneID: zoneID)
+            if let root = try await fetchRecordForUpsertIfPresent(with: rootRecordID, database: privateDatabase) {
+                shareRootCreatedAt = (root["createdAt"] as? Date) ?? root.creationDate
+            }
+        } catch {
+            cloudKitSharingError("fetchExistingICloudIdentity root lookup failed error=\(describeCloudKitFailure(error))")
+        }
+        do {
+            let profileRecordID = CKRecord.ID(
+                recordName: MemberProfileRecordMapper.recordName(ownerMemberID: ownerMemberID),
+                zoneID: zoneID
+            )
+            if let record = try await fetchRecordForUpsertIfPresent(with: profileRecordID, database: privateDatabase) {
+                ownProfile = try MemberProfileRecordMapper.memberProfile(from: record)
+            }
+        } catch {
+            cloudKitSharingError("fetchExistingICloudIdentity profile lookup failed error=\(describeCloudKitFailure(error))")
+        }
+        cloudKitSharingInfo(
+            "fetchExistingICloudIdentity rootCreatedAt=\(shareRootCreatedAt.map { "\($0)" } ?? "nil") profile=\((ownProfile != nil).description)"
+        )
+        return (shareRootCreatedAt, ownProfile)
+    }
+
     func fetchSharedEventMirrors() async throws -> [EventMirror] {
         let sharedZoneIDs = try await fetchSharedCoupleSpaceZoneIDs()
         return try await fetchSharedEventMirrors(sharedZoneIDs: sharedZoneIDs)

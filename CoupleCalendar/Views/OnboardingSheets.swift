@@ -153,23 +153,28 @@ struct ExistingICloudDataRecoverySheet: View {
                 }
 
                 Section {
-                    Button(role: .destructive) {
-                        runAction(onDelete)
+                    // Keeping the data is the safe, expected choice after a reinstall,
+                    // so it comes first; deleting is the exception and stays destructive.
+                    Button {
+                        runAction(onKeep)
                     } label: {
                         if isRunningAction {
                             ProgressView()
                                 .frame(maxWidth: .infinity, alignment: .center)
                         } else {
-                            Text(settings.strings.deleteICloudDataButton)
+                            Text(settings.strings.continueExistingICloudDataButton)
+                                .fontWeight(.semibold)
                                 .frame(maxWidth: .infinity, alignment: .center)
                         }
                     }
                     .disabled(isRunningAction)
 
-                    Button(settings.strings.continueExistingICloudDataButton) {
-                        runAction(onKeep)
+                    Button(role: .destructive) {
+                        runAction(onDelete)
+                    } label: {
+                        Text(settings.strings.deleteICloudDataButton)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    .frame(maxWidth: .infinity, alignment: .center)
                     .disabled(isRunningAction)
                 }
             }

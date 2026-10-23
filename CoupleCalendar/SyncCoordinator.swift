@@ -274,11 +274,30 @@ struct SyncCoordinator {
                     return
                 }
 
+                // Reinstall reconciliation: until this install has confirmed one cloud
+                // write (fresh install over existing iCloud data) the ordinary tombstone
+                // diff has no trustworthy "previous state", so events that vanished
+                // while the app was gone would stay live in the cloud for the partner.
+                // Use our own cloud mirrors as that previous state instead.
+                var reconciledTombstones: [EventMirror] = []
+                if OwnMirrorReconciliationPlan.shouldReconcileWithCloud(existingShadows: existingShadows) {
+                    let cloudOwnMirrors = try await cloudKit.fetchOwnEventMirrors(currentMemberID: settings.currentMemberID)
+                    reconciledTombstones = eventMirrorService.deletedMirrorTombstones(
+                        existingEventKeys: currentMirrorKeys,
+                        existingMirrors: cloudOwnMirrors,
+                        selectedCalendarIDs: settings.selectedCalendarIDs,
+                        syncWindow: window,
+                        deletedAt: syncedAt
+                    )
+                    timing.mark("cloudOwnMirrorsReconciled cloud=\(cloudOwnMirrors.count) tombstones=\(reconciledTombstones.count)")
+                }
+                let mirrorsToUpload = mirrorsNeedingCloudUpload + reconciledTombstones
+
                 let accessRequestsNeedingCloudUpload = CalendarAccessRequestCloudUploadPlan.requestsNeedingUpload(
                     localAccessRequests,
                     currentMemberID: settings.currentMemberID
                 )
-                let hasCloudWrites = !mirrorsNeedingCloudUpload.isEmpty
+                let hasCloudWrites = !mirrorsToUpload.isEmpty
                     || !hardDeletedMirrors.isEmpty
                     || !canceledInvitations.isEmpty
                     || !accessRequestsNeedingCloudUpload.isEmpty
@@ -296,9 +315,9 @@ struct SyncCoordinator {
                         timing.mark("cloudMemberProfileChecked")
                     }
                     if hasCloudWrites {
-                        try await cloudKit.saveMirrorsForSync(mirrorsNeedingCloudUpload)
-                        try upsert(mirrors: mirrorsNeedingCloudUpload, modelContext: modelContext)
-                        timing.mark("cloudMirrorsSaved count=\(mirrorsNeedingCloudUpload.count)")
+                        try await cloudKit.saveMirrorsForSync(mirrorsToUpload)
+                        try upsert(mirrors: mirrorsToUpload, modelContext: modelContext)
+                        timing.mark("cloudMirrorsSaved count=\(mirrorsToUpload.count)")
                         try await cloudKit.deleteMirrorsForSync(hardDeletedMirrors)
                         timing.mark("cloudHardDeletesSaved count=\(hardDeletedMirrors.count)")
                         // CloudKit accepted the mirror writes — only now mark

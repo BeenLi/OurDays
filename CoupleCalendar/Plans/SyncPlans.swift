@@ -175,3 +175,26 @@ enum CloudKitMirrorSyncPlan {
             && lhs.cloudKitRecordName == rhs.cloudKitRecordName
     }
 }
+
+/// Decides when a sync must look at the EventMirror records already in the user's own
+/// private zone before uploading. Normally the local `LocalEventShadow` rows remember
+/// which events were uploaded, so a deleted event is tombstoned by diffing shadows
+/// against the calendar. After a delete-and-reinstall (or any wipe of the local cache)
+/// there is no such memory, so nothing would ever tombstone the records of events that
+/// disappeared while the app was gone — the partner would keep seeing them forever.
+/// Until one cloud write has been confirmed on this install (a shadow with
+/// `lastUploadedAt`), the sync reads its own cloud mirrors and treats them as the
+/// "previous state" for the ordinary tombstone diff. Shadows are written before the
+/// cloud step, so "no shadows at all" would stop after the first attempt even if that
+/// attempt failed; the upload stamp is the signal that the memory is trustworthy.
+enum OwnMirrorReconciliationPlan {
+    static func shouldReconcileWithCloud(existingShadows: [LocalEventShadow]) -> Bool {
+        !existingShadows.contains { $0.lastUploadedAt != nil }
+    }
+
+    /// Cloud copies carry whatever `ownerMemberID` they were uploaded with; the
+    /// current member ID is authoritative for the user's own zone.
+    static func ownedMirrors(_ mirrors: [EventMirror], currentMemberID: String) -> [EventMirror] {
+        CloudKitSharedDatabaseImportPlan.identifiedMirrors(mirrors, sharedOwnerID: currentMemberID)
+    }
+}

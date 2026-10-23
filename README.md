@@ -30,9 +30,9 @@ App 为四个 Tab 的标准 iOS 结构：
 | **邀请** | 收到的日程邀请与历史日历申请的待办列表（Tab 角标提示未处理数量） |
 | **设置** | 配对状态卡（发起配对 / 解除配对 / 同步 / 申请历史）、昵称与备注、共享日历选择、默认可见性、语言、删除 iCloud 数据 |
 
-| 日历 | 动态 | 邀请 | 设置 |
+| 双栏日视图 | 带头像的评论 | 配对第 N 天 | 昵称与头像 |
 | --- | --- | --- | --- |
-| ![日历](docs/screenshots/calendar.png) | ![动态](docs/screenshots/activity.png) | ![邀请](docs/screenshots/invites.png) | ![设置](docs/screenshots/settings.png) |
+| ![双栏日视图](docs/site/assets/dayview.webp) | ![日程详情与带头像的评论](docs/site/assets/comments.webp) | ![我们页：配对第 N 天](docs/site/assets/pairing.webp) | ![昵称与头像编辑](docs/site/assets/profile.webp) |
 
 ## 技术栈
 

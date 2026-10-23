@@ -53,9 +53,10 @@ jobs:
       - name: Skip Apple developer services lookup
         run: sudo sh -c 'echo "127.0.0.1 developerservices2.apple.com" >> /etc/hosts'
 
-      # Start the simulator booting but don't wait: the cold boot (~70 s) now
-      # overlaps the build instead of preceding it.
-      - name: Create and start booting iOS simulator
+      # Booting while building was tried in #31 and the build got ~2 min slower: actool
+      # (which talks to the simulator runtime) stalled ~100 s during the boot. So the
+      # simulator is fully booted first, then the build runs on a quiet machine.
+      - name: Create and boot iOS simulator
         id: simulator
         run: |
           set -euo pipefail
@@ -78,6 +79,7 @@ jobs:
 
           SIMULATOR_UDID=$(xcrun simctl create "CoupleCalendar CI iPhone" "${DEVICE_TYPE}" "${RUNTIME_ID}")
           xcrun simctl boot "${SIMULATOR_UDID}" || true
+          xcrun simctl bootstatus "${SIMULATOR_UDID}" -b
 
           echo "udid=${SIMULATOR_UDID}" >> "${GITHUB_OUTPUT}"
 
@@ -91,9 +93,6 @@ jobs:
             -derivedDataPath "${RUNNER_TEMP}/CoupleCalendarDerivedData" \
             ${ONLY_TESTING} \
             CODE_SIGNING_ALLOWED=NO
-
-      - name: Wait for simulator boot
-        run: xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
 
       - name: Run tests
         run: |

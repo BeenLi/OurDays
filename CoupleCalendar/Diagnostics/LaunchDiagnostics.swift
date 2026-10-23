@@ -106,6 +106,19 @@ enum ShareCalLaunchDiagnostics {
         if let body = ShareCalLaunchDiagnosticPlan.ordinaryCommentBody(arguments: arguments) {
             await seedOrdinaryComment(body: body, services: services, settings: settings, modelContext: modelContext)
         }
+        if let body = ShareCalLaunchDiagnosticPlan.eventCommentBody(arguments: arguments) {
+            await addEventComment(
+                body: body,
+                title: ShareCalLaunchDiagnosticPlan.eventCommentTitle(arguments: arguments),
+                services: services, settings: settings, modelContext: modelContext
+            )
+        }
+        if ShareCalLaunchDiagnosticPlan.shouldProbeEventComments(arguments: arguments) {
+            await probeEventComments(
+                title: ShareCalLaunchDiagnosticPlan.eventCommentTitle(arguments: arguments),
+                services: services, settings: settings, modelContext: modelContext
+            )
+        }
     }
 
     private static let diag = ShareCalLaunchDiagnosticPlan.diagnosticLogPrefix
@@ -287,6 +300,100 @@ enum ShareCalLaunchDiagnostics {
             .sorted { $0.createdAt < $1.createdAt }
         let bodies = comments.map(\.body).joined(separator: "|")
         NSLog("%@ jointComments count=%d bodies=[%@]", diag, comments.count, bodies)
+    }
+
+    /// Either side: comment on the event with the given title. On the owner the event is
+    /// found in EventKit and opened exactly like the calendar does — as a transient display
+    /// mirror run through `EventDetailCommentPlan` — so the comment is keyed by the mirrorKey
+    /// whether or not the mirror has synced yet (that is the "start a thread on my own event"
+    /// path). On the partner there is no such EventKit event, so the imported persisted mirror
+    /// is used and the write routes into the owner's shared zone. A sync follows the upload so
+    /// an unsynced own mirror lands too and the partner can find the event.
+    private static func addEventComment(
+        body: String, title: String, services: AppServices, settings: SettingsStore, modelContext: ModelContext
+    ) async {
+        let persisted = (try? modelContext.fetch(FetchDescriptor<EventMirror>())) ?? []
+        let selectedCalendarIDs = settings.selectedCalendarIDs
+        let now = Date.now
+        let ownEvents = services.calendarAccess.authorizedEvents(
+            from: now.addingTimeInterval(-7 * 86_400),
+            to: now.addingTimeInterval(7 * 86_400)
+        ).filter { selectedCalendarIDs.contains($0.calendarIdentifier) && $0.title == title }
+        let displayMirrors = CalendarDisplayMirrorPlan.displayMirrors(
+            from: ownEvents, ownerMemberID: settings.currentMemberID
+        )
+
+        let anchor: EventCommentAnchor
+        let resolution: String
+        if let display = displayMirrors.first {
+            let sharingWindows = CalendarSharingWindowPlan.effectiveWindows(
+                now: settings.pairingDate ?? PairingDatePlan.normalizedPairingDate(now),
+                accessRequests: (try? modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())) ?? []
+            )
+            switch EventDetailCommentPlan.availability(for: display, mirrors: persisted, sharingWindows: sharingWindows) {
+            case .available(let resolved):
+                anchor = resolved
+                let twin = EventDetailMirrorResolutionPlan.persistedTwin(for: display, in: persisted)
+                resolution = "own twin=\(twin?.id ?? "none")"
+            case .notSharedWithPartner:
+                NSLog("%@ addEventComment failed: own event '%@' is outside the sharing windows", diag, title)
+                return
+            }
+        } else if let mirror = persisted.first(where: {
+            $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix)
+        }) {
+            anchor = EventCommentAnchorPlan.anchor(forMirror: mirror)
+            resolution = "persisted owner=\(mirror.ownerMemberID)"
+        } else {
+            NSLog("%@ addEventComment failed: no event titled '%@' (EventKit or persisted)", diag, title)
+            return
+        }
+
+        let comment = services.commentService.createComment(
+            eventMirrorID: anchor.key,
+            authorMemberID: settings.currentMemberID,
+            body: body
+        )
+        modelContext.insert(comment)
+        do {
+            try modelContext.save()
+            if let cloudKit = services.cloudKitIfAvailable {
+                try await cloudKit.saveCommentForSync(
+                    comment,
+                    eventOwnerMemberID: anchor.ownerMemberID,
+                    currentMemberID: settings.currentMemberID,
+                    eventRecordName: anchor.recordName
+                )
+            }
+        } catch {
+            NSLog("%@ addEventComment failed: %@", diag, String(describing: error))
+            return
+        }
+        await runForegroundSync(services: services, settings: settings, modelContext: modelContext)
+        NSLog(
+            "%@ addEventComment succeeded title=%@ anchor=%@ via=%@ body=%@",
+            diag, title, anchor.key, resolution, body
+        )
+    }
+
+    /// Either side: sync, then log the thread of the persisted mirror with the given title.
+    private static func probeEventComments(
+        title: String, services: AppServices, settings: SettingsStore, modelContext: ModelContext
+    ) async {
+        await runForegroundSync(services: services, settings: settings, modelContext: modelContext)
+        let mirrors = (try? modelContext.fetch(FetchDescriptor<EventMirror>())) ?? []
+        guard let mirror = mirrors.first(where: {
+            $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPlan.transientIDPrefix)
+        }) else {
+            NSLog("%@ eventComments title=%@ count=0 (no persisted mirror)", diag, title)
+            return
+        }
+        let anchor = EventCommentAnchorPlan.anchor(forMirror: mirror)
+        let comments = ((try? modelContext.fetch(FetchDescriptor<EventComment>())) ?? [])
+            .filter { $0.eventMirrorID == anchor.key && $0.deletedAt == nil }
+            .sorted { $0.createdAt < $1.createdAt }
+        let bodies = comments.map(\.body).joined(separator: "|")
+        NSLog("%@ eventComments title=%@ count=%d bodies=[%@]", diag, title, comments.count, bodies)
     }
 
     /// V1b visual check title — a fresh ORDINARY event of my own (no matching invitation, so it

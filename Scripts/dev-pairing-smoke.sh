@@ -315,6 +315,45 @@ echo "$OWNER_PROBE2" | grep -q "$PARTNER_COMMENT" \
   || fail "owner did NOT see the partner's reply ('$PARTNER_COMMENT') — thread is NOT symmetric. Probe: $OWNER_PROBE2"
 log "Owner sees BOTH comments ✓ (joint comment thread is symmetric)"
 
+# ---------- 9b. Own-event thread: owner comments FIRST on its own fresh event → partner sees → replies → owner sees ----------
+# A comment on my own event is keyed by the mirrorKey (== the persisted record's id on both
+# devices), so the owner can start the thread before the mirror has synced; the mirror lands
+# on the following sync and the partner finds the comment under the imported event. The
+# partner's reply goes into the owner's shared zone, and the owner reads it back.
+OWN_EVENT_TITLE="Own Comment Event"
+OWN_COMMENT="own-first-$RANDOM"
+OWN_REPLY="partner-on-own-$RANDOM"
+
+log "Owner: creating a fresh own event and commenting on it right away ('$OWN_COMMENT')..."
+launch_app "$OWNER_UDID" "owner-own-comment" \
+  -ShareCalSeedCalendarEvent -ShareCalSeedCalendarEventTitle "$OWN_EVENT_TITLE" \
+  -ShareCalAddEventComment "$OWN_COMMENT" -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+OWN_ADD=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag addEventComment succeeded" $DIAG_TIMEOUT "owner comments on its own event")
+echo "$OWN_ADD" | grep -q "via=own" \
+  || fail "owner's comment did not take the own-event (display mirror) path. Log: $OWN_ADD"
+
+log "Partner: probing '$OWN_EVENT_TITLE' comments (must see the owner's comment)..."
+launch_app "$PARTNER_UDID" "partner-own-probe1" -ShareCalProbeEventComments -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+PARTNER_OWN_PROBE1=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "partner probes the owner's own-event thread")
+echo "$PARTNER_OWN_PROBE1" | grep -q "$OWN_COMMENT" \
+  || fail "partner did NOT see the owner's comment on the owner's own event ('$OWN_COMMENT'). Probe: $PARTNER_OWN_PROBE1"
+log "Partner sees the owner's own-event comment ✓"
+
+log "Partner: replying on the owner's event ('$OWN_REPLY')..."
+launch_app "$PARTNER_UDID" "partner-own-reply" -ShareCalAddEventComment "$OWN_REPLY" -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+OWN_REPLY_ADD=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag addEventComment succeeded" $DIAG_TIMEOUT "partner replies on the owner's event")
+echo "$OWN_REPLY_ADD" | grep -q "via=persisted" \
+  || fail "partner's reply did not resolve the imported (persisted) mirror. Log: $OWN_REPLY_ADD"
+
+log "Owner: probing '$OWN_EVENT_TITLE' comments (must see BOTH comments)..."
+launch_app "$OWNER_UDID" "owner-own-probe2" -ShareCalProbeEventComments -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+OWNER_OWN_PROBE2=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "owner probes its own-event thread")
+echo "$OWNER_OWN_PROBE2" | grep -q "$OWN_COMMENT" \
+  || fail "owner lost its own comment ('$OWN_COMMENT') on its own event. Probe: $OWNER_OWN_PROBE2"
+echo "$OWNER_OWN_PROBE2" | grep -q "$OWN_REPLY" \
+  || fail "owner did NOT see the partner's reply ('$OWN_REPLY') on its own event. Probe: $OWNER_OWN_PROBE2"
+log "Owner sees BOTH comments on its own event ✓ (own-event thread is symmetric)"
+
 # ---------- 10. Joint event UI: tapping the green block opens the comment thread ----------
 # Steps 8-9 prove the comment DATA pipeline; this proves the partner can actually REACH it
 # from the calendar UI — the green joint block must be tappable and open the comment thread
@@ -367,4 +406,4 @@ log "Partner sees the withdrawn invitation as canceled ✓"
 xcrun simctl terminate "$OWNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
 xcrun simctl terminate "$PARTNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
 
-log "✅ PASS: mutual two-person pairing established, events synced both ways, the partner UI renders the owner's event, a withdrawn invitation reads canceled on the partner's side, a joint event's comment thread is shared symmetrically across both partners, and the joint block opens its comment thread on tap."
+log "✅ PASS: mutual two-person pairing established, events synced both ways, the partner UI renders the owner's event, a withdrawn invitation reads canceled on the partner's side, a joint event's comment thread is shared symmetrically across both partners, a thread the owner starts on its own event reaches the partner and takes the reply, and the joint block opens its comment thread on tap."

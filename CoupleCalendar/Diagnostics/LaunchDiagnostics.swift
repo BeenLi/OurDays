@@ -91,6 +91,12 @@ enum ShareCalLaunchDiagnostics {
         if ShareCalLaunchDiagnosticPlan.shouldAcceptInvitation(arguments: arguments) {
             await acceptInvitation(services: services, settings: settings, modelContext: modelContext)
         }
+        if let invitationID = ShareCalLaunchDiagnosticPlan.withdrawInvitationID(arguments: arguments) {
+            await withdrawInvitation(id: invitationID, services: services, settings: settings, modelContext: modelContext)
+        }
+        if ShareCalLaunchDiagnosticPlan.shouldProbeInvitations(arguments: arguments) {
+            await probeInvitations(services: services, settings: settings, modelContext: modelContext)
+        }
         if let body = ShareCalLaunchDiagnosticPlan.jointCommentBody(arguments: arguments) {
             await addJointComment(body: body, services: services, settings: settings, modelContext: modelContext)
         }
@@ -188,6 +194,48 @@ enum ShareCalLaunchDiagnostics {
         } catch {
             NSLog("%@ acceptInvitation failed: %@", diag, String(describing: error))
         }
+    }
+
+    /// Creator side: withdraw my pending invitation through the real service path
+    /// (`InvitationService.cancel` → upload to my private zone), exactly as the
+    /// "撤销邀请" button does.
+    private static func withdrawInvitation(
+        id: String, services: AppServices, settings: SettingsStore, modelContext: ModelContext
+    ) async {
+        let all = (try? modelContext.fetch(FetchDescriptor<EventInvitation>())) ?? []
+        guard let invitation = all.first(where: { $0.id == id }) else {
+            NSLog("%@ withdrawInvitation failed: no invitation id=%@", diag, id)
+            return
+        }
+        guard InvitationInteractionPlan.canWithdraw(invitation, currentMemberID: settings.currentMemberID) else {
+            NSLog("%@ withdrawInvitation failed: not withdrawable id=%@ status=%@ creator=%@ me=%@",
+                  diag, id, invitation.statusRawValue, invitation.creatorMemberID, settings.currentMemberID)
+            return
+        }
+        do {
+            services.invitationService.cancel(invitation)
+            try modelContext.save()
+            if let cloudKit = services.cloudKitIfAvailable {
+                try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
+                invitation.needsCloudKitUpload = false
+                try? modelContext.save()
+            }
+            NSLog("%@ withdrawInvitation succeeded id=%@", diag, id)
+        } catch {
+            NSLog("%@ withdrawInvitation failed: %@", diag, String(describing: error))
+        }
+    }
+
+    /// Either side: sync, then log every invitation's id and status so the smoke script
+    /// can assert what this device currently believes about each one.
+    private static func probeInvitations(
+        services: AppServices, settings: SettingsStore, modelContext: ModelContext
+    ) async {
+        await runForegroundSync(services: services, settings: settings, modelContext: modelContext)
+        let all = ((try? modelContext.fetch(FetchDescriptor<EventInvitation>())) ?? [])
+            .sorted { $0.createdAt < $1.createdAt }
+        let entries = all.map { "\($0.id):\($0.statusRawValue)" }.joined(separator: ",")
+        NSLog("%@ invitations count=%d entries=[%@]", diag, all.count, entries)
     }
 
     /// Either side: sync, find the joint (accepted) invitation, add a comment anchored to

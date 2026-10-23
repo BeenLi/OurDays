@@ -496,6 +496,8 @@ enum InvitationReuploadPlan {
     /// does. Instead the local `needsCloudKitUpload` flag tracks "upload still owed":
     /// set on optimistic create, cleared once the background upload succeeds. This
     /// returns my creations still owing an upload so a later sync can re-push them.
+    /// The same flag covers a withdrawal (`InvitationService.cancel`): the creator's
+    /// `canceled` lives in the same private-zone record and must reach the partner.
     /// Self-limiting: once the flag is cleared, nothing is returned.
     static func creationsNeedingReupload(
         local: [EventInvitation],
@@ -523,13 +525,80 @@ enum InviteTimeAdjustmentPlan {
     }
 }
 
+/// An invitation is a proposal about something that has not happened yet. Once the
+/// event's end has passed there is nothing left to propose, so no invitation can be
+/// sent for it, a pending one can no longer be answered, and the list shows it as
+/// expired instead of waiting for a reply that cannot come.
+enum InvitationTimingPlan {
+    /// Whether an event with this end has already finished at `now`. All-day events
+    /// store their end as a time inside the last day (EventKit uses 23:59:59), so the
+    /// day is treated as ending at the next midnight to avoid off-by-a-second edges.
+    static func hasEnded(
+        endDate: Date,
+        isAllDay: Bool,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard isAllDay else { return endDate <= now }
+        let dayStart = calendar.startOfDay(for: endDate)
+        let exclusiveEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)
+            ?? dayStart.addingTimeInterval(24 * 60 * 60)
+        return exclusiveEnd <= now
+    }
+
+    /// The event detail "Invite" section is offered only for events that have not ended.
+    static func canInvite(
+        endDate: Date,
+        isAllDay: Bool,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        !hasEnded(endDate: endDate, isAllDay: isAllDay, now: now, calendar: calendar)
+    }
+
+    /// A pending invitation whose event has already ended. Terminal invitations are
+    /// never "expired": their answer is what counts.
+    static func isExpired(
+        _ invitation: EventInvitation,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        invitation.status == .pending
+            && hasEnded(
+                endDate: invitation.endDate,
+                isAllDay: invitation.isAllDay,
+                now: now,
+                calendar: calendar
+            )
+    }
+}
+
 enum InvitationInteractionPlan {
-    static func canRespond(to invitation: EventInvitation, currentMemberID: String) -> Bool {
+    static func canRespond(
+        to invitation: EventInvitation,
+        currentMemberID: String,
+        now: Date = .now
+    ) -> Bool {
         // In a two-person space, anyone who is not the creator is the invitee.
         // The stored `inviteeMemberID` is the partner's hashed CloudKit ID (stamped
         // by the creator), which never equals the recipient's local owner ID, so we
         // identify the invitee by "not the creator" instead.
-        invitation.status == .pending && invitation.creatorMemberID != currentMemberID
+        invitation.status == .pending
+            && invitation.creatorMemberID != currentMemberID
+            && !InvitationTimingPlan.isExpired(invitation, now: now)
+    }
+
+    /// The creator may take back an invitation while it is still pending and still
+    /// answerable. An expired one has nothing to withdraw; the list already shows it
+    /// as expired on both sides, so there is nothing for the partner to act on.
+    static func canWithdraw(
+        _ invitation: EventInvitation,
+        currentMemberID: String,
+        now: Date = .now
+    ) -> Bool {
+        invitation.status == .pending
+            && invitation.creatorMemberID == currentMemberID
+            && !InvitationTimingPlan.isExpired(invitation, now: now)
     }
 }
 
@@ -574,9 +643,45 @@ enum InvitationLocalEventSyncPlan {
     }
 }
 
+/// What the invites list says about an invitation: the stored status, except that a
+/// pending invitation whose event has already ended reads as expired.
+enum InvitationDisplayStatus: Equatable {
+    case pending
+    case accepted
+    case declined
+    case canceled
+    case expired
+}
+
 enum InvitationListPlan {
     static func visibleInvitations(_ invitations: [EventInvitation]) -> [EventInvitation] {
         invitations.filter { $0.archivedAt == nil }
+    }
+
+    static func displayStatus(for invitation: EventInvitation, now: Date = .now) -> InvitationDisplayStatus {
+        switch invitation.status {
+        case .pending:
+            return InvitationTimingPlan.isExpired(invitation, now: now) ? .expired : .pending
+        case .accepted:
+            return .accepted
+        case .declined:
+            return .declined
+        case .canceled:
+            return .canceled
+        }
+    }
+
+    /// Splits the visible invitations into the "pending" tickets (still answerable or
+    /// still awaiting the partner) and the "handled" rows. An expired pending
+    /// invitation is handled: nobody can accept it any more, so it must not sit under
+    /// "pending" looking like it is waiting for someone.
+    static func partitionForDisplay(
+        _ invitations: [EventInvitation],
+        now: Date = .now
+    ) -> (pending: [EventInvitation], handled: [EventInvitation]) {
+        let pending = invitations.filter { displayStatus(for: $0, now: now) == .pending }
+        let handled = invitations.filter { displayStatus(for: $0, now: now) != .pending }
+        return (sortedForDisplay(pending), sortedForDisplay(handled))
     }
 
     /// Orders invitations so the schedule nearest to now (the most recent start date)
@@ -606,6 +711,7 @@ struct CreateInviteDraft: Equatable {
 enum CreateInviteValidationError: LocalizedError, Equatable {
     case emptyTitle
     case invalidDateRange
+    case alreadyEnded
 
     var errorDescription: String? {
         switch self {
@@ -613,15 +719,20 @@ enum CreateInviteValidationError: LocalizedError, Equatable {
             return "Invite title is required."
         case .invalidDateRange:
             return "Invite end time must be after the start time."
+        case .alreadyEnded:
+            return "Invitations can only be sent for events that have not ended."
         }
     }
 }
 
 enum CreateInvitePlan {
-    static func localCalendarDraft(from draft: CreateInviteDraft) throws -> LocalCalendarEventDraft {
+    static func localCalendarDraft(from draft: CreateInviteDraft, now: Date = .now) throws -> LocalCalendarEventDraft {
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw CreateInviteValidationError.emptyTitle }
         guard draft.endDate > draft.startDate else { throw CreateInviteValidationError.invalidDateRange }
+        guard InvitationTimingPlan.canInvite(endDate: draft.endDate, isAllDay: draft.isAllDay, now: now) else {
+            throw CreateInviteValidationError.alreadyEnded
+        }
 
         return LocalCalendarEventDraft(
             title: title,
@@ -636,9 +747,10 @@ enum CreateInvitePlan {
     static func invitation(
         from draft: CreateInviteDraft,
         creatorMemberID: String,
-        inviteeMemberID: String
+        inviteeMemberID: String,
+        now: Date = .now
     ) throws -> EventInvitation {
-        let localDraft = try localCalendarDraft(from: draft)
+        let localDraft = try localCalendarDraft(from: draft, now: now)
         return EventInvitation(
             creatorMemberID: creatorMemberID,
             inviteeMemberID: inviteeMemberID,
@@ -656,9 +768,10 @@ enum CreateInvitePlan {
         from draft: CreateInviteDraft,
         createdEvent: CreatedCalendarEvent,
         ownerMemberID: String,
-        timeZoneIdentifier: String = TimeZone.current.identifier
+        timeZoneIdentifier: String = TimeZone.current.identifier,
+        now: Date = .now
     ) throws -> EventMirror {
-        let localDraft = try localCalendarDraft(from: draft)
+        let localDraft = try localCalendarDraft(from: draft, now: now)
         let fingerprint = [
             createdEvent.eventIdentifier,
             "\(Int(localDraft.startDate.timeIntervalSince1970.rounded()))",

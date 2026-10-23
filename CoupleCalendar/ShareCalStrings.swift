@@ -134,6 +134,10 @@ struct ShareCalStrings {
     var inviteSection: String { text("Invite", "邀请") }
     var invitePartnerButton: String { text("Invite partner", "邀请对方") }
     var invitationSentMessage: String { text("Invitation sent.", "邀请已发送。") }
+    var withdrawInvitationButton: String { text("Withdraw invitation", "撤销邀请") }
+    var invitationWithdrawnMessage: String { text("Invitation withdrawn.", "邀请已撤销。") }
+    var invitationExpiredTitle: String { text("Expired", "已过期") }
+    var inviteAlreadyEndedError: String { text("Invitations can only be sent for events that haven't ended.", "只能为尚未结束的日程发出邀请。") }
     var inviteAnywayButton: String { text("Invite anyway", "仍然邀请") }
     var cancelButton: String { text("Cancel", "取消") }
     var invitationConflictTitle: String { text("Schedule conflict", "日程冲突") }
@@ -472,6 +476,16 @@ struct ShareCalStrings {
         case .accepted: text("Accepted", "已接受")
         case .declined: text("Declined", "已拒绝")
         case .canceled: text("Canceled", "已取消")
+        }
+    }
+
+    func invitationStatusTitle(for status: InvitationDisplayStatus) -> String {
+        switch status {
+        case .pending: invitationStatusTitle(for: InvitationStatus.pending)
+        case .accepted: invitationStatusTitle(for: InvitationStatus.accepted)
+        case .declined: invitationStatusTitle(for: InvitationStatus.declined)
+        case .canceled: invitationStatusTitle(for: InvitationStatus.canceled)
+        case .expired: invitationExpiredTitle
         }
     }
 

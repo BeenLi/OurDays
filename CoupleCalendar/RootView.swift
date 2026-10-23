@@ -572,7 +572,9 @@ struct RootView: View {
     private func continueUsingExistingICloudData() async throws {
         settings.lastSyncError = nil
         settings.iCloudSharingEnabled = true
-        await restoreIdentityFromExistingICloudData()
+        if let cloudKit = services.cloudKitIfAvailable {
+            await ExistingICloudDataIdentityRecovery.restore(cloudKit: cloudKit, settings: settings)
+        }
         let didRun = await runForegroundSync(consumingAcceptedShareSignal: false, forceCloudKit: true)
         guard didRun else {
             let message = settings.strings.cloudKitSyncDisabledLocalBuild
@@ -583,30 +585,6 @@ struct RootView: View {
             throw NSError(domain: "ShareCal", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
         }
         settings.hasResolvedExistingICloudDataPrompt = true
-    }
-
-    /// The regular sync only imports the partner's zone, so the pairing date and our own
-    /// nickname/avatar (which the partner already knows us by) would otherwise be lost
-    /// on a reinstall and overwritten by whatever the fresh install just prompted for.
-    @MainActor
-    private func restoreIdentityFromExistingICloudData() async {
-        guard let cloudKit = services.cloudKitIfAvailable else { return }
-        if !settings.hasSyncedMemberID {
-            guard let memberID = try? await cloudKit.fetchCurrentUserRecordID() else { return }
-            settings.currentMemberID = memberID
-        }
-        let identity = await cloudKit.fetchExistingICloudIdentity(ownerMemberID: settings.currentMemberID)
-        let recovered = ExistingICloudDataRecoveryPlan.recoveredState(
-            shareRootCreatedAt: identity.shareRootCreatedAt,
-            ownProfile: identity.ownProfile
-        )
-        if let pairingDate = recovered.pairingDate {
-            settings.pairingDate = pairingDate
-        }
-        if let displayName = recovered.displayName {
-            settings.currentDisplayName = displayName
-            settings.currentAvatar = recovered.avatar
-        }
     }
 
     @MainActor

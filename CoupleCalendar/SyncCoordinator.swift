@@ -691,6 +691,34 @@ struct SyncCoordinator {
     }
 }
 
+/// The 「继续使用现有 iCloud 数据」 path's identity step, shared by RootView and the
+/// reinstall smoke diagnostic. The regular sync only imports the partner's zone, so the
+/// pairing date and our own nickname/avatar (which the partner already knows us by) would
+/// otherwise be lost on a reinstall and overwritten by whatever the fresh install prompted
+/// for. Best-effort: anything it cannot read stays as the user entered it.
+@MainActor
+enum ExistingICloudDataIdentityRecovery {
+    static func restore(cloudKit: CloudKitCoupleSpaceService, settings: SettingsStore) async {
+        if !settings.hasSyncedMemberID {
+            guard let memberID = try? await cloudKit.fetchCurrentUserRecordID() else { return }
+            settings.currentMemberID = memberID
+        }
+        let identity = await cloudKit.fetchExistingICloudIdentity(ownerMemberID: settings.currentMemberID)
+        let recovered = ExistingICloudDataRecoveryPlan.recoveredState(
+            shareRootCreatedAt: identity.shareRootCreatedAt,
+            ownProfile: identity.ownProfile
+        )
+        if let pairingDate = recovered.pairingDate {
+            settings.pairingDate = pairingDate
+        }
+        if let displayName = recovered.displayName {
+            settings.currentDisplayName = displayName
+            settings.currentAvatar = recovered.avatar
+            settings.hasCompletedInitialProfilePrompt = true
+        }
+    }
+}
+
 /// Runs the sync pipeline from background entry points (silent CloudKit push,
 /// BGAppRefresh) — outside the SwiftUI view tree that drives foreground syncs
 /// (notifications decision 0002). Holds the SAME SettingsStore/AppServices/container

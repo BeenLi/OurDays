@@ -108,6 +108,24 @@ final class CalendarAccessService {
         return event.eventIdentifier ?? UUID().uuidString
     }
 
+    /// Test-harness only (`-ShareCalDeleteCalendarEventTitled`): removes every event with
+    /// this title from the ShareCal calendar within ±30 days, so a smoke run can make an
+    /// already-synced event disappear from the system calendar. Returns how many it removed.
+    @discardableResult
+    func deleteShareCalEvents(titled title: String, now: Date = .now) throws -> Int {
+        let calendar = try ensureShareCalEKCalendar()
+        let predicate = eventStore.predicateForEvents(
+            withStart: now.addingTimeInterval(-30 * 24 * 60 * 60),
+            end: now.addingTimeInterval(30 * 24 * 60 * 60),
+            calendars: [calendar]
+        )
+        let matches = eventStore.events(matching: predicate).filter { $0.title == title }
+        for event in matches {
+            try eventStore.remove(event, span: .thisEvent, commit: true)
+        }
+        return matches.count
+    }
+
     func events(from startDate: Date, to endDate: Date, selectedCalendarIDs: Set<String>) -> [CalendarSourceEvent] {
         let calendars = eventStore.calendars(for: .event)
             .filter { selectedCalendarIDs.contains($0.calendarIdentifier) }

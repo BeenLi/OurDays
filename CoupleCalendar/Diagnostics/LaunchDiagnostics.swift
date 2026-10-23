@@ -20,6 +20,15 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
+        if let title = ShareCalLaunchDiagnosticPlan.deleteCalendarEventTitle(arguments: arguments) {
+            do {
+                let count = try services.calendarAccess.deleteShareCalEvents(titled: title)
+                NSLog("%@ deleteCalendarEvent succeeded title=%@ count=%d", diag, title, count)
+            } catch {
+                NSLog("%@ deleteCalendarEvent failed: %@", diag, String(describing: error))
+            }
+        }
+
         if ShareCalLaunchDiagnosticPlan.shouldRunCloudKitWriteProbe(arguments: arguments) {
             await services.cloudKit.runPrivateDatabaseWriteProbe()
         }
@@ -85,6 +94,9 @@ enum ShareCalLaunchDiagnostics {
         // Joint-event / comment smoke flow. Each handler that needs current data runs
         // its own direct foreground sync (the force-sync signal above is consumed by
         // RootView asynchronously, so it can't be relied on within this task).
+        if ShareCalLaunchDiagnosticPlan.shouldRecoverExistingICloudData(arguments: arguments) {
+            await recoverExistingICloudData(services: services, settings: settings, modelContext: modelContext)
+        }
         if ShareCalLaunchDiagnosticPlan.shouldSeedInvitation(arguments: arguments) {
             await seedInvitation(services: services, settings: settings, modelContext: modelContext, arguments: arguments)
         }
@@ -207,6 +219,44 @@ enum ShareCalLaunchDiagnostics {
         } catch {
             NSLog("%@ acceptInvitation failed: %@", diag, String(describing: error))
         }
+    }
+
+    /// Fresh install over existing iCloud data: what the 「继续使用现有 iCloud 数据」 button
+    /// does (identity restore + forced sync), then log the recovered state so the smoke
+    /// script can assert the pairing, nickname and imported data came back without a
+    /// re-pair. The owner's console also carries the sync's `cloudOwnMirrorsReconciled`
+    /// line for the ghost-event tombstones.
+    private static func recoverExistingICloudData(
+        services: AppServices, settings: SettingsStore, modelContext: ModelContext
+    ) async {
+        guard let cloudKit = services.cloudKitIfAvailable else {
+            NSLog("%@ recoverExistingICloudData failed: CloudKit unavailable", diag)
+            return
+        }
+        let snapshot = await cloudKit.existingICloudDataSnapshot()
+        NSLog("%@ recoverExistingICloudData snapshot privateZone=%d outgoingShare=%d sharedZones=%d lookupFailed=%d",
+              diag, snapshot.hasPrivateZoneData ? 1 : 0, snapshot.hasOutgoingShare ? 1 : 0,
+              snapshot.acceptedSharedZoneCount, snapshot.lookupFailed ? 1 : 0)
+        settings.iCloudSharingEnabled = true
+        await ExistingICloudDataIdentityRecovery.restore(cloudKit: cloudKit, settings: settings)
+        let coordinator = SyncCoordinator(
+            calendarAccess: services.calendarAccess,
+            eventMirrorService: services.eventMirrorService,
+            cloudKit: services.cloudKitIfAvailable
+        )
+        await coordinator.foregroundSync(modelContext: modelContext, settings: settings, forceCloudKit: true)
+        settings.hasResolvedExistingICloudDataPrompt = true
+
+        let partnerID = settings.partnerShareOwnerID ?? "nil"
+        let partnerMirrors = ((try? modelContext.fetch(FetchDescriptor<EventMirror>())) ?? [])
+            .filter { $0.ownerMemberID == settings.partnerShareOwnerID && $0.deletedAt == nil }.count
+        let comments = ((try? modelContext.fetch(FetchDescriptor<EventComment>())) ?? []).count
+        let invitations = ((try? modelContext.fetch(FetchDescriptor<EventInvitation>())) ?? []).count
+        let pairingDate = settings.pairingDate.map { ISO8601DateFormatter().string(from: $0) } ?? "nil"
+        NSLog("%@ recoverExistingICloudData result phase=%@ partner=%@ hasStartedPairing=%d displayName=%@ pairingDate=%@ partnerMirrors=%d comments=%d invitations=%d error=%@",
+              diag, settings.syncPhase.rawValue, partnerID, settings.hasStartedPairing ? 1 : 0,
+              settings.currentDisplayName, pairingDate, partnerMirrors, comments, invitations,
+              settings.lastSyncError ?? "none")
     }
 
     /// Creator side: withdraw my pending invitation through the real service path

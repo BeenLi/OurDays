@@ -48,15 +48,19 @@ launch_app() { # launch_app <udid> <console-log-name> [args...]
   # Seed the profile in the app's OWN UserDefaults so the first-run nickname /
   # existing-iCloud-data sheets never block automation. (seed_defaults writes the
   # device-level domain, which iOS does not reliably merge as the app's fallback.)
+  # SMOKE_FRESH_INSTALL=1 skips the seeding: the reinstall step must look exactly like a
+  # user's fresh install so the recovery path has to bring the nickname back itself.
   local profile_name="SmokeUser"
   [ "$udid" = "$OWNER_UDID" ] && profile_name="SmokeOwner"
   [ "$udid" = "$PARTNER_UDID" ] && profile_name="SmokePartner"
+  local seed_args=(-ShareCalSeedProfileName "$profile_name")
+  [ "${SMOKE_FRESH_INSTALL:-0}" = "1" ] && seed_args=()
   xcrun simctl terminate "$udid" "$BUNDLE_ID" 2>/dev/null || true
   sleep 1
   CONSOLE_LOG="$CONSOLE_DIR/$logname.log"
   : > "$CONSOLE_LOG"
   (xcrun simctl launch --console-pty "$udid" "$BUNDLE_ID" \
-     -ShareCalSeedProfileName "$profile_name" "$@" > "$CONSOLE_LOG" 2>&1 &)
+     "${seed_args[@]}" "$@" > "$CONSOLE_LOG" 2>&1 &)
 }
 
 wait_for_console() { # wait_for_console <console-log> <pattern> <timeout-seconds> <description>
@@ -403,7 +407,50 @@ echo "$PARTNER_INVITES2" | grep -q "$WITHDRAW_ID:canceled" \
   || fail "partner still does NOT see the withdrawn invitation as canceled. Probe: $PARTNER_INVITES2"
 log "Partner sees the withdrawn invitation as canceled ✓"
 
+# ---------- 12. Delete & reinstall: the owner recovers everything from iCloud ----------
+# A user who deletes the app loses only the local cache + UserDefaults; every paired record
+# survives in CloudKit. This proves the 「发现旧的 iCloud 数据 → 继续使用」 path (run through
+# its diagnostic twin) restores the pairing, the nickname and the imported data on a truly
+# fresh install, and that an event deleted WHILE the app was gone is tombstoned for the
+# partner (OwnMirrorReconciliationPlan) instead of living on as a ghost.
+log "Owner: syncing once so the next launch's automatic sync is throttled..."
+launch_app "$OWNER_UDID" "owner-presync" -ShareCalForceSync
+wait_for_console "$CONSOLE_LOG" "foregroundSync finished" $SYNC_TIMEOUT "owner pre-delete sync"
+
+log "Owner: deleting the smoke event from the system calendar without syncing..."
+# Launched within the 60 s automatic-sync throttle, so the deletion is NOT observed by
+# this install; the reinstall must discover it from its own cloud mirrors.
+launch_app "$OWNER_UDID" "owner-delete-event" -ShareCalDeleteCalendarEventTitled "ShareCal E2E Smoke Test"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag deleteCalendarEvent succeeded title=.* count=[1-9]" $DIAG_TIMEOUT \
+  "owner deletes the smoke event from the system calendar"
+xcrun simctl terminate "$OWNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
+grep -q "foregroundSync finished" "$CONSOLE_LOG" \
+  && fail "the delete-event launch ran a sync, so the reinstall step cannot prove the ghost-event tombstone; rerun"
+OWNER_NAME_BEFORE=$(read_default "$OWNER_UDID" currentDisplayName)
+
+log "Owner: deleting and reinstalling the app (fresh install, no seeded defaults)..."
+xcrun simctl uninstall "$OWNER_UDID" "$BUNDLE_ID"
+xcrun simctl install "$OWNER_UDID" "$APP_PATH"
+xcrun simctl privacy "$OWNER_UDID" grant calendar "$BUNDLE_ID" 2>/dev/null || true
+[ "$(read_default "$OWNER_UDID" partnerShareOwnerID)" = "(none)" ] || fail "uninstall did not clear the owner's UserDefaults"
+
+log "Owner: recovering from existing iCloud data (the 「继续使用现有 iCloud 数据」 path)..."
+SMOKE_FRESH_INSTALL=1 launch_app "$OWNER_UDID" "owner-recover" -ShareCalRecoverExistingICloudData
+RECOVERY=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag recoverExistingICloudData result" $DIAG_TIMEOUT "owner recovers from iCloud")
+echo "$RECOVERY" | grep -q "phase=idle" || fail "recovery sync did not finish cleanly: $RECOVERY"
+echo "$RECOVERY" | grep -q "partner=$PARTNER_ID " || fail "recovery did not restore the pairing (expected partner=$PARTNER_ID): $RECOVERY"
+echo "$RECOVERY" | grep -q "hasStartedPairing=1" || fail "recovery did not mark pairing as started: $RECOVERY"
+echo "$RECOVERY" | grep -q "displayName=$OWNER_NAME_BEFORE " || fail "recovery did not restore the owner's nickname '$OWNER_NAME_BEFORE': $RECOVERY"
+echo "$RECOVERY" | grep -qE "partnerMirrors=[1-9]" || fail "recovery did not import the partner's events: $RECOVERY"
+echo "$RECOVERY" | grep -qE "comments=[1-9]" || fail "recovery did not bring the comments back: $RECOVERY"
+echo "$RECOVERY" | grep -qE "invitations=[1-9]" || fail "recovery did not bring the invitations back: $RECOVERY"
+grep -qE "cloudOwnMirrorsReconciled cloud=[1-9][0-9]* tombstones=[1-9]" "$CONSOLE_LOG" \
+  || fail "the reinstall did not tombstone the event deleted while the app was gone (ghost event). Console: $(grep -E 'cloudOwnMirrorsReconciled|saveMirrorsForSync' "$CONSOLE_LOG" | tail -3)"
+log "Owner recovered pairing, nickname, partner events, comments and invitations from iCloud, and tombstoned the ghost event ✓"
+xcrun simctl terminate "$OWNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
+[ "$(read_default "$OWNER_UDID" partnerShareOwnerID)" = "$PARTNER_ID" ] || fail "recovered partnerShareOwnerID was not persisted"
+
 xcrun simctl terminate "$OWNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
 xcrun simctl terminate "$PARTNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
 
-log "✅ PASS: mutual two-person pairing established, events synced both ways, the partner UI renders the owner's event, a withdrawn invitation reads canceled on the partner's side, a joint event's comment thread is shared symmetrically across both partners, a thread the owner starts on its own event reaches the partner and takes the reply, and the joint block opens its comment thread on tap."
+log "✅ PASS: mutual two-person pairing established, events synced both ways, the partner UI renders the owner's event, a withdrawn invitation reads canceled on the partner's side, a joint event's comment thread is shared symmetrically across both partners, a thread the owner starts on its own event reaches the partner and takes the reply, the joint block opens its comment thread on tap, and a delete-and-reinstall recovers the pairing from iCloud and tombstones the ghost event."

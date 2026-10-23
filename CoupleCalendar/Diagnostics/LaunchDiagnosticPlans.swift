@@ -47,6 +47,13 @@ enum ShareCalLaunchDiagnosticPlan {
     /// Either side: sync, then log the comment thread of the event titled by
     /// `-ShareCalEventCommentTitle` as `eventComments title=… count=N bodies=[…]`.
     static let probeEventCommentsArgument = "-ShareCalProbeEventComments"
+    /// Reinstall smoke: delete the ShareCal events with this title from the system calendar
+    /// WITHOUT syncing (the automatic launch sync is throttled right after a sync), so the
+    /// next install has to discover the deletion from its own cloud mirrors.
+    static let deleteCalendarEventTitledArgument = "-ShareCalDeleteCalendarEventTitled"
+    /// Reinstall smoke: on a fresh install, run the 「继续使用现有 iCloud 数据」 path
+    /// (restore identity from the private zone + forced sync) and log what came back.
+    static let recoverExistingICloudDataArgument = "-ShareCalRecoverExistingICloudData"
     /// Common prefix for the new diagnostics' log markers.
     static let diagnosticLogPrefix = "ShareCalDiag"
 
@@ -116,6 +123,14 @@ enum ShareCalLaunchDiagnosticPlan {
 
     static func shouldProbeJointComments(arguments: [String]) -> Bool {
         arguments.contains(probeJointCommentsArgument)
+    }
+
+    static func deleteCalendarEventTitle(arguments: [String]) -> String? {
+        value(after: deleteCalendarEventTitledArgument, arguments: arguments)
+    }
+
+    static func shouldRecoverExistingICloudData(arguments: [String]) -> Bool {
+        arguments.contains(recoverExistingICloudDataArgument)
     }
 
     static func seedProfileName(arguments: [String] = ProcessInfo.processInfo.arguments) -> String? {

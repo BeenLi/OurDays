@@ -129,55 +129,56 @@ Debug 配置带 `LOCAL_SIGNING` 编译条件，CloudKit 整体关闭（`AppServi
 `CoupleCalendar/` 下没有第三方依赖，依赖方向固定为 **Views → Services/Stores → Plans → Models**，Plans 从不反向引用服务或存储（2026-10 重构后文件级反向依赖为 0）：
 
 ```text
-CoupleCalendar/
-├── CoupleCalendarApp.swift        @main、AppDelegate：BGTask 注册、静默推送入口、通知授权
-├── RootView.swift                 四 Tab 容器、sheet/alert 路由、配对冲突与已有 iCloud 数据弹窗
-├── Views/                         SwiftUI 界面，一屏一文件（仅 App target）
-│   ├── CalendarTabView.swift      日历 Tab：日/周切换、双列时间轴容器
-│   ├── DayTimeline/               对齐的双列日视图：Lane（单列）、Chrome（时间轴/当前时刻线）
-│   ├── WeekAgendaView.swift       周议程
-│   ├── EventDetail/               日程详情 + 评论区
-│   ├── ActivityTabView.swift      动态 Tab
-│   ├── InvitesTabView.swift       邀请 Tab（邀请 + 历史申请）
-│   ├── CreateInviteView.swift     发起邀请
-│   ├── Settings/                  我们 Tab：SettingsTabView、PairingStatusCard、AvatarEditorSheet、HistoryRequestSheet
-│   ├── OnboardingSheets.swift     首次启动引导、配对安全说明
-│   ├── HierarchicalDatePickerSheet.swift  年/月/日层级选日期
-│   ├── DesignSystem.swift         OurDaysTheme、卡片/按钮样式、头像视图
-│   └── CloudSharingController.swift   UICloudSharingController 封装
-├── Plans/                         无状态 "Plan enum"：全部决策逻辑，纯函数，直接单测
-│   ├── PairingPlans.swift         TwoPersonPairingPlan、ShareAcceptanceGuardPlan、ExistingICloudDataRecoveryPlan（重装恢复）、PartnerScopedDataPlan（前任数据过滤）
-│   ├── SyncPlans.swift            ForegroundSyncPlan（节流）、CloudKitMirrorSyncPlan（哪些 mirror 要上传）、OwnMirrorReconciliationPlan（重装补墓碑）、BackgroundRefreshSchedulePlan
-│   ├── CloudKitPlans.swift        写入去向、共享层级、根记录元数据、导入过滤、停止共享、解除配对时清理前任记录
-│   ├── InvitationAndAccessRequestPlans.swift  邀请时效/撤销/合并/重传、历史申请、配对日、共享时间窗
-│   ├── CommentPlans.swift         评论线程锚点（mirrorKey / 邀请 id）、详情页是否可评论、红点
-│   ├── ActivityAndNotificationPlans.swift     动态流聚合、LocalNotificationPlan（四类通知）
-│   ├── CalendarSourcePlans.swift  EventKit 授权状态、EventMirrorKeyPlan、日历选择
-│   ├── CalendarDisplayPlans.swift 时间文案、DateFormatterCache、CalendarDisplayMirrorPlan（自己日程的即时展示）
-│   ├── CalendarNavigationPlans.swift / DayTimelinePlans.swift / AgendaPlans.swift  日期导航、双列布局、共同日程、周议程
-│   └── MemberIdentityPlans.swift  MemberIDPlan 归一化、头像与显示名
-├── SettingsStore.swift            UserDefaults 持久化的设置与配对状态（@Observable）
-├── SyncCoordinator.swift          foregroundSync：唯一的同步管线；ShareCalBackgroundSyncRunner（推送 / BGAppRefresh 入口）；通知调度
-├── AppServices.swift              服务容器
-├── CloudKitCoupleSpaceService.swift   全部 CloudKit I/O：zone / root / share / 订阅 / 查询 / 写入
-├── CloudKitRecordMappers.swift    CKRecord ↔ 模型 的纯映射（只写变化字段）、批量 upsert 与查询计划
-├── ShareCalSceneDelegate.swift    场景代理、CKShare 接受处理、更换配对确认
-├── CalendarAccessService.swift    EventKit 访问
-├── EventServices.swift            EventMirrorService / InvitationService / CommentService：生成与变更，不含决策
-├── Models.swift                   SwiftData 模型（EventMirror、LocalEventShadow、EventInvitation、EventComment、CalendarAccessRequest、MemberProfile）与本地清理
-├── ShareCalStrings.swift          手写中英文案
-└── Diagnostics/                   仅由启动参数驱动的探针与冒烟工具，正常运行不使用
-```
-
-```text
-CoupleCalendarTests/               XCTest，一个领域一个文件，直接编译非 UI 源码（无 @testable import）
-                                   PairingTests / CloudKitTests / SyncTests / CalendarMirrorTests /
-                                   InvitationAndAccessRequestTests / CommentTests /
-                                   DayTimelineAndNavigationTests / ActivityAndNotificationTests / SettingsAndStringsTests
-CoupleCalendarUITests/             XCUITest：启动、滑动切日、首次引导，以及（配对模拟器上）对方日程与评论线程
-Scripts/                           CloudKit schema 导入、双模拟器配对冒烟脚本、App Store / TestFlight 导出配置
-CloudKit/ShareCalSchema.ckdb       CloudKit schema 源文件
-docs/                              开发流程、隐私政策、官网源码（docs/site）、README 架构图源文件（docs/diagrams）、审核记录、规划树（docs/plantree）
+OurDays/
+├── CoupleCalendar/
+│   ├── CoupleCalendarApp.swift        @main、AppDelegate：BGTask 注册、静默推送入口、通知授权
+│   ├── RootView.swift                 四 Tab 容器、sheet/alert 路由、配对冲突与已有 iCloud 数据弹窗
+│   ├── Views/                         SwiftUI 界面，一屏一文件（仅 App target）
+│   │   ├── CalendarTabView.swift      日历 Tab：日/周切换、双列时间轴容器
+│   │   ├── DayTimeline/               对齐的双列日视图：Lane（单列）、Chrome（时间轴/当前时刻线）
+│   │   ├── WeekAgendaView.swift       周议程
+│   │   ├── EventDetail/               日程详情 + 评论区
+│   │   ├── ActivityTabView.swift      动态 Tab
+│   │   ├── InvitesTabView.swift       邀请 Tab（邀请 + 历史申请）
+│   │   ├── CreateInviteView.swift     发起邀请
+│   │   ├── Settings/                  我们 Tab：SettingsTabView、PairingStatusCard、AvatarEditorSheet、HistoryRequestSheet
+│   │   ├── OnboardingSheets.swift     首次启动引导、配对安全说明
+│   │   ├── HierarchicalDatePickerSheet.swift  年/月/日层级选日期
+│   │   ├── DesignSystem.swift         OurDaysTheme、卡片/按钮样式、头像视图
+│   │   └── CloudSharingController.swift   UICloudSharingController 封装
+│   ├── Plans/                         无状态 "Plan enum"：全部决策逻辑，纯函数，直接单测
+│   │   ├── PairingPlans.swift         TwoPersonPairingPlan、ShareAcceptanceGuardPlan、ExistingICloudDataRecoveryPlan（重装恢复）、PartnerScopedDataPlan（前任数据过滤）
+│   │   ├── SyncPlans.swift            ForegroundSyncPlan（节流）、CloudKitMirrorSyncPlan（哪些 mirror 要上传）、OwnMirrorReconciliationPlan（重装补墓碑）、BackgroundRefreshSchedulePlan
+│   │   ├── CloudKitPlans.swift        写入去向、共享层级、根记录元数据、导入过滤、停止共享、解除配对时清理前任记录
+│   │   ├── InvitationAndAccessRequestPlans.swift  邀请时效/撤销/合并/重传、历史申请、配对日、共享时间窗
+│   │   ├── CommentPlans.swift         评论线程锚点（mirrorKey / 邀请 id）、详情页是否可评论、红点
+│   │   ├── ActivityAndNotificationPlans.swift     动态流聚合、LocalNotificationPlan（四类通知）
+│   │   ├── CalendarSourcePlans.swift  EventKit 授权状态、EventMirrorKeyPlan、日历选择
+│   │   ├── CalendarDisplayPlans.swift 时间文案、DateFormatterCache、CalendarDisplayMirrorPlan（自己日程的即时展示）
+│   │   ├── CalendarNavigationPlans.swift / DayTimelinePlans.swift / AgendaPlans.swift  日期导航、双列布局、共同日程、周议程
+│   │   └── MemberIdentityPlans.swift  MemberIDPlan 归一化、头像与显示名
+│   ├── SettingsStore.swift            UserDefaults 持久化的设置与配对状态（@Observable）
+│   ├── SyncCoordinator.swift          foregroundSync：唯一的同步管线；ShareCalBackgroundSyncRunner（推送 / BGAppRefresh 入口）；通知调度
+│   ├── AppServices.swift              服务容器
+│   ├── CloudKitCoupleSpaceService.swift   全部 CloudKit I/O：zone / root / share / 订阅 / 查询 / 写入
+│   ├── CloudKitRecordMappers.swift    CKRecord ↔ 模型 的纯映射（只写变化字段）、批量 upsert 与查询计划
+│   ├── ShareCalSceneDelegate.swift    场景代理、CKShare 接受处理、更换配对确认
+│   ├── CalendarAccessService.swift    EventKit 访问
+│   ├── EventServices.swift            EventMirrorService / InvitationService / CommentService：生成与变更，不含决策
+│   ├── Models.swift                   SwiftData 模型（EventMirror、LocalEventShadow、EventInvitation、EventComment、CalendarAccessRequest、MemberProfile）与本地清理
+│   ├── ShareCalStrings.swift          手写中英文案
+│   └── Diagnostics/                   仅由启动参数驱动的探针与冒烟工具，正常运行不使用
+├── CoupleCalendarTests/           XCTest，一个领域一个文件，直接编译非 UI 源码（无 @testable import）
+│                                  PairingTests / CloudKitTests / SyncTests / CalendarMirrorTests /
+│                                  InvitationAndAccessRequestTests / CommentTests /
+│                                  DayTimelineAndNavigationTests / ActivityAndNotificationTests / SettingsAndStringsTests
+├── CoupleCalendarUITests/         XCUITest：启动、滑动切日、首次引导，以及（配对模拟器上）对方日程与评论线程
+├── CoupleCalendar.xcodeproj       唯一的 scheme CoupleCalendar；App、单测、UI 测试三个 target
+├── CloudKit/ShareCalSchema.ckdb   CloudKit schema 源文件
+├── Scripts/                       CloudKit schema 导入、双模拟器配对冒烟脚本、App Store / TestFlight 导出配置
+├── docs/                          开发流程、隐私政策、官网源码（docs/site）、README 架构图源文件（docs/diagrams）、审核记录、规划树（docs/plantree）
+├── .github/workflows/ios-ci.yml   CI：macOS runner 构建并跑全部测试
+└── CLAUDE.md                      代码架构与约定（身份模型、CloudKit 布局、Plan 约定）
 ```
 
 新增非 UI 文件时要同时加进 App 和 Test 两个 target（test target 直接编译源码）；UI 文件只进 App target。

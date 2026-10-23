@@ -287,33 +287,6 @@ log "Partner: accepting the invitation (creates joint event)..."
 launch_app "$PARTNER_UDID" "partner-accept-invite" -ShareCalAcceptInvitation
 wait_for_console "$CONSOLE_LOG" "ShareCalDiag acceptInvitation succeeded" $DIAG_TIMEOUT "partner accepts invitation"
 
-# ---------- 8b. Withdraw: owner invites again → partner sees pending → owner withdraws → partner sees canceled ----------
-# Exercises the sender-side withdrawal (InvitationService.cancel + upload to the creator's
-# zone) and the partner's import applying the terminal `canceled` over its `pending` copy.
-log "Owner: seeding a second invitation (to be withdrawn)..."
-launch_app "$OWNER_UDID" "owner-seed-invite2" -ShareCalSeedInvitation
-SEED2=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag seedInvitation succeeded" $DIAG_TIMEOUT "owner seeds second invitation")
-WITHDRAW_ID=$(echo "$SEED2" | sed -n 's/.*seedInvitation succeeded id=\([^ ]*\).*/\1/p' | tail -1)
-[ -n "$WITHDRAW_ID" ] || fail "could not parse the seeded invitation id from: $SEED2"
-
-log "Partner: probing invitations (must see $WITHDRAW_ID as pending)..."
-launch_app "$PARTNER_UDID" "partner-probe-invites1" -ShareCalProbeInvitations
-PARTNER_INVITES1=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag invitations count=" $DIAG_TIMEOUT "partner probes invitations")
-echo "$PARTNER_INVITES1" | grep -q "$WITHDRAW_ID:pending" \
-  || fail "partner did NOT receive the second invitation as pending. Probe: $PARTNER_INVITES1"
-log "Partner sees the second invitation as pending ✓"
-
-log "Owner: withdrawing invitation $WITHDRAW_ID..."
-launch_app "$OWNER_UDID" "owner-withdraw-invite" -ShareCalWithdrawInvitation "$WITHDRAW_ID"
-wait_for_console "$CONSOLE_LOG" "ShareCalDiag withdrawInvitation succeeded" $DIAG_TIMEOUT "owner withdraws invitation"
-
-log "Partner: probing invitations (must now see $WITHDRAW_ID as canceled)..."
-launch_app "$PARTNER_UDID" "partner-probe-invites2" -ShareCalProbeInvitations
-PARTNER_INVITES2=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag invitations count=" $DIAG_TIMEOUT "partner probes invitations after withdrawal")
-echo "$PARTNER_INVITES2" | grep -q "$WITHDRAW_ID:canceled" \
-  || fail "partner still does NOT see the withdrawn invitation as canceled. Probe: $PARTNER_INVITES2"
-log "Partner sees the withdrawn invitation as canceled ✓"
-
 # ---------- 9. Joint comment symmetry: owner comments → partner sees → replies → owner sees ----------
 OWNER_COMMENT="owner-hello-$RANDOM"
 PARTNER_COMMENT="partner-reply-$RANDOM"
@@ -360,6 +333,36 @@ TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
   "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
   -quiet || fail "partner could not open the joint event's comment thread from the UI (see $JOINT_UI_RESULT)"
 log "Partner opened the joint event comment thread from the UI (screenshot in $JOINT_UI_RESULT)."
+
+# ---------- 11. Withdraw: owner invites again → partner sees pending → owner withdraws → partner sees canceled ----------
+# Exercises the sender-side withdrawal (InvitationService.cancel + upload to the creator's
+# zone) and the partner's import applying the terminal `canceled` over its `pending` copy.
+# Runs after the UI steps: the second invitation shares the smoke event's title and, once
+# canceled, sorts above the accepted row in the invites list, which would mislead the
+# title-based tap in step 10's XCUITest.
+log "Owner: seeding a second invitation (to be withdrawn)..."
+launch_app "$OWNER_UDID" "owner-seed-invite2" -ShareCalSeedInvitation
+SEED2=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag seedInvitation succeeded" $DIAG_TIMEOUT "owner seeds second invitation")
+WITHDRAW_ID=$(echo "$SEED2" | sed -n 's/.*seedInvitation succeeded id=\([^ ]*\).*/\1/p' | tail -1)
+[ -n "$WITHDRAW_ID" ] || fail "could not parse the seeded invitation id from: $SEED2"
+
+log "Partner: probing invitations (must see $WITHDRAW_ID as pending)..."
+launch_app "$PARTNER_UDID" "partner-probe-invites1" -ShareCalProbeInvitations
+PARTNER_INVITES1=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag invitations count=" $DIAG_TIMEOUT "partner probes invitations")
+echo "$PARTNER_INVITES1" | grep -q "$WITHDRAW_ID:pending" \
+  || fail "partner did NOT receive the second invitation as pending. Probe: $PARTNER_INVITES1"
+log "Partner sees the second invitation as pending ✓"
+
+log "Owner: withdrawing invitation $WITHDRAW_ID..."
+launch_app "$OWNER_UDID" "owner-withdraw-invite" -ShareCalWithdrawInvitation "$WITHDRAW_ID"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag withdrawInvitation succeeded" $DIAG_TIMEOUT "owner withdraws invitation"
+
+log "Partner: probing invitations (must now see $WITHDRAW_ID as canceled)..."
+launch_app "$PARTNER_UDID" "partner-probe-invites2" -ShareCalProbeInvitations
+PARTNER_INVITES2=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag invitations count=" $DIAG_TIMEOUT "partner probes invitations after withdrawal")
+echo "$PARTNER_INVITES2" | grep -q "$WITHDRAW_ID:canceled" \
+  || fail "partner still does NOT see the withdrawn invitation as canceled. Probe: $PARTNER_INVITES2"
+log "Partner sees the withdrawn invitation as canceled ✓"
 
 xcrun simctl terminate "$OWNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
 xcrun simctl terminate "$PARTNER_UDID" "$BUNDLE_ID" 2>/dev/null || true

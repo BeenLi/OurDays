@@ -4,6 +4,8 @@
 - ⏳ **1.7 (build 36)**：#33 同步被取消不再显示红条 + #35 首次启动跟随系统语言、权限弹窗中文、英文隐私政策。版本号 PR #36。schema 自 1.6 无变化，不需要部署 Production。
   - App Store Connect：English (U.S.) 副标题 / 描述 / 关键词、英文隐私政策 URL `https://ourdays.cn/privacy-en.html`，主要语言改为 English (U.S.)；中英文发布说明。
   - 英文截图：宣传页 promo.html 译成英文后按同样方法渲染四张（`docs/site/assets/en/*.webp`，App Store 用 `docs/screenshots/appstore/en/` 的 6.3"/6.7" 两组），English (U.S.) 用英文图，简体中文仍用中文图；README.en.md 也换成英文图。
+  - 2026-10-25：build 36 archive + upload；App Store Connect 新建 1.7，名称改为「OurDays：两人世界」/「OurDays: A World for Two」，中文副标题「情侣共享日历」；14:16 UTC 提交审核（WAITING_FOR_REVIEW，过审自动发布）。
+  - 上架后：App 信息 → 主要语言改为 English (U.S.)（1.6 的英文页没有截图，ASC 不允许在 1.7 上架前切换）。
 
 - 🚧 **中国以外用英文**（[decision 0001](decisions/0001-english-outside-china.md)）：#35 首次启动跟随系统语言、权限弹窗与 App Store 语言栏加简体中文、隐私政策拆出英文页。
   - 2026-10-25：English (U.S.) 商品页文案草稿给用户确认；确认后在 App Store Connect 填写并把主要语言改为 English (U.S.)，描述与关键词随 1.7 生效。

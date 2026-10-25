@@ -21,7 +21,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 ## Active plans
 | Plan | Status | Current Phase | Last Landed | Next Target |
 |------|--------|---------------|-------------|-------------|
-| [releases](plans/releases/) | 🚧 1.7 准备中 | 1.7 (build 36)：#33 同步取消修复 + #35 跟随系统语言 / 中文权限弹窗 / 英文隐私政策；App Store 主要语言改 English (U.S.) | 2026-10-25：1.6 已上架；#36 版本号 | 上传 build 36，填英文商品页，提交审核 |
+| [releases](plans/releases/) | 🚧 1.7 审核中 | 1.7 (build 36)：#33 同步取消修复 + #35 跟随系统语言 / 中文权限弹窗 / 英文隐私政策；App Store 主要语言改 English (U.S.) | 2026-10-25：1.6 已上架；#36 版本号 | 过审自动上架后把主要语言改为 English (U.S.) |
 | [docs-and-site](plans/docs-and-site/) | 🚧 In Progress | README 已对齐 main 至 #29 | 2026-10-23：#28 代码结构合成一棵树；#29 随改名更新 README / CLAUDE.md | 1.6 上架后刷新官网与 README 的版本说明 |
 
 ## Landed plans（已落地 / 已发布，只在回归时回看）

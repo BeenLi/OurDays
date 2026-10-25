@@ -74,7 +74,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #33 | 2026-10-25 | 同步被取消不再显示红条「Operation … was cancelled」；界面触发的同步不随视图消失而取消 | [pairing-sync-integrity](plans/pairing-sync-integrity/decisions/0005-cancelled-sync-is-not-a-failure.md) |
 | #34 | 2026-10-25 | README 增加英文版 README.en.md（含英文版两张架构图 docs/diagrams/*.en.*），中英文顶部互相切换 | [docs-and-site](plans/docs-and-site/) |
 | #35 | 2026-10-25 | 中国以外用英文：首次启动跟随系统语言；权限弹窗与 App Store 语言栏加简体中文；隐私政策加英文页 | [releases](plans/releases/decisions/0001-english-outside-china.md) |
-| #36 | 本 PR | 版本号 1.7 (36) | [releases](plans/releases/) |
+| #36 | 本 PR | 版本号 1.7 (36)；英文界面截图（App Store 英文页、README.en.md） | [releases](plans/releases/) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

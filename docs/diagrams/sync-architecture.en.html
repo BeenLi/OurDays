@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OurDays sync architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FFFFFF; --paper-2: #F1EEE8; --surface: #FFFFFF;
+    --ink: #1E2233; --muted: #3F4456; --soft: #3F4456;
+    --rule: rgba(30,34,51,0.22); --rule-solid: #C9C4BA;
+    --accent: #1F7A84; --accent-tint: rgba(31,122,132,0.08);
+    --link: #B3283A; --ext-fill: rgba(30,34,51,0.04); --ext-stroke: rgba(30,34,51,0.55);
+    --font-sans: 'Geist', 'Noto Sans SC', 'PingFang SC', 'WenQuanYi Zen Hei', system-ui, sans-serif;
+    --font-serif: 'Instrument Serif', 'Noto Serif SC', 'Songti SC', serif;
+    --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font-sans); background: var(--paper); color: var(--ink); padding: 2.5rem 16px 3rem; }
+  .frame { max-width: 1280px; margin: 0 auto; }
+  .eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin: 0 0 0.5rem; }
+  h1 { font-family: var(--font-serif); font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem); font-weight: 400; line-height: 1.2; margin: 0 0 1.25rem; }
+  .diagram-container { width: 100%; overflow-x: auto; }
+  svg { width: 100%; min-width: 1280px; display: block; }
+  @media print { .diagram-container { overflow-x: visible; } svg { min-width: 0; } }
+</style>
+</head>
+<body>
+<div class="frame">
+  <p class="eyebrow">Architecture · OurDays</p>
+  <h1>Two private zones, one CKShare each, read-only to the other side</h1>
+  <div class="diagram-container">
+    <svg viewBox="0 0 1280 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ourdays-sync-arch-title ourdays-sync-arch-desc" font-family="var(--font-sans)">
+      <title id="ourdays-sync-arch-title">OurDays sync architecture</title>
+      <desc id="ourdays-sync-arch-desc">Each person mirrors their system calendars into the CoupleSpace zone of their own iCloud private database and shares it with the partner through one CKShare; the partner reads it through the shared database, and responses to each other's data are written into the other person's zone.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="var(--muted)"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="var(--accent)"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="var(--link)"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="var(--paper)"/>
+
+      <!-- ZONES -->
+      <rect x="48" y="72" width="272" height="416" rx="8" fill="rgba(30,34,51,0.02)" stroke="rgba(30,34,51,0.10)" stroke-width="0.8"/>
+      <rect x="64" y="76" width="88" height="16" rx="2" fill="var(--paper)"/>
+      <text x="108" y="88" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">A's device</text>
+      <rect x="400" y="72" width="496" height="416" rx="8" fill="rgba(30,34,51,0.02)" stroke="rgba(30,34,51,0.10)" stroke-width="0.8"/>
+      <rect x="416" y="76" width="144" height="16" rx="2" fill="var(--paper)"/>
+      <text x="488" y="88" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">iCloud · CloudKit</text>
+      <rect x="960" y="72" width="272" height="416" rx="8" fill="rgba(30,34,51,0.02)" stroke="rgba(30,34,51,0.10)" stroke-width="0.8"/>
+      <rect x="976" y="76" width="88" height="16" rx="2" fill="var(--paper)"/>
+      <text x="1020" y="88" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">B's device</text>
+
+      <!-- ARROWS -->
+      <line x1="184" y1="400" x2="184" y2="192" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <rect x="116" y="280" width="60" height="32" rx="2" fill="var(--paper)"/>
+      <text x="146" y="292" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">rebuild</text>
+      <text x="146" y="308" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">mirrors</text>
+      <line x1="304" y1="152" x2="416" y2="152" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow-accent)"/>
+      <rect x="340" y="130" width="40" height="16" rx="2" fill="var(--paper)"/>
+      <text x="360" y="142" fill="var(--accent)" font-size="12" font-weight="500" text-anchor="middle">write</text>
+      <path d="M816,152 H1016 Q1024,152 1024,160 V320" fill="none" stroke="var(--muted)" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <rect x="915" y="216" width="106" height="48" rx="2" fill="var(--paper)"/>
+      <text x="968" y="228" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">B reads A's</text>
+      <text x="968" y="244" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">events, comments</text>
+      <text x="968" y="260" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">invites, profile</text>
+      <path d="M480,360 H264 Q256,360 256,352 V192" fill="none" stroke="var(--muted)" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <rect x="262" y="284" width="104" height="48" rx="2" fill="var(--paper)"/>
+      <text x="314" y="296" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">A reads B's</text>
+      <text x="314" y="312" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">events, comments</text>
+      <text x="314" y="328" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">invites, profile</text>
+      <path d="M304,176 H360 Q368,176 368,184 V264 Q368,272 376,272 H632 Q640,272 640,280 V320" fill="none" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <rect x="446" y="250" width="128" height="16" rx="2" fill="var(--paper)"/>
+      <text x="510" y="262" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">respond to partner</text>
+      <path d="M976,336 H920 Q912,336 912,328 V248 Q912,240 904,240 H568 Q560,240 560,232 V192" fill="none" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <rect x="686" y="218" width="128" height="16" rx="2" fill="var(--paper)"/>
+      <text x="750" y="230" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">respond to partner</text>
+      <line x1="976" y1="360" x2="880" y2="360" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow-accent)"/>
+      <rect x="908" y="366" width="40" height="16" rx="2" fill="var(--paper)"/>
+      <text x="928" y="378" fill="var(--accent)" font-size="12" font-weight="500" text-anchor="middle">write</text>
+      <line x1="1096" y1="176" x2="1096" y2="320" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <rect x="1104" y="232" width="60" height="32" rx="2" fill="var(--paper)"/>
+      <text x="1134" y="244" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">rebuild</text>
+      <text x="1134" y="260" fill="var(--soft)" font-size="12" font-weight="500" text-anchor="middle">mirrors</text>
+
+      <!-- NODES -->
+      <rect x="64" y="112" width="240" height="80" rx="6" fill="var(--paper)"/>
+      <rect x="64" y="112" width="240" height="80" rx="6" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.3"/>
+      <rect x="72" y="118" width="28" height="12" rx="2" fill="transparent" stroke="var(--rule-solid)" stroke-width="0.8"/>
+      <text x="86" y="127" fill="var(--muted)" font-size="8" font-family="var(--font-mono)" text-anchor="middle" letter-spacing="0.08em">APP</text>
+      <text x="184" y="152" fill="var(--ink)" font-size="13" font-weight="600" text-anchor="middle">SyncCoordinator</text>
+      <text x="184" y="168" fill="var(--muted)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">foregroundSync · the only pipeline</text>
+      <text x="184" y="181" fill="var(--muted)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">SwiftData is only a local cache</text>
+      <rect x="64" y="400" width="240" height="64" rx="6" fill="var(--paper)"/>
+      <rect x="64" y="400" width="240" height="64" rx="6" fill="var(--ext-fill)" stroke="var(--ext-stroke)" stroke-width="1.3"/>
+      <rect x="72" y="406" width="28" height="12" rx="2" fill="transparent" stroke="var(--rule-solid)" stroke-width="0.8"/>
+      <text x="86" y="415" fill="var(--muted)" font-size="8" font-family="var(--font-mono)" text-anchor="middle" letter-spacing="0.08em">SYS</text>
+      <text x="184" y="436" fill="var(--ink)" font-size="13" font-weight="600" text-anchor="middle">System Calendar</text>
+      <text x="184" y="452" fill="var(--muted)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">EventKit · chosen calendars · source</text>
+      <rect x="416" y="112" width="288" height="80" rx="6" fill="var(--paper)"/>
+      <rect x="416" y="112" width="288" height="80" rx="6" fill="var(--paper-2)" stroke="var(--muted)" stroke-width="1.3"/>
+      <rect x="424" y="118" width="36" height="12" rx="2" fill="transparent" stroke="var(--rule-solid)" stroke-width="0.8"/>
+      <text x="442" y="127" fill="var(--muted)" font-size="8" font-family="var(--font-mono)" text-anchor="middle" letter-spacing="0.08em">ZONE</text>
+      <text x="560" y="152" fill="var(--ink)" font-size="13" font-weight="600" text-anchor="middle">A's private zone · CoupleSpace</text>
+      <text x="560" y="168" fill="var(--muted)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">ownerName = A's userRecordID</text>
+      <text x="560" y="181" fill="var(--muted)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">root → Mirror · Invitation · Comment · Profile</text>
+      <rect x="704" y="128" width="112" height="48" rx="6" fill="var(--paper)"/>
+      <rect x="704" y="128" width="112" height="48" rx="6" fill="var(--accent-tint)" stroke="var(--accent)" stroke-width="1.2"/>
+      <text x="760" y="150" fill="var(--ink)" font-size="13" font-weight="600" text-anchor="middle">CKShare</text>
+      <text x="760" y="166" fill="var(--accent)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">door to the zone</text>
+      <rect x="480" y="336" width="112" height="48" rx="6" fill="var(--paper)"/>
+      <rect x="480" y="336" width="112" height="48" rx="6" fill="var(--accent-tint)" stroke="var(--accent)" stroke-width="1.2"/>
+      <text x="536" y="358" fill="var(--ink)" font-size="13" font-weight="600" text-anchor="middle">CKShare</text>
+      <text x="536" y="374" fill="var(--accent)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">door to the zone</text>
+      <rect x="592" y="320" width="288" height="80" rx="6" fill="var(--paper)"/>
+      <rect x="592" y="320" width="288" height="80" rx="6" fill="var(--paper-2)" stroke="var(--muted)" stroke-width="1.3"/>
+      <rect x="600" y="326" width="36" height="12" rx="2" fill="transparent" stroke="var(--rule-solid)" stroke-width="0.8"/>
+      <text x="618" y="335" fill="var(--muted)" font-size="8" font-family="var(--font-mono)" text-anchor="middle" letter-spacing="0.08em">ZONE</text>
+      <text x="736" y="360" fill="var(--ink)" font-size="13" font-weight="600" text-anchor="middle">B's private zone · CoupleSpace</text>
+      <text x="736" y="376" fill="var(--muted)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">ownerName = B's userRecordID</text>
+      <text x="736" y="389" fill="var(--muted)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">root → Mirror · Invitation · Comment · Profile</text>
+      <rect x="976" y="112" width="240" height="64" rx="6" fill="var(--paper)"/>
+      <rect x="976" y="112" width="240" height="64" rx="6" fill="var(--ext-fill)" stroke="var(--ext-stroke)" stroke-width="1.3"/>
+      <rect x="984" y="118" width="28" height="12" rx="2" fill="transparent" stroke="var(--rule-solid)" stroke-width="0.8"/>
+      <text x="998" y="127" fill="var(--muted)" font-size="8" font-family="var(--font-mono)" text-anchor="middle" letter-spacing="0.08em">SYS</text>
+      <text x="1096" y="148" fill="var(--ink)" font-size="13" font-weight="600" text-anchor="middle">System Calendar</text>
+      <text x="1096" y="164" fill="var(--muted)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">EventKit · chosen calendars · source</text>
+      <rect x="976" y="320" width="240" height="80" rx="6" fill="var(--paper)"/>
+      <rect x="976" y="320" width="240" height="80" rx="6" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.3"/>
+      <rect x="984" y="326" width="28" height="12" rx="2" fill="transparent" stroke="var(--rule-solid)" stroke-width="0.8"/>
+      <text x="998" y="335" fill="var(--muted)" font-size="8" font-family="var(--font-mono)" text-anchor="middle" letter-spacing="0.08em">APP</text>
+      <text x="1096" y="360" fill="var(--ink)" font-size="13" font-weight="600" text-anchor="middle">SyncCoordinator</text>
+      <text x="1096" y="376" fill="var(--muted)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">foregroundSync · the only pipeline</text>
+      <text x="1096" y="389" fill="var(--muted)" font-size="10" font-family="var(--font-mono)" text-anchor="middle">SwiftData is only a local cache</text>
+
+      <!-- LEGEND -->
+      <line x1="48" y1="520" x2="1232" y2="520" stroke="var(--rule)" stroke-width="0.8"/>
+      <text x="48" y="541" fill="var(--muted)" font-size="8" font-family="var(--font-mono)" letter-spacing="0.14em">LEGEND</text>
+      <rect x="124" y="532" width="20" height="12" rx="2" fill="var(--accent-tint)" stroke="var(--accent)" stroke-width="1"/>
+      <text x="152" y="542" fill="var(--ink)" font-size="12" font-weight="500">CKShare: partner's read-only door</text>
+      <rect x="370" y="532" width="20" height="12" rx="2" fill="var(--paper-2)" stroke="var(--muted)" stroke-width="1.3"/>
+      <text x="398" y="542" fill="var(--ink)" font-size="12" font-weight="500">Zone in a private database</text>
+      <rect x="578" y="532" width="20" height="12" rx="2" fill="var(--ext-fill)" stroke="var(--ext-stroke)" stroke-width="1.3"/>
+      <text x="606" y="542" fill="var(--ink)" font-size="12" font-weight="500">System framework</text>
+      <line x1="734" y1="538" x2="766" y2="538" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow-accent)"/>
+      <text x="776" y="542" fill="var(--ink)" font-size="12" font-weight="500">Write own data</text>
+      <line x1="882" y1="538" x2="914" y2="538" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <text x="924" y="542" fill="var(--ink)" font-size="12" font-weight="500">Respond into partner's zone</text>
+      <line x1="882" y1="562" x2="914" y2="562" stroke="var(--muted)" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <text x="924" y="566" fill="var(--ink)" font-size="12" font-weight="500">Read partner's zone via shared DB</text>
+    </svg>
+  </div>
+</div>
+</body>
+</html>

@@ -54,7 +54,7 @@ The app uses a standard four-tab iOS layout:
 
 Each person owns a private `CoupleSpace` zone. Every record hangs under the `couple-space-root` root record, and one CKShare shares the whole zone with the partner, who reads it through the shared database (sharedCloudDatabase). **The zone's ownerName is the authoritative identity for who owns the data.**
 
-![OurDays sync architecture: two private zones, one CKShare each, read-only to the other side](docs/diagrams/sync-architecture.png)
+![OurDays sync architecture: two private zones, one CKShare each, read-only to the other side](docs/diagrams/sync-architecture.en.png)
 
 - **Write path rule**: your own data goes into your private zone; responses to your partner's data (comments, invitation status, request approvals) go into your partner's shared zone.
 - **Mirrors are derived data**: your own EventMirrors are rebuilt from EventKit on every sync; SwiftData is just a cache.
@@ -89,7 +89,7 @@ Local SwiftData also has `LocalEventShadow`, which never goes to the cloud: it r
 
 The app has a single sync pipeline, `SyncCoordinator.foregroundSync`. Foreground and background triggers run the same code, serially on the main actor. The order is deliberate: everything the device can compute locally comes first, and **pairing is settled before touching the cloud**. When there is a conflict, not a single byte is uploaded or imported, so new data never leaks to someone about to be rejected.
 
-![What one OurDays sync does: compute locally, settle pairing, then touch the cloud](docs/diagrams/sync-pipeline.png)
+![What one OurDays sync does: compute locally, settle pairing, then touch the cloud](docs/diagrams/sync-pipeline.en.png)
 
 A few details worth knowing:
 
@@ -184,7 +184,7 @@ OurDays/
 ├── CoupleCalendar.xcodeproj       The single scheme CoupleCalendar; App, unit test and UI test targets
 ├── CloudKit/ShareCalSchema.ckdb   CloudKit schema source
 ├── Scripts/                       CloudKit schema import, two-simulator pairing smoke script, App Store / TestFlight export options
-├── docs/                          Dev workflow, privacy policy, website source (docs/site), README diagram sources (docs/diagrams), review notes, plan tree (docs/plantree)
+├── docs/                          Dev workflow, privacy policy, website source (docs/site), README diagram sources (docs/diagrams, *.en.* for English), review notes, plan tree (docs/plantree)
 ├── .github/workflows/ios-ci.yml   CI: builds and runs all tests on a macOS runner
 └── CLAUDE.md                      Code architecture and conventions (identity model, CloudKit layout, Policy conventions)
 ```

@@ -1,6 +1,6 @@
 import XCTest
 
-final class CoupleCalendarUITests: XCTestCase {
+final class OurDaysUITests: XCTestCase {
     /// Generous wait for an element that appears after an async UI state transition
     /// (e.g. sheet dismiss → root-flow re-evaluation → card render). On a loaded CI
     /// runner, `app.launch()` wait-for-idle alone has been seen to take ~45s, so a

@@ -1,4 +1,4 @@
-# OurDays（CoupleCalendar）
+# OurDays
 
 **简体中文** | [English](README.en.md)
 
@@ -110,12 +110,12 @@ CloudKit 里只有 6 种记录类型（schema 见 [`CloudKit/ShareCalSchema.ckdb
 
 ```bash
 # 构建
-xcodebuild -project CoupleCalendar.xcodeproj -scheme CoupleCalendar \
+xcodebuild -project OurDays.xcodeproj -scheme OurDays \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # 单元测试
-xcodebuild -project CoupleCalendar.xcodeproj -scheme CoupleCalendar \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:CoupleCalendarTests
+xcodebuild -project OurDays.xcodeproj -scheme OurDays \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:OurDaysTests
 
 # 把 CloudKit schema 导入 Development 环境（Production 在 CloudKit Console 部署）
 Scripts/import-cloudkit-schema.sh development
@@ -128,13 +128,13 @@ Debug 配置带 `LOCAL_SIGNING` 编译条件，CloudKit 整体关闭（`AppServi
 
 ### 代码结构
 
-`CoupleCalendar/` 下没有第三方依赖，按分层分目录，依赖方向固定为 **Views → Services → Policies → Models**，Policies 从不反向引用服务或存储（2026-10 重构后文件级反向依赖为 0）：
+`OurDays/` 下没有第三方依赖，按分层分目录，依赖方向固定为 **Views → Services → Policies → Models**，Policies 从不反向引用服务或存储（2026-10 重构后文件级反向依赖为 0）：
 
 ```text
 OurDays/
-├── CoupleCalendar/                按分层分目录，依赖只能向下：App → Views → Services → Policies → Models
+├── OurDays/                       按分层分目录，依赖只能向下：App → Views → Services → Policies → Models
 │   ├── App/                       入口与进程级对象
-│   │   ├── CoupleCalendarApp.swift        @main、AppDelegate：BGTask 注册、静默推送入口、通知授权
+│   │   ├── OurDaysApp.swift               @main、AppDelegate：BGTask 注册、静默推送入口、通知授权
 │   │   ├── ShareCalSceneDelegate.swift    场景代理、CKShare 接受处理、更换配对确认
 │   │   ├── AppServices.swift              服务容器
 │   │   └── Info.plist、*.entitlements     Debug/Local/Production 三套 entitlements
@@ -176,12 +176,12 @@ OurDays/
 │   └── Resources/
 │       ├── Assets.xcassets                图标、颜色
 │       └── ShareCalStrings.swift          手写中英文案
-├── CoupleCalendarTests/           XCTest，一个领域一个文件，直接编译非 UI 源码（无 @testable import）
+├── OurDaysTests/                  XCTest，一个领域一个文件，直接编译非 UI 源码（无 @testable import）
 │                                  PairingTests / CloudKitTests / SyncTests / CalendarMirrorTests /
 │                                  InvitationAndAccessRequestTests / CommentTests /
 │                                  DayTimelineAndNavigationTests / ActivityAndNotificationTests / SettingsAndStringsTests
-├── CoupleCalendarUITests/         XCUITest：启动、滑动切日、首次引导，以及（配对模拟器上）对方日程与评论线程
-├── CoupleCalendar.xcodeproj       唯一的 scheme CoupleCalendar；App、单测、UI 测试三个 target
+├── OurDaysUITests/                XCUITest：启动、滑动切日、首次引导，以及（配对模拟器上）对方日程与评论线程
+├── OurDays.xcodeproj              唯一的 scheme OurDays；App、单测、UI 测试三个 target
 ├── CloudKit/ShareCalSchema.ckdb   CloudKit schema 源文件
 ├── Scripts/                       CloudKit schema 导入、双模拟器配对冒烟脚本、App Store / TestFlight 导出配置
 ├── docs/                          开发流程、隐私政策、官网源码（docs/site）、README 架构图源文件（docs/diagrams）、审核记录、规划树（docs/plantree）

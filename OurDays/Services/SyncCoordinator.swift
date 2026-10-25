@@ -759,7 +759,7 @@ enum ExistingICloudDataIdentityRecovery {
 /// instances the UI uses, so background writes propagate to the live UI and the
 /// existing-iCloud-data safety gate is honored everywhere.
 ///
-/// Lives here (not in CoupleCalendarApp.swift) because the @main file is not a member
+/// Lives here (not in OurDaysApp.swift) because the @main file is not a member
 /// of the test target; the scene delegate that schedules refreshes needs this type
 /// visible when the app sources are compiled into the test bundle.
 @MainActor

@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "11A000110000000000000001"
-               BuildableName = "CoupleCalendar.app"
-               BlueprintName = "CoupleCalendar"
-               ReferencedContainer = "container:CoupleCalendar.xcodeproj">
+               BuildableName = "OurDays.app"
+               BlueprintName = "OurDays"
+               ReferencedContainer = "container:OurDays.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -36,9 +36,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "11A000290000000000000001"
-               BuildableName = "CoupleCalendarTests.xctest"
-               BlueprintName = "CoupleCalendarTests"
-               ReferencedContainer = "container:CoupleCalendar.xcodeproj">
+               BuildableName = "OurDaysTests.xctest"
+               BlueprintName = "OurDaysTests"
+               ReferencedContainer = "container:OurDays.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -46,9 +46,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "11A000340000000000000001"
-               BuildableName = "CoupleCalendarUITests.xctest"
-               BlueprintName = "CoupleCalendarUITests"
-               ReferencedContainer = "container:CoupleCalendar.xcodeproj">
+               BuildableName = "OurDaysUITests.xctest"
+               BlueprintName = "OurDaysUITests"
+               ReferencedContainer = "container:OurDays.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -68,9 +68,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "11A000110000000000000001"
-            BuildableName = "CoupleCalendar.app"
-            BlueprintName = "CoupleCalendar"
-            ReferencedContainer = "container:CoupleCalendar.xcodeproj">
+            BuildableName = "OurDays.app"
+            BlueprintName = "OurDays"
+            ReferencedContainer = "container:OurDays.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -85,9 +85,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "11A000110000000000000001"
-            BuildableName = "CoupleCalendar.app"
-            BlueprintName = "CoupleCalendar"
-            ReferencedContainer = "container:CoupleCalendar.xcodeproj">
+            BuildableName = "OurDays.app"
+            BlueprintName = "OurDays"
+            ReferencedContainer = "container:OurDays.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

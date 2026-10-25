@@ -36,7 +36,7 @@ The app uses a standard four-tab iOS layout:
 
 | Two-column day view | Event details and comments | Us: Day N together | Nickname and avatar |
 | --- | --- | --- | --- |
-| ![Two-column day view](docs/site/assets/dayview.webp) | ![Event details with avatar comments](docs/site/assets/comments.webp) | ![Us tab: Day 1 together](docs/site/assets/pairing.webp) | ![Editing my avatar](docs/site/assets/profile.webp) |
+| ![Two-column day view](docs/site/assets/en/dayview.webp) | ![Event details with avatar comments](docs/site/assets/en/comments.webp) | ![Us tab: Day 1 together](docs/site/assets/en/pairing.webp) | ![Editing my avatar](docs/site/assets/en/profile.webp) |
 
 ## Tech stack
 

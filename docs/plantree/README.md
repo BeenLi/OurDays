@@ -21,7 +21,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 ## Active plans
 | Plan | Status | Current Phase | Last Landed | Next Target |
 |------|--------|---------------|-------------|-------------|
-| [releases](plans/releases/) | 🚧 1.6 审核中 | 1.6 (build 35) 已于 2026-10-23 提交审核，过审自动发布 | 2026-10-23：#27 版本号合并；App Store 截图换成官网 4 张图 | 过审上架后刷新官网与 README 的版本说明 |
+| [releases](plans/releases/) | 🚧 1.7 审核中 | 1.7 (build 36)：#33 同步取消修复 + #35 跟随系统语言 / 中文权限弹窗 / 英文隐私政策；App Store 主要语言改 English (U.S.) | 2026-10-25：1.6 已上架；#36 版本号 | 过审自动上架后把主要语言改为 English (U.S.) |
 | [docs-and-site](plans/docs-and-site/) | 🚧 In Progress | README 已对齐 main 至 #29 | 2026-10-23：#28 代码结构合成一棵树；#29 随改名更新 README / CLAUDE.md | 1.6 上架后刷新官网与 README 的版本说明 |
 
 ## Landed plans（已落地 / 已发布，只在回归时回看）
@@ -73,7 +73,8 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #32 | 2026-10-23 | plantree：#27、#31 标为已合并，releases 状态改为审核中 | [code-structure](plans/code-structure/roadmap.md) |
 | #33 | 2026-10-25 | 同步被取消不再显示红条「Operation … was cancelled」；界面触发的同步不随视图消失而取消 | [pairing-sync-integrity](plans/pairing-sync-integrity/decisions/0005-cancelled-sync-is-not-a-failure.md) |
 | #34 | 2026-10-25 | README 增加英文版 README.en.md（含英文版两张架构图 docs/diagrams/*.en.*），中英文顶部互相切换 | [docs-and-site](plans/docs-and-site/) |
-| #35 | 本 PR | 中国以外用英文：首次启动跟随系统语言；权限弹窗与 App Store 语言栏加简体中文；隐私政策加英文页 | [releases](plans/releases/decisions/0001-english-outside-china.md) |
+| #35 | 2026-10-25 | 中国以外用英文：首次启动跟随系统语言；权限弹窗与 App Store 语言栏加简体中文；隐私政策加英文页 | [releases](plans/releases/decisions/0001-english-outside-china.md) |
+| #36 | 本 PR | 版本号 1.7 (36)；英文界面截图（App Store 英文页、README.en.md） | [releases](plans/releases/) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

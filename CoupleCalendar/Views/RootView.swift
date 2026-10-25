@@ -565,11 +565,15 @@ struct RootView: View {
             eventMirrorService: services.eventMirrorService,
             cloudKit: services.cloudKitIfAvailable
         )
-        await coordinator.foregroundSync(
-            modelContext: modelContext,
-            settings: settings,
-            forceCloudKit: consumingAcceptedShareSignal || forceCloudKit
-        )
+        // Own task, like `SyncCoordinator.syncIfIdle`: the root `.task` that can start
+        // this must not cancel a sync that is already talking to CloudKit.
+        await Task {
+            await coordinator.foregroundSync(
+                modelContext: modelContext,
+                settings: settings,
+                forceCloudKit: consumingAcceptedShareSignal || forceCloudKit
+            )
+        }.value
         representPairingConflictIfNeeded()
         return true
     }

@@ -92,7 +92,14 @@ struct SyncCoordinator {
             eventMirrorService: services.eventMirrorService,
             cloudKit: services.cloudKitIfAvailable
         )
-        await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
+        // Run the sync in its own task. View-scoped callers (`.task`, `.refreshable`) are
+        // cancelled when their view goes away, e.g. closing an event sheet while its
+        // open-sync is still running; inherited, that cancellation reaches CloudKit's
+        // async calls and aborts a healthy sync. Awaiting `.value` keeps the
+        // pull-to-refresh spinner until the sync ends.
+        await Task {
+            await coordinator.foregroundSync(modelContext: modelContext, settings: settings)
+        }.value
     }
 
     func foregroundSync(
@@ -486,6 +493,11 @@ struct SyncCoordinator {
             settings.lastSyncAt = .now
             settings.syncPhase = .idle
             timing.mark("finished")
+        } catch let error where SyncCancellationPolicy.isCancellation(error) {
+            // Not a failure: no banner, and `lastSyncAt` stays put so the next
+            // automatic sync is not throttled away.
+            settings.syncPhase = .idle
+            timing.mark("cancelled")
         } catch {
             settings.lastSyncError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
             settings.syncPhase = .failed

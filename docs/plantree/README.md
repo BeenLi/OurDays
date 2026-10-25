@@ -70,7 +70,8 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #29 | 2026-10-23 | `Plans/` → `Policies/`、`…Plan` → `…Policy`；源码按 App/ Models/ Policies/ Services/ Views/ Diagnostics/ Resources/ 分目录 | [code-structure](plans/code-structure/) |
 | #30 | 2026-10-23 | plantree 补录 PR #1–#28，归档过时的 plan | [docs-and-site](plans/docs-and-site/) |
 | #31 | 2026-10-23 | CI 提速：文档改动不触发、PR 只跑单元测试、模拟器开机与编译并行 | [code-structure](plans/code-structure/roadmap.md) |
-| #32 | 本 PR | plantree：#27、#31 标为已合并，releases 状态改为审核中 | [code-structure](plans/code-structure/roadmap.md) |
+| #32 | 2026-10-23 | plantree：#27、#31 标为已合并，releases 状态改为审核中 | [code-structure](plans/code-structure/roadmap.md) |
+| #33 | 本 PR | 同步被取消不再显示红条「Operation … was cancelled」；界面触发的同步不随视图消失而取消 | [pairing-sync-integrity](plans/pairing-sync-integrity/decisions/0005-cancelled-sync-is-not-a-failure.md) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

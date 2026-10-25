@@ -7,6 +7,7 @@
 - **#20 推送乒乓**：根记录和 MemberProfile 只在字段真正变化时保存。
 - **#22 删除重装**：从 iCloud 恢复配对、身份、配对日期；卸载期间删掉的自有事件在云端打墓碑；恢复提示把「继续使用」放第一位。
 - **#23 解除配对**：删掉我 zone 里与前任有关的评论、邀请、历史访问申请；导入时过滤既不是我也不是现任的记录。
+- **#33 同步取消**：被取消的同步不再显示成红色错误条；界面触发的同步不随视图消失而取消。
 
 ## Non-goals
 - 不改两人制身份模型（仍无 pairingID、无本地 UUID 身份）。
@@ -18,6 +19,7 @@
 - [decisions/0002-save-shared-records-only-on-change.md](decisions/0002-save-shared-records-only-on-change.md)
 - [decisions/0003-reinstall-recovers-from-icloud.md](decisions/0003-reinstall-recovers-from-icloud.md)
 - [decisions/0004-ex-partner-data-purged-and-filtered.md](decisions/0004-ex-partner-data-purged-and-filtered.md)
+- [decisions/0005-cancelled-sync-is-not-a-failure.md](decisions/0005-cancelled-sync-is-not-a-failure.md)
 
 ## Status
 - Status: **✅ Code landed**（#4 随 1.5 上架；#20 #22 #23 合并 2026-10-23，随 1.6）

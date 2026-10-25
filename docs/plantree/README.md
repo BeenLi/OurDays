@@ -27,7 +27,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 ## Landed plans（已落地 / 已发布，只在回归时回看）
 | Plan | Status | 发布于 | 备注 |
 |------|--------|--------|------|
-| [code-structure](plans/code-structure/) | ✅ Code landed | 1.6 起 | 瘦身 #8–#10、架构 A–E #12–#16、`Plans/` → `Policies/` 改名与分层目录 #29 |
+| [code-structure](plans/code-structure/) | ✅ Code landed | 1.6 起 | 瘦身 #8–#10、架构 A–E #12–#16、`Plans/` → `Policies/` 改名与分层目录 #29、工程改名 OurDays #37 |
 | [pairing-sync-integrity](plans/pairing-sync-integrity/) | ✅ Code landed | #4 随 1.5；#20 #22 #23 随 1.6 | 配对冲突改由用户选择；共享记录只在变化时保存；重装恢复；解除配对清理前任数据 |
 | [invitation-lifecycle](plans/invitation-lifecycle/) | ✅ Code landed | 1.6 | 已结束的日程不可邀请、待处理邀请会过期、发起方可撤销 |
 | [comment-visibility](plans/comment-visibility/) | ✅ 已发布 + 扩展 | 1.4；#24 随 1.6 | 评论红点、我的日程可看/可回评论；#24 起未同步也可先发起评论 |
@@ -74,7 +74,8 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #33 | 2026-10-25 | 同步被取消不再显示红条「Operation … was cancelled」；界面触发的同步不随视图消失而取消 | [pairing-sync-integrity](plans/pairing-sync-integrity/decisions/0005-cancelled-sync-is-not-a-failure.md) |
 | #34 | 2026-10-25 | README 增加英文版 README.en.md（含英文版两张架构图 docs/diagrams/*.en.*），中英文顶部互相切换 | [docs-and-site](plans/docs-and-site/) |
 | #35 | 2026-10-25 | 中国以外用英文：首次启动跟随系统语言；权限弹窗与 App Store 语言栏加简体中文；隐私政策加英文页 | [releases](plans/releases/decisions/0001-english-outside-china.md) |
-| #36 | 本 PR | 版本号 1.7 (36)；英文界面截图（App Store 英文页、README.en.md） | [releases](plans/releases/) |
+| #36 | 2026-10-25 | 版本号 1.7 (36)；英文界面截图（App Store 英文页、README.en.md） | [releases](plans/releases/) |
+| #37 | 本 PR | Xcode 工程、target、scheme、目录 `CoupleCalendar` → `OurDays`；bundle ID、iCloud 容器、BGTask 标识、日志 subsystem 保持不变 | [code-structure](plans/code-structure/roadmap.md) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

@@ -38,7 +38,7 @@ jobs:
       # ~3 min of runner install + automation-session setup, so they run after
       # merge on main (and on manual dispatch), where nobody is waiting.
       # The other three UI tests always XCTSkip outside Scripts/dev-pairing-smoke.sh.
-      ONLY_TESTING: ${{ github.event_name == 'pull_request' && '-only-testing:CoupleCalendarTests' || '' }}
+      ONLY_TESTING: ${{ github.event_name == 'pull_request' && '-only-testing:OurDaysTests' || '' }}
 
     steps:
       - name: Check out repository
@@ -76,7 +76,7 @@ jobs:
             exit 1
           fi
 
-          SIMULATOR_UDID=$(xcrun simctl create "CoupleCalendar CI iPhone" "${DEVICE_TYPE}" "${RUNTIME_ID}")
+          SIMULATOR_UDID=$(xcrun simctl create "OurDays CI iPhone" "${DEVICE_TYPE}" "${RUNTIME_ID}")
           xcrun simctl boot "${SIMULATOR_UDID}" || true
 
           echo "udid=${SIMULATOR_UDID}" >> "${GITHUB_OUTPUT}"
@@ -85,10 +85,10 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild build-for-testing \
-            -project CoupleCalendar.xcodeproj \
-            -scheme CoupleCalendar \
+            -project OurDays.xcodeproj \
+            -scheme OurDays \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
-            -derivedDataPath "${RUNNER_TEMP}/CoupleCalendarDerivedData" \
+            -derivedDataPath "${RUNNER_TEMP}/OurDaysDerivedData" \
             ${ONLY_TESTING} \
             CODE_SIGNING_ALLOWED=NO
 
@@ -108,10 +108,10 @@ jobs:
           # Parallel testing is off: the unit tests finish in seconds, and turning it
           # on makes xcodebuild clone the simulator first, which costs more than it saves.
           xcodebuild test-without-building \
-            -project CoupleCalendar.xcodeproj \
-            -scheme CoupleCalendar \
+            -project OurDays.xcodeproj \
+            -scheme OurDays \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
-            -derivedDataPath "${RUNNER_TEMP}/CoupleCalendarDerivedData" \
+            -derivedDataPath "${RUNNER_TEMP}/OurDaysDerivedData" \
             ${ONLY_TESTING} \
             -parallel-testing-enabled NO \
             -retry-tests-on-failure \

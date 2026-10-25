@@ -6,32 +6,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build (Debug, simulator)
-xcodebuild -project CoupleCalendar.xcodeproj -scheme CoupleCalendar \
+xcodebuild -project OurDays.xcodeproj -scheme OurDays \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # Run unit tests
-xcodebuild -project CoupleCalendar.xcodeproj -scheme CoupleCalendar \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:CoupleCalendarTests
+xcodebuild -project OurDays.xcodeproj -scheme OurDays \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:OurDaysTests
 
 # Run a single test class / method
-... -only-testing:CoupleCalendarTests/TwoPersonPairingPolicyTests
-... -only-testing:CoupleCalendarTests/TwoPersonPairingPolicyTests/testMutualShareEstablishesPartnerAndLeavesStaleZones
+... -only-testing:OurDaysTests/TwoPersonPairingPolicyTests
+... -only-testing:OurDaysTests/TwoPersonPairingPolicyTests/testMutualShareEstablishesPartnerAndLeavesStaleZones
 
 # Import CloudKit schema into Development (Production deploys via CloudKit Console)
 Scripts/import-cloudkit-schema.sh development
 ```
 
-There is one scheme (`CoupleCalendar`). Unit tests live in `CoupleCalendarTests/`, one file per area (`PairingTests.swift`, `CloudKitTests.swift`, `InvitationAndAccessRequestTests.swift`, `CalendarMirrorTests.swift`, `DayTimelineAndNavigationTests.swift`, `CommentTests.swift`, `SyncTests.swift`, `ActivityAndNotificationTests.swift`, `SettingsAndStringsTests.swift`); `-only-testing:CoupleCalendarTests/<ClassName>` works regardless of file.
+There is one scheme (`OurDays`). Unit tests live in `OurDaysTests/`, one file per area (`PairingTests.swift`, `CloudKitTests.swift`, `InvitationAndAccessRequestTests.swift`, `CalendarMirrorTests.swift`, `DayTimelineAndNavigationTests.swift`, `CommentTests.swift`, `SyncTests.swift`, `ActivityAndNotificationTests.swift`, `SettingsAndStringsTests.swift`); `-only-testing:OurDaysTests/<ClassName>` works regardless of file.
 
 ## What this app is
 
-"OurDays" — a strictly **two-person** couples calendar. (The app was renamed from "ShareCal"; many internal code identifiers, launch arguments, type names like `ShareCalStrings`, and the local EventKit calendar name still use the `ShareCal` prefix for backward compatibility — do not rename those.) Each partner mirrors selected EventKit calendar events into CloudKit; partners see each other's events via one CKShare. Multi-person sharing is intentionally unsupported and must not be reintroduced.
+"OurDays" — a strictly **two-person** couples calendar. (The app was renamed from "ShareCal"; many internal code identifiers, launch arguments, type names like `ShareCalStrings`, and the local EventKit calendar name still use the `ShareCal` prefix for backward compatibility — do not rename those. Likewise the Xcode project, targets and folders are `OurDays` (renamed from `CoupleCalendar` in 2026-10), but the bundle ID `com.leeberty.CoupleCalendar`, the CloudKit container `iCloud.com.leeberty.CoupleCalendar`, the BGTask identifier and the OSLog subsystem keep `CoupleCalendar` — changing them breaks installed users.) Each partner mirrors selected EventKit calendar events into CloudKit; partners see each other's events via one CKShare. Multi-person sharing is intentionally unsupported and must not be reintroduced.
 
 ## Architecture
 
-Source lives in `CoupleCalendar/`, no SPM dependencies, one directory per layer; dependencies point App → Views → Services → Policies → Models and never back:
+Source lives in `OurDays/`, no SPM dependencies, one directory per layer; dependencies point App → Views → Services → Policies → Models and never back:
 
-- **App/** — `CoupleCalendarApp.swift` (`@main`, AppDelegate: BGTask registration, silent-push entry, notification authorization), `ShareCalSceneDelegate.swift` (`ShareCalSceneDelegate`, the share acceptance handler and `ShareCalPendingShareReplacement`), `AppServices.swift` (the `AppServices` service container only), `Info.plist` and the three entitlements files.
+- **App/** — `OurDaysApp.swift` (`@main`, AppDelegate: BGTask registration, silent-push entry, notification authorization), `ShareCalSceneDelegate.swift` (`ShareCalSceneDelegate`, the share acceptance handler and `ShareCalPendingShareReplacement`), `AppServices.swift` (the `AppServices` service container only), `Info.plist` and the three entitlements files.
 - **Models/Models.swift** — SwiftData models (`EventMirror`, `LocalEventShadow`, `EventInvitation`, `EventComment`, `CalendarAccessRequest`, `MemberProfile`), their stored enums, `ShareCalModelContainer`, and `ShareCalLocalDataCleanupService`.
 - **Policies/** — the pure "Policy" enums, one file per area: `PairingPolicies` (`TwoPersonPairingPolicy`, `ShareAcceptanceGuardPolicy`, …), `SyncPolicies`, `InvitationAndAccessRequestPolicies`, `CalendarNavigationPolicies`, `CalendarDisplayPolicies`, `DayTimelinePolicies`, `CommentPolicies`, `ActivityAndNotificationPolicies`, `MemberIdentityPolicies` (incl. `MemberIDPolicy` placeholders), `CalendarSourcePolicies` (incl. `CalendarAuthorizationState`, `EventMirrorKeyPolicy`), `AgendaPolicies` (joint schedule, week agenda, calendar focus), `CloudKitPolicies` (the pure CloudKit decision enums). Policies never reference services or stores.
 - **Services/** — `SyncCoordinator.swift` (`SyncCoordinator.foregroundSync`, the single sync pipeline, plus the notification scheduler and `ShareCalBackgroundSyncRunner`), `CloudKitCoupleSpaceService.swift` (all CloudKit I/O: zone/root/share management, the shared `cloudKitSharingInfo/Error` + `describeCloudKitFailure` log helpers), `CloudKitRecordMappers.swift` (the pure `CKRecord` ↔ model mappers `EventMirrorRecordMapper`, `InvitationRecordMapper`, `CommentRecordMapper`, `CalendarAccessRequestRecordMapper`, `MemberProfileRecordMapper`, and the batch/query policies next to them), `CalendarAccessService.swift` / `EventServices.swift` (EventKit access and the `EventMirrorService` / `InvitationService` / `CommentService` mutators; no decision logic, that lives in `Policies/`), `SettingsStore.swift` (`SettingsStore`, UserDefaults-backed, `@Observable`).
@@ -69,7 +69,7 @@ All decision logic lives in stateless `enum ...Policy` types with pure static fu
 
 ### Build configurations
 
-- Debug uses the Development CloudKit environment; Release uses Production (`CoupleCalendarProduction.entitlements`). Schema changes must be imported to Development (`Scripts/import-cloudkit-schema.sh`) and deployed to Production in CloudKit Console before Release/TestFlight sharing works — see `docs/development.md` for the error messages this causes when missed.
+- Debug uses the Development CloudKit environment; Release uses Production (`OurDaysProduction.entitlements`). Schema changes must be imported to Development (`Scripts/import-cloudkit-schema.sh`) and deployed to Production in CloudKit Console before Release/TestFlight sharing works — see `docs/development.md` for the error messages this causes when missed.
 - A `LOCAL_SIGNING` compilation condition disables CloudKit entirely (`AppServices.isCloudKitEnabled`).
 
 ## Manual two-device smoke testing

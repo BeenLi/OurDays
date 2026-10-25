@@ -7,10 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		11A000010000000000000001 /* CoupleCalendarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000020000000000000001 /* CoupleCalendarApp.swift */; };
+		11A000010000000000000001 /* OurDaysApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000020000000000000001 /* OurDaysApp.swift */; };
 		11E1A0020000000000000001 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 11E1A0010000000000000001 /* InfoPlist.xcstrings */; };
 		11A000030000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 11A000040000000000000001 /* Assets.xcassets */; };
-		11A000070000000000000001 /* CoupleCalendarUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000080000000000000001 /* CoupleCalendarUITests.swift */; };
+		11A000070000000000000001 /* OurDaysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000080000000000000001 /* OurDaysUITests.swift */; };
 		11A000490000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000480000000000000001 /* Models.swift */; };
 		11A0004B0000000000000001 /* EventServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004A0000000000000001 /* EventServices.swift */; };
 		11A0004D0000000000000001 /* CloudKitCoupleSpaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */; };
@@ -96,28 +96,28 @@
 			containerPortal = 11A000100000000000000001 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 11A000110000000000000001;
-			remoteInfo = CoupleCalendar;
+			remoteInfo = OurDays;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		11A000020000000000000001 /* CoupleCalendarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoupleCalendarApp.swift; sourceTree = "<group>"; };
+		11A000020000000000000001 /* OurDaysApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OurDaysApp.swift; sourceTree = "<group>"; };
 		11E1A0010000000000000001 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		11A000040000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		11A000080000000000000001 /* CoupleCalendarUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoupleCalendarUITests.swift; sourceTree = "<group>"; };
-		11A000130000000000000001 /* CoupleCalendar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CoupleCalendar.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		11A000140000000000000001 /* CoupleCalendarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CoupleCalendarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		11A000150000000000000001 /* CoupleCalendarUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CoupleCalendarUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		11A000080000000000000001 /* OurDaysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OurDaysUITests.swift; sourceTree = "<group>"; };
+		11A000130000000000000001 /* OurDays.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OurDays.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		11A000140000000000000001 /* OurDaysTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OurDaysTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		11A000150000000000000001 /* OurDaysUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OurDaysUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		11A000160000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		11A000170000000000000001 /* CoupleCalendar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CoupleCalendar.entitlements; sourceTree = "<group>"; };
+		11A000170000000000000001 /* OurDays.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OurDays.entitlements; sourceTree = "<group>"; };
 		11A000480000000000000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		11A0004A0000000000000001 /* EventServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventServices.swift; sourceTree = "<group>"; };
 		11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitCoupleSpaceService.swift; sourceTree = "<group>"; };
 		11A0004E0000000000000001 /* CalendarAccessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarAccessService.swift; sourceTree = "<group>"; };
 		11A000500000000000000001 /* AppServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppServices.swift; sourceTree = "<group>"; };
 		11A000520000000000000001 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
-		11A000570000000000000001 /* CoupleCalendarLocal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CoupleCalendarLocal.entitlements; sourceTree = "<group>"; };
-		11A000580000000000000001 /* CoupleCalendarProduction.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CoupleCalendarProduction.entitlements; sourceTree = "<group>"; };
+		11A000570000000000000001 /* OurDaysLocal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OurDaysLocal.entitlements; sourceTree = "<group>"; };
+		11A000580000000000000001 /* OurDaysProduction.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OurDaysProduction.entitlements; sourceTree = "<group>"; };
 		11BDD11F09C503BD4E7BAD35 /* ActivityTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityTabView.swift; sourceTree = "<group>"; };
 		11BF438483CB446F8E7E26E7 /* CalendarTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarTabView.swift; sourceTree = "<group>"; };
 		11B576F2B94D6D290ADB1BFD /* CreateInviteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateInviteView.swift; sourceTree = "<group>"; };
@@ -195,14 +195,14 @@
 		11A000210000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				11A000220000000000000001 /* CoupleCalendar */,
-				11A000230000000000000001 /* CoupleCalendarTests */,
-				11A000240000000000000001 /* CoupleCalendarUITests */,
+				11A000220000000000000001 /* OurDays */,
+				11A000230000000000000001 /* OurDaysTests */,
+				11A000240000000000000001 /* OurDaysUITests */,
 				11A000250000000000000001 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		11A000220000000000000001 /* CoupleCalendar */ = {
+		11A000220000000000000001 /* OurDays */ = {
 			isa = PBXGroup;
 			children = (
 				11C000010000000000000001 /* App */,
@@ -213,10 +213,10 @@
 				11B5450727913DFDBA049A83 /* Diagnostics */,
 				11C000040000000000000001 /* Resources */,
 			);
-			path = CoupleCalendar;
+			path = OurDays;
 			sourceTree = "<group>";
 		};
-		11A000230000000000000001 /* CoupleCalendarTests */ = {
+		11A000230000000000000001 /* OurDaysTests */ = {
 			isa = PBXGroup;
 			children = (
 				11BF3CA9223B14F6C371C5EB /* SyncTests.swift */,
@@ -229,23 +229,23 @@
 				11B78456CF0F93A015DB4958 /* CalendarMirrorTests.swift */,
 				11BEA5B1AEB4BC585D481B2D /* ActivityAndNotificationTests.swift */,
 			);
-			path = CoupleCalendarTests;
+			path = OurDaysTests;
 			sourceTree = "<group>";
 		};
-		11A000240000000000000001 /* CoupleCalendarUITests */ = {
+		11A000240000000000000001 /* OurDaysUITests */ = {
 			isa = PBXGroup;
 			children = (
-				11A000080000000000000001 /* CoupleCalendarUITests.swift */,
+				11A000080000000000000001 /* OurDaysUITests.swift */,
 			);
-			path = CoupleCalendarUITests;
+			path = OurDaysUITests;
 			sourceTree = "<group>";
 		};
 		11A000250000000000000001 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				11A000130000000000000001 /* CoupleCalendar.app */,
-				11A000140000000000000001 /* CoupleCalendarTests.xctest */,
-				11A000150000000000000001 /* CoupleCalendarUITests.xctest */,
+				11A000130000000000000001 /* OurDays.app */,
+				11A000140000000000000001 /* OurDaysTests.xctest */,
+				11A000150000000000000001 /* OurDaysUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -303,13 +303,13 @@
 		11C000010000000000000001 /* App */ = {
 			isa = PBXGroup;
 			children = (
-				11A000020000000000000001 /* CoupleCalendarApp.swift */,
+				11A000020000000000000001 /* OurDaysApp.swift */,
 				11B085FDDB3BB0BECF73E576 /* ShareCalSceneDelegate.swift */,
 				11A000500000000000000001 /* AppServices.swift */,
 				11A000160000000000000001 /* Info.plist */,
-				11A000170000000000000001 /* CoupleCalendar.entitlements */,
-				11A000570000000000000001 /* CoupleCalendarLocal.entitlements */,
-				11A000580000000000000001 /* CoupleCalendarProduction.entitlements */,
+				11A000170000000000000001 /* OurDays.entitlements */,
+				11A000570000000000000001 /* OurDaysLocal.entitlements */,
+				11A000580000000000000001 /* OurDaysProduction.entitlements */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -377,9 +377,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		11A000110000000000000001 /* CoupleCalendar */ = {
+		11A000110000000000000001 /* OurDays */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 11A000260000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendar" */;
+			buildConfigurationList = 11A000260000000000000001 /* Build configuration list for PBXNativeTarget "OurDays" */;
 			buildPhases = (
 				11A000270000000000000001 /* Sources */,
 				11A000180000000000000001 /* Frameworks */,
@@ -389,14 +389,14 @@
 			);
 			dependencies = (
 			);
-			name = CoupleCalendar;
-			productName = CoupleCalendar;
-			productReference = 11A000130000000000000001 /* CoupleCalendar.app */;
+			name = OurDays;
+			productName = OurDays;
+			productReference = 11A000130000000000000001 /* OurDays.app */;
 			productType = "com.apple.product-type.application";
 		};
-		11A000290000000000000001 /* CoupleCalendarTests */ = {
+		11A000290000000000000001 /* OurDaysTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 11A000300000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendarTests" */;
+			buildConfigurationList = 11A000300000000000000001 /* Build configuration list for PBXNativeTarget "OurDaysTests" */;
 			buildPhases = (
 				11A000310000000000000001 /* Sources */,
 				11A000190000000000000001 /* Frameworks */,
@@ -406,14 +406,14 @@
 			);
 			dependencies = (
 			);
-			name = CoupleCalendarTests;
-			productName = CoupleCalendarTests;
-			productReference = 11A000140000000000000001 /* CoupleCalendarTests.xctest */;
+			name = OurDaysTests;
+			productName = OurDaysTests;
+			productReference = 11A000140000000000000001 /* OurDaysTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		11A000340000000000000001 /* CoupleCalendarUITests */ = {
+		11A000340000000000000001 /* OurDaysUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 11A000350000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendarUITests" */;
+			buildConfigurationList = 11A000350000000000000001 /* Build configuration list for PBXNativeTarget "OurDaysUITests" */;
 			buildPhases = (
 				11A000360000000000000001 /* Sources */,
 				11A000200000000000000001 /* Frameworks */,
@@ -424,9 +424,9 @@
 			dependencies = (
 				11A000380000000000000001 /* PBXTargetDependency */,
 			);
-			name = CoupleCalendarUITests;
-			productName = CoupleCalendarUITests;
-			productReference = 11A000150000000000000001 /* CoupleCalendarUITests.xctest */;
+			name = OurDaysUITests;
+			productName = OurDaysUITests;
+			productReference = 11A000150000000000000001 /* OurDaysUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -451,7 +451,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 11A000390000000000000001 /* Build configuration list for PBXProject "CoupleCalendar" */;
+			buildConfigurationList = 11A000390000000000000001 /* Build configuration list for PBXProject "OurDays" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -465,9 +465,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				11A000110000000000000001 /* CoupleCalendar */,
-				11A000290000000000000001 /* CoupleCalendarTests */,
-				11A000340000000000000001 /* CoupleCalendarUITests */,
+				11A000110000000000000001 /* OurDays */,
+				11A000290000000000000001 /* OurDaysTests */,
+				11A000340000000000000001 /* OurDaysUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -541,7 +541,7 @@
 				11B768A0F92230FE335D88B5 /* PairingStatusCard.swift in Sources */,
 				11B99F740B6AE842781A9A14 /* SettingsTabView.swift in Sources */,
 				11BE7B78D375C4D2B594FFE4 /* WeekAgendaView.swift in Sources */,
-				11A000010000000000000001 /* CoupleCalendarApp.swift in Sources */,
+				11A000010000000000000001 /* OurDaysApp.swift in Sources */,
 				11A000530000000000000001 /* RootView.swift in Sources */,
 				11A000510000000000000001 /* AppServices.swift in Sources */,
 				11A000490000000000000001 /* Models.swift in Sources */,
@@ -595,7 +595,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				11A000070000000000000001 /* CoupleCalendarUITests.swift in Sources */,
+				11A000070000000000000001 /* OurDaysUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -604,7 +604,7 @@
 /* Begin PBXTargetDependency section */
 		11A000380000000000000001 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 11A000110000000000000001 /* CoupleCalendar */;
+			target = 11A000110000000000000001 /* OurDays */;
 			targetProxy = 11A000120000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -737,14 +737,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = CoupleCalendar/App/CoupleCalendarLocal.entitlements;
+				CODE_SIGN_ENTITLEMENTS = OurDays/App/OurDaysLocal.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 36;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 3SF92B92JF;
 				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = CoupleCalendar/App/Info.plist;
+				INFOPLIST_FILE = OurDays/App/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -767,14 +767,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = CoupleCalendar/App/CoupleCalendarProduction.entitlements;
+				CODE_SIGN_ENTITLEMENTS = OurDays/App/OurDaysProduction.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 36;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 3SF92B92JF;
 				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = CoupleCalendar/App/Info.plist;
+				INFOPLIST_FILE = OurDays/App/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -851,7 +851,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = CoupleCalendar;
+				TEST_TARGET_NAME = OurDays;
 			};
 			name = Debug;
 		};
@@ -873,14 +873,14 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = CoupleCalendar;
+				TEST_TARGET_NAME = OurDays;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		11A000260000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendar" */ = {
+		11A000260000000000000001 /* Build configuration list for PBXNativeTarget "OurDays" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				11A000420000000000000001 /* Debug */,
@@ -889,7 +889,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		11A000300000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendarTests" */ = {
+		11A000300000000000000001 /* Build configuration list for PBXNativeTarget "OurDaysTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				11A000440000000000000001 /* Debug */,
@@ -898,7 +898,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		11A000350000000000000001 /* Build configuration list for PBXNativeTarget "CoupleCalendarUITests" */ = {
+		11A000350000000000000001 /* Build configuration list for PBXNativeTarget "OurDaysUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				11A000460000000000000001 /* Debug */,
@@ -907,7 +907,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		11A000390000000000000001 /* Build configuration list for PBXProject "CoupleCalendar" */ = {
+		11A000390000000000000001 /* Build configuration list for PBXProject "OurDays" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				11A000400000000000000001 /* Debug */,

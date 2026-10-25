@@ -141,7 +141,7 @@ enum ShareCalUITestLaunchPolicy {
 }
 
 @main
-struct CoupleCalendarApp: App {
+struct OurDaysApp: App {
     @UIApplicationDelegateAdaptor(ShareCalAppDelegate.self) private var appDelegate
     @State private var settings: SettingsStore
     @State private var services: AppServices

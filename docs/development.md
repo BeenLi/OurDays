@@ -91,15 +91,15 @@ the Partner invitation flow.
 
 ## Release CloudKit Share Smoke Test
 
-Use `Release` with `CoupleCalendarProduction.entitlements` when validating
+Use `Release` with `OurDaysProduction.entitlements` when validating
 Production CloudKit sharing on the two fixed simulators.
 
 Owner setup:
 
 ```bash
 xcodebuild \
-  -project CoupleCalendar.xcodeproj \
-  -scheme CoupleCalendar \
+  -project OurDays.xcodeproj \
+  -scheme OurDays \
   -configuration Release \
   -destination 'platform=iOS Simulator,id=AF9A93BC-6151-4C6D-B5F7-E4F5053351E2' \
   build

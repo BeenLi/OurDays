@@ -13,7 +13,7 @@ PARTNER_UDID="${PARTNER_UDID:-244DFAAC-93A7-4BE7-AEA0-4F0A52ABA7D6}" # iPhone 17
 BUNDLE_ID="com.leeberty.CoupleCalendar"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DERIVED="$ROOT_DIR/build/dev-smoke"
-APP_PATH="$DERIVED/Build/Products/Debug-iphonesimulator/CoupleCalendar.app"
+APP_PATH="$DERIVED/Build/Products/Debug-iphonesimulator/OurDays.app"
 
 # Console-wait timeouts (seconds), tunable via env. Defaults are generous because a
 # CKShare between iCloud accounts in DIFFERENT storage regions (e.g. China GCBD ↔
@@ -147,10 +147,10 @@ read_default() { # read_default <udid> <key>
 # line to produce a Development-environment CloudKit build.
 if [ "${1:-}" != "--skip-build" ]; then
   log "Building Debug app (Development CloudKit overrides)..."
-  xcodebuild -project "$ROOT_DIR/CoupleCalendar.xcodeproj" -scheme CoupleCalendar \
+  xcodebuild -project "$ROOT_DIR/OurDays.xcodeproj" -scheme OurDays \
     -configuration Debug -destination "platform=iOS Simulator,id=$OWNER_UDID" \
     -derivedDataPath "$DERIVED" \
-    CODE_SIGN_ENTITLEMENTS=CoupleCalendar/App/CoupleCalendar.entitlements \
+    CODE_SIGN_ENTITLEMENTS=OurDays/App/OurDays.entitlements \
     "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
     build -quiet
 fi
@@ -275,13 +275,13 @@ log "Partner: verifying calendar UI renders owner's synced event (XCUITest)..."
 UI_RESULT="$DERIVED/ui-verify.xcresult"
 rm -rf "$UI_RESULT"
 TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
-  -project "$ROOT_DIR/CoupleCalendar.xcodeproj" -scheme CoupleCalendar \
+  -project "$ROOT_DIR/OurDays.xcodeproj" -scheme OurDays \
   -configuration Debug -destination "platform=iOS Simulator,id=$PARTNER_UDID" \
   -parallel-testing-enabled NO \
   -derivedDataPath "$DERIVED" \
   -resultBundlePath "$UI_RESULT" \
-  -only-testing:CoupleCalendarUITests/CoupleCalendarUITests/testPairedPartnerCalendarShowsOwnerEvent \
-  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/App/CoupleCalendar.entitlements \
+  -only-testing:OurDaysUITests/OurDaysUITests/testPairedPartnerCalendarShowsOwnerEvent \
+  CODE_SIGN_ENTITLEMENTS=OurDays/App/OurDays.entitlements \
   "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
   -quiet || fail "partner calendar UI did not render the owner's synced event (see $UI_RESULT)"
 log "Partner calendar UI rendered the owner's synced event (screenshot in $UI_RESULT)."
@@ -373,13 +373,13 @@ log "Partner: verifying the joint event opens its comment thread on tap (XCUITes
 JOINT_UI_RESULT="$DERIVED/joint-comment-ui.xcresult"
 rm -rf "$JOINT_UI_RESULT"
 TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
-  -project "$ROOT_DIR/CoupleCalendar.xcodeproj" -scheme CoupleCalendar \
+  -project "$ROOT_DIR/OurDays.xcodeproj" -scheme OurDays \
   -configuration Debug -destination "platform=iOS Simulator,id=$PARTNER_UDID" \
   -parallel-testing-enabled NO \
   -derivedDataPath "$DERIVED" \
   -resultBundlePath "$JOINT_UI_RESULT" \
-  -only-testing:CoupleCalendarUITests/CoupleCalendarUITests/testPairedPartnerCanOpenJointEventCommentThread \
-  CODE_SIGN_ENTITLEMENTS=CoupleCalendar/App/CoupleCalendar.entitlements \
+  -only-testing:OurDaysUITests/OurDaysUITests/testPairedPartnerCanOpenJointEventCommentThread \
+  CODE_SIGN_ENTITLEMENTS=OurDays/App/OurDays.entitlements \
   "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
   -quiet || fail "partner could not open the joint event's comment thread from the UI (see $JOINT_UI_RESULT)"
 log "Partner opened the joint event comment thread from the UI (screenshot in $JOINT_UI_RESULT)."

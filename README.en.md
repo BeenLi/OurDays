@@ -1,4 +1,4 @@
-# OurDays (CoupleCalendar)
+# OurDays
 
 [简体中文](README.md) | **English**
 
@@ -110,12 +110,12 @@ Pushes are silent rather than visible notifications because database subscriptio
 
 ```bash
 # Build
-xcodebuild -project CoupleCalendar.xcodeproj -scheme CoupleCalendar \
+xcodebuild -project OurDays.xcodeproj -scheme OurDays \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # Unit tests
-xcodebuild -project CoupleCalendar.xcodeproj -scheme CoupleCalendar \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:CoupleCalendarTests
+xcodebuild -project OurDays.xcodeproj -scheme OurDays \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:OurDaysTests
 
 # Import the CloudKit schema into Development (deploy Production in the CloudKit Console)
 Scripts/import-cloudkit-schema.sh development
@@ -128,13 +128,13 @@ The Debug configuration carries the `LOCAL_SIGNING` compilation condition, which
 
 ### Code structure
 
-`CoupleCalendar/` has no third-party dependencies and is split into layer directories with a fixed dependency direction, **Views → Services → Policies → Models**; Policies never reference services or storage (zero file-level reverse dependencies since the 2026-10 refactor):
+`OurDays/` has no third-party dependencies and is split into layer directories with a fixed dependency direction, **Views → Services → Policies → Models**; Policies never reference services or storage (zero file-level reverse dependencies since the 2026-10 refactor):
 
 ```text
 OurDays/
-├── CoupleCalendar/                Layer directories; dependencies only point down: App → Views → Services → Policies → Models
+├── OurDays/                       Layer directories; dependencies only point down: App → Views → Services → Policies → Models
 │   ├── App/                       Entry point and process-level objects
-│   │   ├── CoupleCalendarApp.swift        @main, AppDelegate: BGTask registration, silent push entry, notification permission
+│   │   ├── OurDaysApp.swift               @main, AppDelegate: BGTask registration, silent push entry, notification permission
 │   │   ├── ShareCalSceneDelegate.swift    Scene delegate, CKShare acceptance, replace-partner confirmation
 │   │   ├── AppServices.swift              Service container
 │   │   └── Info.plist, *.entitlements     Debug / Local / Production entitlements
@@ -176,12 +176,12 @@ OurDays/
 │   └── Resources/
 │       ├── Assets.xcassets                Icons, colors
 │       └── ShareCalStrings.swift          Hand-written Chinese and English strings
-├── CoupleCalendarTests/           XCTest, one file per domain, compiles non-UI sources directly (no @testable import)
+├── OurDaysTests/                  XCTest, one file per domain, compiles non-UI sources directly (no @testable import)
 │                                  PairingTests / CloudKitTests / SyncTests / CalendarMirrorTests /
 │                                  InvitationAndAccessRequestTests / CommentTests /
 │                                  DayTimelineAndNavigationTests / ActivityAndNotificationTests / SettingsAndStringsTests
-├── CoupleCalendarUITests/         XCUITest: launch, swipe between days, onboarding, and (on paired simulators) partner events and comment threads
-├── CoupleCalendar.xcodeproj       The single scheme CoupleCalendar; App, unit test and UI test targets
+├── OurDaysUITests/                XCUITest: launch, swipe between days, onboarding, and (on paired simulators) partner events and comment threads
+├── OurDays.xcodeproj              The single scheme OurDays; App, unit test and UI test targets
 ├── CloudKit/ShareCalSchema.ckdb   CloudKit schema source
 ├── Scripts/                       CloudKit schema import, two-simulator pairing smoke script, App Store / TestFlight export options
 ├── docs/                          Dev workflow, privacy policy, website source (docs/site), README diagram sources (docs/diagrams, *.en.* for English), review notes, plan tree (docs/plantree)

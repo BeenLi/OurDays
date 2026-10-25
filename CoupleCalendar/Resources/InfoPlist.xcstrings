@@ -1,0 +1,42 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSCalendarsFullAccessUsageDescription": {
+      "comment": "Calendar full-access permission prompt",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OurDays needs full calendar access to mirror selected calendars with your partner."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OurDays 需要完整的日历访问权限，才能把你选择的日历同步给伴侣。"
+          }
+        }
+      }
+    },
+    "NSCalendarsUsageDescription": {
+      "comment": "Calendar permission prompt",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OurDays needs calendar access to show your selected schedules."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OurDays 需要日历访问权限，才能显示你选择的日程。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

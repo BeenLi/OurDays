@@ -71,7 +71,9 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #30 | 2026-10-23 | plantree 补录 PR #1–#28，归档过时的 plan | [docs-and-site](plans/docs-and-site/) |
 | #31 | 2026-10-23 | CI 提速：文档改动不触发、PR 只跑单元测试、模拟器开机与编译并行 | [code-structure](plans/code-structure/roadmap.md) |
 | #32 | 2026-10-23 | plantree：#27、#31 标为已合并，releases 状态改为审核中 | [code-structure](plans/code-structure/roadmap.md) |
-| #33 | 本 PR | 同步被取消不再显示红条「Operation … was cancelled」；界面触发的同步不随视图消失而取消 | [pairing-sync-integrity](plans/pairing-sync-integrity/decisions/0005-cancelled-sync-is-not-a-failure.md) |
+| #33 | 2026-10-25 | 同步被取消不再显示红条「Operation … was cancelled」；界面触发的同步不随视图消失而取消 | [pairing-sync-integrity](plans/pairing-sync-integrity/decisions/0005-cancelled-sync-is-not-a-failure.md) |
+| #34 | 本 PR | README 增加英文版 README.en.md，中英文顶部互相切换 | [docs-and-site](plans/docs-and-site/) |
+| #35 | 本 PR | 中国以外用英文：首次启动跟随系统语言；权限弹窗与 App Store 语言栏加简体中文；隐私政策加英文页 | [releases](plans/releases/decisions/0001-english-outside-china.md) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

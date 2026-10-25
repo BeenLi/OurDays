@@ -1,14 +1,33 @@
 import XCTest
 
 final class AppLanguageSettingsTests: XCTestCase {
-    func testDefaultsToChineseWhenNoPreferenceExists() {
+    func testFollowsChineseSystemLanguageWhenNoPreferenceExists() {
         let suiteName = "AppLanguageSettingsTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        let language = AppLanguagePreference.read(from: defaults)
+        XCTAssertEqual(AppLanguagePreference.read(from: defaults, preferredLanguages: ["zh-Hans-CN", "en-US"]), .chinese)
+        XCTAssertEqual(AppLanguagePreference.read(from: defaults, preferredLanguages: ["zh-Hant-TW"]), .chinese)
+    }
 
-        XCTAssertEqual(language, .chinese)
+    func testFollowsNonChineseSystemLanguageAsEnglish() {
+        let suiteName = "AppLanguageSettingsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertEqual(AppLanguagePreference.read(from: defaults, preferredLanguages: ["en-GB", "zh-Hans-CN"]), .english)
+        XCTAssertEqual(AppLanguagePreference.read(from: defaults, preferredLanguages: ["ja-JP"]), .english)
+        XCTAssertEqual(AppLanguagePreference.read(from: defaults, preferredLanguages: []), .english)
+    }
+
+    func testSelectedLanguageOverridesSystemLanguage() {
+        let suiteName = "AppLanguageSettingsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        AppLanguagePreference.write(.chinese, to: defaults)
+
+        XCTAssertEqual(AppLanguagePreference.read(from: defaults, preferredLanguages: ["en-US"]), .chinese)
     }
 
     func testPersistsSelectedEnglishLanguage() {

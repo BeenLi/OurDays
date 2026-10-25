@@ -12,4 +12,4 @@
 - [roadmap.md](roadmap.md) — 各版本一行
 
 ## Status
-- Status: **🚧 1.6 (build 35) 待上传**（版本号 PR #27 待合并）
+- Status: **🚧 1.7 (build 36) 准备中**（版本号 PR #36）

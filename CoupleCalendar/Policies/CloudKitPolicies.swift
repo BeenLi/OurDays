@@ -283,6 +283,32 @@ enum CloudKitSharingError: LocalizedError {
     }
 }
 
+/// A sync that was cancelled did not fail. The Swift task running it went away (an
+/// event sheet closed while its open-sync ran, pull-to-refresh torn down, a
+/// BGAppRefresh expired) and CloudKit's async calls turned that into an error; the
+/// user's data and iCloud are fine and the next sync simply runs again, so it must
+/// never reach the red sync banner. CloudKit reports it as `CKError.operationCancelled`
+/// ("Operation <operationID> was cancelled"), possibly per item inside a
+/// `partialFailure`; Swift as `CancellationError`.
+enum SyncCancellationPolicy {
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled { return true }
+        guard nsError.domain == CKError.errorDomain else { return false }
+        switch CKError.Code(rawValue: nsError.code) {
+        case .operationCancelled:
+            return true
+        case .partialFailure:
+            let itemErrors = (nsError.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error])?.values
+            guard let itemErrors, !itemErrors.isEmpty else { return false }
+            return itemErrors.allSatisfy(isCancellation)
+        default:
+            return false
+        }
+    }
+}
+
 enum CloudKitSharingFailureMessage {
     static func userFacingMessage(for error: Error) -> String {
         let nsError = error as NSError

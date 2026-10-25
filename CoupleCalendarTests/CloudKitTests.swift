@@ -958,6 +958,54 @@ final class CloudKitSharingFailureMessageTests: XCTestCase {
     }
 }
 
+final class SyncCancellationPolicyTests: XCTestCase {
+    func testCloudKitOperationCancelledIsCancellation() {
+        // What the red banner showed: "Operation CACC1939BC788D68 was cancelled".
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.operationCancelled.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "Operation CACC1939BC788D68 was cancelled"]
+        )
+        XCTAssertTrue(SyncCancellationPolicy.isCancellation(error))
+    }
+
+    func testSwiftAndURLCancellationAreCancellation() {
+        XCTAssertTrue(SyncCancellationPolicy.isCancellation(CancellationError()))
+        XCTAssertTrue(SyncCancellationPolicy.isCancellation(NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)))
+    }
+
+    func testPartialFailureIsCancellationOnlyWhenEveryItemWasCancelled() {
+        let cancelled = NSError(domain: CKError.errorDomain, code: CKError.Code.operationCancelled.rawValue)
+        let conflict = NSError(domain: CKError.errorDomain, code: CKError.Code.serverRecordChanged.rawValue)
+        func partial(_ itemErrors: [Error]) -> NSError {
+            let byID = Dictionary(uniqueKeysWithValues: itemErrors.enumerated().map { index, error in
+                (CKRecord.ID(recordName: "record-\(index)") as AnyHashable, error)
+            })
+            return NSError(
+                domain: CKError.errorDomain,
+                code: CKError.Code.partialFailure.rawValue,
+                userInfo: [CKPartialErrorsByItemIDKey: byID]
+            )
+        }
+
+        XCTAssertTrue(SyncCancellationPolicy.isCancellation(partial([cancelled, cancelled])))
+        XCTAssertFalse(SyncCancellationPolicy.isCancellation(partial([cancelled, conflict])))
+        XCTAssertFalse(SyncCancellationPolicy.isCancellation(partial([])))
+    }
+
+    func testRealFailuresAreNotCancellation() {
+        XCTAssertFalse(SyncCancellationPolicy.isCancellation(
+            NSError(domain: CKError.errorDomain, code: CKError.Code.networkUnavailable.rawValue)
+        ))
+        XCTAssertFalse(SyncCancellationPolicy.isCancellation(
+            NSError(domain: CKError.errorDomain, code: CKError.Code.serverRejectedRequest.rawValue)
+        ))
+        XCTAssertFalse(SyncCancellationPolicy.isCancellation(
+            NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)
+        ))
+    }
+}
+
 final class ShareCalLaunchDiagnosticPolicyTests: XCTestCase {
     func testParsesEventCommentArgumentsWithSmokeTitleDefault() {
         let arguments = ["ShareCal", "-ShareCalAddEventComment", "hello there", "-ShareCalEventCommentTitle", "Own Comment Event"]

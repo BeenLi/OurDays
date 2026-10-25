@@ -1,5 +1,7 @@
 # OurDays（CoupleCalendar）
 
+**简体中文** | [English](README.en.md)
+
 OurDays（原名 ShareCal）是一款**严格两人配对**的情侣共享日历 iOS App：双方各自挑选要共享的系统日历，App 将所选日程镜像到 iCloud 并通过一条 CKShare 互相可见。不上传账号密码、不依赖任何自建服务器——所有数据只存在于两个人自己的 iCloud 中。
 
 [![App Store](https://img.shields.io/badge/App%20Store-OurDays-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/cn/app/id6772868166)

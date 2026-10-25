@@ -29,11 +29,17 @@ enum CalendarMode: String, CaseIterable, Identifiable {
 }
 
 enum AppLanguagePreference {
-    static let defaultLanguage: AppLanguage = .chinese
     static let key = "appLanguage"
 
-    static func read(from defaults: UserDefaults) -> AppLanguage {
-        AppLanguage(rawValue: defaults.string(forKey: key) ?? "") ?? defaultLanguage
+    /// A language picked in Settings wins; until then the app follows the iPhone's
+    /// first preferred language, so it is Chinese for Chinese systems and English otherwise.
+    static func read(from defaults: UserDefaults, preferredLanguages: [String] = Locale.preferredLanguages) -> AppLanguage {
+        AppLanguage(rawValue: defaults.string(forKey: key) ?? "") ?? systemLanguage(preferredLanguages: preferredLanguages)
+    }
+
+    static func systemLanguage(preferredLanguages: [String]) -> AppLanguage {
+        guard let first = preferredLanguages.first else { return .english }
+        return first.lowercased().hasPrefix("zh") ? .chinese : .english
     }
 
     static func write(_ language: AppLanguage, to defaults: UserDefaults) {

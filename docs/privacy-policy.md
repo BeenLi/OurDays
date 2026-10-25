@@ -1,6 +1,8 @@
 # OurDays Privacy Policy
 
-Last updated: June 22, 2026
+Published at https://ourdays.cn/privacy-en.html (English) and https://ourdays.cn/privacy.html (中文).
+
+Last updated: October 25, 2026
 
 OurDays is a private couple calendar app. The app helps two invited users view selected calendars side by side, share event invitations, and comment on shared events.
 
@@ -8,7 +10,7 @@ OurDays is a private couple calendar app. The app helps two invited users view s
 
 OurDays may access the calendars that you explicitly select after granting calendar permission. Depending on your privacy setting, shared calendar mirrors may include event title, time, location, notes, URL, source calendar name, and calendar color.
 
-OurDays may also store app-created invitations, comments, read state, and basic member profile information such as display name, avatar color, and an iCloud account identifier needed for CloudKit sharing.
+OurDays may also store app-created invitations, comments, read state, and basic member profile information such as nickname, avatar (photo or text) and avatar color, and an iCloud account identifier needed for CloudKit sharing.
 
 ## How Data Is Stored
 

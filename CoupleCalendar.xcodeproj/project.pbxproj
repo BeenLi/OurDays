@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		11A000010000000000000001 /* CoupleCalendarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000020000000000000001 /* CoupleCalendarApp.swift */; };
+		11E1A0020000000000000001 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 11E1A0010000000000000001 /* InfoPlist.xcstrings */; };
 		11A000030000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 11A000040000000000000001 /* Assets.xcassets */; };
 		11A000070000000000000001 /* CoupleCalendarUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000080000000000000001 /* CoupleCalendarUITests.swift */; };
 		11A000490000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000480000000000000001 /* Models.swift */; };
@@ -101,6 +102,7 @@
 
 /* Begin PBXFileReference section */
 		11A000020000000000000001 /* CoupleCalendarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoupleCalendarApp.swift; sourceTree = "<group>"; };
+		11E1A0010000000000000001 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		11A000040000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		11A000080000000000000001 /* CoupleCalendarUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoupleCalendarUITests.swift; sourceTree = "<group>"; };
 		11A000130000000000000001 /* CoupleCalendar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CoupleCalendar.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -337,6 +339,7 @@
 			isa = PBXGroup;
 			children = (
 				11A000040000000000000001 /* Assets.xcassets */,
+				11E1A0010000000000000001 /* InfoPlist.xcstrings */,
 				11B762A754D40721B13B3DD2 /* ShareCalStrings.swift */,
 			);
 			path = Resources;
@@ -455,6 +458,7 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
 			);
 			mainGroup = 11A000210000000000000001;
 			productRefGroup = 11A000250000000000000001 /* Products */;
@@ -474,6 +478,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				11A000030000000000000001 /* Assets.xcassets in Resources */,
+				11E1A0020000000000000001 /* InfoPlist.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

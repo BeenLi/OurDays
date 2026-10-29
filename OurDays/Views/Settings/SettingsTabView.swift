@@ -944,17 +944,7 @@ struct SettingsTabView: View {
 
         preparedShare = nil
         cloudKitDiagnosticMessage = nil
-        settings.iCloudSharingEnabled = false
-        settings.hasStartedPairing = false
-        settings.partnerShareOwnerID = nil
-        settings.partnerNoteName = ""
-        settings.hasPromptedPartnerNoteForCurrentPairing = false
-        settings.hasShownPairingSafetyNoticeForCurrentPairing = false
-        settings.partnerSyncedDisplayName = nil
-        settings.clearPartnerAvatars()
-        settings.outgoingShareParticipantIDs = []
-        settings.pairingConflict = nil
-        settings.clearPairingDate()
+        settings.clearPairingState()
 
         if let purgeError {
             errorMessage = purgeError.localizedDescription

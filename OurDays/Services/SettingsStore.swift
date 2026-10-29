@@ -202,6 +202,24 @@ final class SettingsStore {
         }
     }
 
+    /// Back to not paired: everything this device knew about the partner and both
+    /// halves of the pairing. Used when I unpair and when the partner unpairs me.
+    func clearPairingState() {
+        iCloudSharingEnabled = false
+        hasStartedPairing = false
+        partnerShareOwnerID = nil
+        partnerNoteName = ""
+        hasPromptedPartnerNoteForCurrentPairing = false
+        hasShownPairingSafetyNoticeForCurrentPairing = false
+        partnerSyncedDisplayName = nil
+        clearPartnerAvatars()
+        outgoingShareParticipantIDs = []
+        pairingConflict = nil
+        sentInviteBackToOwnerID = nil
+        shareBackPromptShownForOwnerID = nil
+        clearPairingDate()
+    }
+
     /// Forgets everything about the partner's avatar; called wherever pairing is torn down.
     func clearPartnerAvatars() {
         partnerSyncedAvatar = nil

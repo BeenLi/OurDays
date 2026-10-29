@@ -984,3 +984,64 @@ final class PairingGuidePolicyTests: XCTestCase {
         XCTAssertEqual(strings.pairingGuideSendBackButton("阿立"), "回发邀请给阿立")
     }
 }
+
+final class PartnerDeparturePolicyTests: XCTestCase {
+    func testPartnerUnpairingFromPairedIsADeparture() {
+        XCTAssertTrue(PartnerDeparturePolicy.partnerHasLeft(
+            previousPartnerID: "_a",
+            previousOutgoingParticipantIDs: ["_a"],
+            resolvedPartnerID: nil,
+            outgoingParticipantIDs: []
+        ))
+    }
+
+    func testPartnerUnpairingHalfwayIsADeparture() {
+        // They had opened my link but not sent theirs back.
+        XCTAssertTrue(PartnerDeparturePolicy.partnerHasLeft(
+            previousPartnerID: nil,
+            previousOutgoingParticipantIDs: ["_a"],
+            resolvedPartnerID: nil,
+            outgoingParticipantIDs: []
+        ))
+        // I had opened their link but not sent mine back.
+        XCTAssertTrue(PartnerDeparturePolicy.partnerHasLeft(
+            previousPartnerID: "_a",
+            previousOutgoingParticipantIDs: [],
+            resolvedPartnerID: nil,
+            outgoingParticipantIDs: []
+        ))
+    }
+
+    func testAnUnopenedInvitationIsNotADeparture() {
+        XCTAssertFalse(PartnerDeparturePolicy.partnerHasLeft(
+            previousPartnerID: nil,
+            previousOutgoingParticipantIDs: [],
+            resolvedPartnerID: nil,
+            outgoingParticipantIDs: []
+        ))
+    }
+
+    func testOneHalfStillStandingIsNotADeparture() {
+        XCTAssertFalse(PartnerDeparturePolicy.partnerHasLeft(
+            previousPartnerID: "_a",
+            previousOutgoingParticipantIDs: ["_a"],
+            resolvedPartnerID: nil,
+            outgoingParticipantIDs: ["_a"]
+        ))
+        XCTAssertFalse(PartnerDeparturePolicy.partnerHasLeft(
+            previousPartnerID: "_a",
+            previousOutgoingParticipantIDs: ["_a"],
+            resolvedPartnerID: "_a",
+            outgoingParticipantIDs: []
+        ))
+    }
+
+    func testBlankIDsDoNotCountAsSomeone() {
+        XCTAssertFalse(PartnerDeparturePolicy.partnerHasLeft(
+            previousPartnerID: "  ",
+            previousOutgoingParticipantIDs: [""],
+            resolvedPartnerID: nil,
+            outgoingParticipantIDs: []
+        ))
+    }
+}

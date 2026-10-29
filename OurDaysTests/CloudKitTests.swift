@@ -1512,6 +1512,16 @@ final class ShareInvitationLinkPolicyTests: XCTestCase {
         XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "no link here"))
     }
 
+    func testInputStateTellsWhetherTheBoxHoldsALink() {
+        XCTAssertEqual(ShareInvitationLinkPolicy.inputState(for: ""), .empty)
+        XCTAssertEqual(ShareInvitationLinkPolicy.inputState(for: "  \n "), .empty)
+        XCTAssertEqual(ShareInvitationLinkPolicy.inputState(for: "在吗？发我一下链接"), .noLink)
+        XCTAssertEqual(
+            ShareInvitationLinkPolicy.inputState(for: "② 复制这个链接：https://www.icloud.com.cn/share/0aBcD#OurDays"),
+            .found(URL(string: "https://www.icloud.com.cn/share/0aBcD#OurDays")!)
+        )
+    }
+
     func testMapsCloudKitErrorsToFailures() {
         XCTAssertEqual(ShareInvitationLinkPolicy.failure(for: CKError(.notAuthenticated)), .iCloudUnavailable)
         XCTAssertEqual(ShareInvitationLinkPolicy.failure(for: CKError(.unknownItem)), .linkNoLongerValid)

@@ -8,6 +8,7 @@ enum SettingsSheet: Identifiable {
     case myAvatar
     case partnerAvatar
     case inviteHelp
+    case acceptInvite
 
     var id: String {
         switch self {
@@ -15,6 +16,7 @@ enum SettingsSheet: Identifiable {
         case .myAvatar: "myAvatar"
         case .partnerAvatar: "partnerAvatar"
         case .inviteHelp: "inviteHelp"
+        case .acceptInvite: "acceptInvite"
         }
     }
 }
@@ -204,7 +206,8 @@ struct SettingsTabView: View {
                 activeSettingsSheet = .inviteHelp
             },
             onPasteInviteLink: {
-                Task { await acceptPastedInviteLink() }
+                inviteLinkMessage = nil
+                activeSettingsSheet = .acceptInvite
             },
             onCheckCloudKitStatus: {
                 Task { await checkCloudKitStatus() }
@@ -585,6 +588,11 @@ struct SettingsTabView: View {
                 }
             case .inviteHelp:
                 InviteLinkHelpSheet()
+            case .acceptInvite:
+                AcceptInviteLinkSheet(
+                    lookUp: { url in await lookUpInvite(url) },
+                    onAccept: { metadata in acceptInvite(metadata) }
+                )
             case .partnerAvatar:
                 AvatarEditorSheet(
                     title: strings.partnerAvatarLabel(settings.partnerDisplayName),
@@ -926,40 +934,33 @@ struct SettingsTabView: View {
         iCloudProblem = ICloudAvailabilityPolicy.problem(for: await cloudKit.accountStatus())
     }
 
-    /// Accepts an invite link copied from a chat app. Links tapped inside WeChat open the
+    /// Looks up an invite link copied from a chat app. Links tapped inside WeChat open the
     /// icloud.com web page (which can only ask for an Apple ID sign-in) instead of the app.
     @MainActor
-    private func acceptPastedInviteLink() async {
-        guard !isAcceptingInviteLink else { return }
-        let strings = settings.strings
-        inviteLinkMessage = nil
+    private func lookUpInvite(_ url: URL) async -> Result<CKShare.Metadata, ShareInvitationLinkPolicy.Failure> {
         guard let cloudKit = services.cloudKitIfAvailable else {
-            inviteLinkMessage = strings.iCloudSharingUnavailableLocalBuild
-            return
+            return .failure(.other(settings.strings.iCloudSharingUnavailableLocalBuild))
         }
-        guard let url = ShareInvitationLinkPolicy.shareURL(from: UIPasteboard.general.string ?? "") else {
-            inviteLinkMessage = strings.inviteLinkFailure(.noLinkFound)
-            return
-        }
-
         isAcceptingInviteLink = true
         defer { isAcceptingInviteLink = false }
         do {
             let metadata = try await cloudKit.fetchShareMetadata(from: url)
-            guard metadata.participantRole != .owner else {
-                inviteLinkMessage = strings.inviteLinkFailure(.ownLink)
-                return
-            }
-            ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
-            inviteLinkMessage = strings.inviteLinkAccepted
+            guard metadata.participantRole != .owner else { return .failure(.ownLink) }
+            return .success(metadata)
         } catch {
-            cloudKitSharingError("acceptPastedInviteLink failed error=\(describeCloudKitFailure(error))")
+            cloudKitSharingError("lookUpInvite failed error=\(describeCloudKitFailure(error))")
             let failure = ShareInvitationLinkPolicy.failure(for: error)
-            inviteLinkMessage = strings.inviteLinkFailure(failure)
             if failure == .iCloudUnavailable {
                 await refreshICloudProblem()
             }
+            return .failure(failure)
         }
+    }
+
+    /// The user confirmed whose invite it is; hand it to the same path a tapped link takes.
+    private func acceptInvite(_ metadata: CKShare.Metadata) {
+        ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
+        inviteLinkMessage = settings.strings.inviteLinkAccepted
     }
 
     @MainActor

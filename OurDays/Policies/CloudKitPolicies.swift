@@ -407,6 +407,18 @@ enum ShareInvitationLinkPolicy {
     /// China-mainland Apple IDs get `www.icloud.com.cn/share/…` links.
     private static let shareHosts = ["icloud.com", "icloud.com.cn"]
 
+    /// What the invite box currently holds, so the sheet can say so as the user types.
+    enum InputState: Equatable {
+        case empty
+        case noLink
+        case found(URL)
+    }
+
+    static func inputState(for text: String) -> InputState {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .empty }
+        return shareURL(from: text).map(InputState.found) ?? .noLink
+    }
+
     static func isShareURL(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https",
               let host = url.host?.lowercased(),

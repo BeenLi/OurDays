@@ -1,3 +1,4 @@
+import CloudKit
 import SwiftUI
 import UIKit
 
@@ -423,5 +424,194 @@ struct InviteLinkHelpSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .ourDaysCard()
+    }
+}
+
+/// The way in for a link that won't open by tapping (WeChat's browser, a copied
+/// message). A box shows what was pasted and whether a link is in it, and the
+/// invite only opens after the user confirms whose it is.
+struct AcceptInviteLinkSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(SettingsStore.self) private var settings
+    /// Fetches the share behind the link, or returns a message saying why not.
+    let lookUp: (URL) async -> Result<CKShare.Metadata, ShareInvitationLinkPolicy.Failure>
+    let onAccept: (CKShare.Metadata) -> Void
+
+    @State private var text = ""
+    @State private var isLookingUp = false
+    @State private var failure: ShareInvitationLinkPolicy.Failure?
+    @State private var invite: FoundInvite?
+
+    private struct FoundInvite: Identifiable {
+        let id = UUID()
+        let metadata: CKShare.Metadata
+        let ownerName: String?
+    }
+
+    var body: some View {
+        let strings = settings.strings
+        let inputState = ShareInvitationLinkPolicy.inputState(for: text)
+
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(strings.acceptInviteSheetTitle)
+                            .font(OurDaysTheme.displayFont(26))
+                            .foregroundStyle(OurDaysTheme.ink)
+                        Text(strings.acceptInviteSheetMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $text)
+                            .font(.subheadline)
+                            .scrollContentBackground(.hidden)
+                            .frame(minHeight: 120)
+                            .accessibilityIdentifier("accept-invite-input")
+                        if text.isEmpty {
+                            Text(strings.acceptInvitePlaceholder)
+                                .font(.subheadline)
+                                .foregroundStyle(OurDaysTheme.secondaryInk.opacity(0.7))
+                                .padding(.top, 8)
+                                .padding(.leading, 5)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .padding(10)
+                    .background(OurDaysTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(borderColor(for: inputState), lineWidth: 1)
+                    )
+
+                    HStack(spacing: 12) {
+                        // PasteButton reads the clipboard without iOS's "Allow Paste" prompt.
+                        PasteButton(payloadType: String.self) { pasted in
+                            guard let first = pasted.first else { return }
+                            Task { @MainActor in
+                                text = first
+                                failure = nil
+                            }
+                        }
+                        .buttonBorderShape(.capsule)
+                        .labelStyle(.titleAndIcon)
+                        if !text.isEmpty {
+                            Button(strings.acceptInviteClearButton) {
+                                text = ""
+                                failure = nil
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                        }
+                    }
+
+                    statusRow(for: inputState, strings: strings)
+                }
+                .padding(20)
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    guard case .found(let url) = inputState else { return }
+                    Task { await look(up: url) }
+                } label: {
+                    if isLookingUp {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text(strings.acceptInviteOpenButton(isLookingUp: true))
+                        }
+                    } else {
+                        Label(strings.acceptInviteOpenButton(isLookingUp: false), systemImage: "envelope.open")
+                    }
+                }
+                .buttonStyle(OurDaysPrimaryButtonStyle())
+                .disabled(isLookingUp || inputState.foundURL == nil)
+                .accessibilityIdentifier("accept-invite-open")
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+                .background(OurDaysTheme.paper)
+            }
+            .background(OurDaysTheme.paper)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(strings.cancelButton) { dismiss() }
+                }
+            }
+            .onChange(of: text) { _, _ in failure = nil }
+            .alert(
+                strings.acceptInviteConfirmTitle(invite?.ownerName),
+                isPresented: Binding(get: { invite != nil }, set: { if !$0 { invite = nil } }),
+                presenting: invite
+            ) { found in
+                Button(strings.cancelButton, role: .cancel) {}
+                Button(strings.acceptInviteConfirmButton) {
+                    onAccept(found.metadata)
+                    dismiss()
+                }
+            } message: { found in
+                Text(strings.acceptInviteConfirmMessage(found.ownerName))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func statusRow(for state: ShareInvitationLinkPolicy.InputState, strings: ShareCalStrings) -> some View {
+        let (icon, color, message): (String, Color, String) = {
+            if let failure {
+                return ("exclamationmark.triangle.fill", OurDaysTheme.destructive, strings.inviteLinkFailure(failure))
+            }
+            switch state {
+            case .empty:
+                return ("doc.on.clipboard", OurDaysTheme.secondaryInk, strings.acceptInviteInputEmpty)
+            case .noLink:
+                return ("exclamationmark.circle.fill", .orange, strings.acceptInviteInputNoLink)
+            case .found(let url):
+                return ("checkmark.circle.fill", .green, "\(strings.acceptInviteInputFound)\n\(url.host ?? "")\(url.path)")
+            }
+        }()
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: icon).foregroundStyle(color)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(OurDaysTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(4)
+                .truncationMode(.middle)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("accept-invite-status")
+    }
+
+    private func borderColor(for state: ShareInvitationLinkPolicy.InputState) -> Color {
+        if failure != nil { return OurDaysTheme.destructive }
+        switch state {
+        case .empty: return OurDaysTheme.border
+        case .noLink: return .orange
+        case .found: return .green
+        }
+    }
+
+    @MainActor
+    private func look(up url: URL) async {
+        isLookingUp = true
+        defer { isLookingUp = false }
+        switch await lookUp(url) {
+        case .success(let metadata):
+            let name = metadata.ownerIdentity.nameComponents.flatMap {
+                MemberIDPolicy.normalized(PersonNameComponentsFormatter.localizedString(from: $0, style: .short))
+            }
+            invite = FoundInvite(metadata: metadata, ownerName: name)
+        case .failure(let failure):
+            self.failure = failure
+        }
+    }
+}
+
+private extension ShareInvitationLinkPolicy.InputState {
+    var foundURL: URL? {
+        if case .found(let url) = self { return url }
+        return nil
     }
 }

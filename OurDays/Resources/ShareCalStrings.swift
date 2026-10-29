@@ -327,8 +327,8 @@ struct ShareCalStrings {
     var deleteICloudDataConfirmationTitle: String { text("Delete My iCloud Data?", "删除我的 iCloud 数据？") }
     var deleteICloudDataConfirmationMessage: String {
         text(
-            "This stops sharing, deletes your OurDays iCloud data, leaves your partner's share, and clears the local OurDays cache. It will not delete original events from the system Calendar app.",
-            "这会停止共享、删除你上传到 iCloud 的 OurDays 数据、退出对方的共享，并清除本地 OurDays 缓存。它不会删除系统日历中的原始日程。"
+            "Unpairs, then deletes all of your OurDays data in iCloud and on this iPhone. This cannot be undone, and a reinstall will have nothing to restore. Events in the system Calendar app are not affected.",
+            "解除配对，并删除你在 iCloud 和本机上的全部 OurDays 数据。无法恢复，重装后也找不回来。系统日历里的日程不受影响。"
         )
     }
     var deleteICloudDataSucceeded: String { text("iCloud data deleted.", "iCloud 数据已删除。") }

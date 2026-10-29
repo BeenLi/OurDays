@@ -184,7 +184,7 @@ OurDays/
 ├── OurDays.xcodeproj              The single scheme OurDays; App, unit test and UI test targets
 ├── CloudKit/ShareCalSchema.ckdb   CloudKit schema source
 ├── Scripts/                       CloudKit schema import, two-simulator pairing smoke script, App Store / TestFlight export options
-├── docs/                          Dev workflow, privacy policy, website source (docs/site), README diagram sources (docs/diagrams, *.en.* for English), review notes, plan tree (docs/plantree)
+├── docs/                          Dev workflow, privacy policy, website source (docs/site), README diagram sources (docs/diagrams, *.en.* for English), review notes, design decision records (docs/plantree)
 ├── .github/workflows/ios-ci.yml   CI: builds and runs all tests on a macOS runner
 └── CLAUDE.md                      Code architecture and conventions (identity model, CloudKit layout, Policy conventions)
 ```

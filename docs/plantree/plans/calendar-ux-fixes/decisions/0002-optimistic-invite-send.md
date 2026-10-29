@@ -19,4 +19,4 @@
 ## 影响
 - 改 `EventDetailView.createInvite()` 的时序与错误处理（错误从「阻断成功」改为「非阻断 + 自愈」）。
 - 新增/扩展 reupload Plan + 单测；接入 `foregroundSync`。
-- 风险见 [topics/req2-optimistic-invite.md](../topics/req2-optimistic-invite.md)。
+- 风险见 topics/req2-optimistic-invite.md。

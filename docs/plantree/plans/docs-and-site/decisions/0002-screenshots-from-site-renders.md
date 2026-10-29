@@ -11,4 +11,4 @@
 
 ## 影响
 - UI 变化后要先改 promo 源页再重出图；宣传片里共同块不让位、与 App 的已知差异见 [ui-redesign decision 0003](../../ui-redesign/decisions/0003-joint-block-yields-half-lane.md)。
-- App Store 截图可沿用同一流程按设备尺寸出图（[idea-003](../../../ideas/inbox.md)）。
+- App Store 截图可沿用同一流程按设备尺寸出图（idea-003）。

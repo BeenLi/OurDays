@@ -45,7 +45,7 @@ final class OurDaysUITests: XCTestCase {
         guidanceButton.tap()
 
         XCTAssertTrue(app.buttons["settings-calendar-access-button"].waitForExistence(timeout: Self.transitionTimeout))
-        XCTAssertTrue(app.staticTexts["Calendar Access"].exists || app.staticTexts["日历访问"].exists)
+        XCTAssertTrue(app.staticTexts["Calendars to Share"].exists || app.staticTexts["要共享的日历"].exists)
     }
 
     /// End-to-end UI assertion for the two-simulator pairing smoke test

@@ -50,30 +50,6 @@ struct SettingsTabView: View {
     @State private var activeSharePreparationID: UUID?
     @State private var activeSettingsSheet: SettingsSheet?
     @State private var showStopSharingConfirmation = false
-    @State private var showDeleteICloudDataConfirmation = false
-
-    private var calendarAccessButtonTitle: String {
-        let strings = settings.strings
-        switch authorizationState {
-        case .denied, .restricted, .writeOnly:
-            return strings.openCalendarSettingsButton
-        case .fullAccess, .legacyAuthorized:
-            return strings.calendarAccessGrantedButton
-        default:
-            return strings.requestFullCalendarAccessButton
-        }
-    }
-
-    private var pendingIncomingAccessRequests: [CalendarAccessRequest] {
-        CalendarAccessRequestListPolicy.pendingIncoming(
-            accessRequests,
-            currentMemberID: settings.currentMemberID
-        )
-    }
-
-    private var outgoingAccessRequests: [CalendarAccessRequest] {
-        CalendarAccessRequestListPolicy.outgoing(accessRequests, currentMemberID: settings.currentMemberID)
-    }
 
     private var guidePartnerName: String? {
         PairingGuidePolicy.knownPartnerName(
@@ -182,6 +158,39 @@ struct SettingsTabView: View {
         return strings.sharedAfterDateValue(authorizedStartDate)
     }
 
+    /// The newest history request I sent, shown under the 配对前历史 row.
+    private var latestHistoryRequestLine: String? {
+        guard let request = UsTabPolicy.latestOutgoingHistoryRequest(
+            accessRequests,
+            currentMemberID: settings.currentMemberID
+        ) else { return nil }
+        let strings = settings.strings
+        return strings.historyRequestStatusLine(
+            rangeText: accessRequestRangeText(for: request),
+            statusText: strings.accessRequestStatusTitle(for: request.status)
+        )
+    }
+
+    private var dataRecoveryView: some View {
+        DataRecoveryView(
+            isPreparingShare: isPreparingShare,
+            canOpenSharedPeople: SharedPeoplePresentationPolicy.canOpenOfficialSharing(
+                isCloudKitEnabled: services.isCloudKitEnabled,
+                isPreparingShare: isPreparingShare,
+                isStoppingShare: isStoppingShare
+            ),
+            isDeletingICloudData: isDeletingICloudData,
+            canDeleteICloudData: services.isCloudKitEnabled && !isDeletingICloudData && !isStoppingShare,
+            errorMessage: errorMessage,
+            onOpenSharedPeople: {
+                Task { await prepareShare(presentation: .appleSharingPanel) }
+            },
+            onDeleteICloudData: {
+                Task { await deleteICloudData() }
+            }
+        )
+    }
+
     /// Kept out of `body` so the type checker handles the card's long argument list on its own.
     private var pairingStatusCard: some View {
         PairingStatusCard(
@@ -278,98 +287,43 @@ struct SettingsTabView: View {
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(OurDaysTheme.destructive)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 24, bottom: 4, trailing: 24))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
                 }
                 .id(SettingsFocusTarget.pairing)
 
-            if pairingStatus != .notPaired {
-                Section(strings.sharingScopeTitle) {
-                    SharingScopeRow(label: strings.sharingMyCalendarLabel, value: myCalendarScopeValue)
-                    SharingScopeRow(label: strings.partnersCalendarLabel, value: partnerCalendarScopeValue)
-                    SharingScopeRow(label: strings.prePairingHistoryLabel, value: prePairingHistoryScopeValue)
-                }
-                .listRowBackground(OurDaysTheme.surface)
-            }
-
-            Section(strings.moreSection) {
-                if pairingStatus != .notPaired {
-                    SettingsNavigationRow(title: strings.requestHistoryAccessButton) {
-                        ensurePairingDateIfNeeded()
-                        activeSettingsSheet = .historyRequest
-                    } leading: {
-                        Image(systemName: "clock.arrow.circlepath")
-                    }
-                    .disabled(!services.isCloudKitEnabled || settings.pairingDate == nil)
-                }
-                SettingsNavigationRow(
-                    title: strings.sharedPeopleRowTitle,
-                    isLoading: isPreparingShare
+            Section(strings.usPairSection) {
+                ProfileIdentityRow(
+                    avatar: settings.currentAvatar,
+                    fallbackText: settings.myAvatarFallbackText,
+                    identity: .me,
+                    avatarLabel: strings.myAvatarLabel,
+                    namePlaceholder: strings.myDisplayNamePlaceholder,
+                    nameLabel: strings.myNicknameLabel,
+                    name: $settings.currentDisplayName,
+                    footnote: strings.myProfileFootnote
                 ) {
-                    Task { await prepareShare(presentation: .appleSharingPanel) }
-                } leading: {
-                    Image(systemName: "person.2.badge.gearshape")
-                }
-                .accessibilityIdentifier("shared-people-official-share-button")
-                .disabled(!SharedPeoplePresentationPolicy.canOpenOfficialSharing(
-                    isCloudKitEnabled: services.isCloudKitEnabled,
-                    isPreparingShare: isPreparingShare,
-                    isStoppingShare: isStoppingShare
-                ))
-            }
-            .listRowBackground(OurDaysTheme.surface)
-
-            if PairingSafetyEducationPolicy.shouldShowPersistentWarning(pairingStatus: pairingStatus) {
-                Section(strings.pairingSafetySection) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(strings.pairingSafetyPersistentWarningTitle)
-                                .font(.subheadline.weight(.semibold))
-                            Text(strings.pairingSafetyPersistentWarningMessage)
-                                .font(.caption)
-                                .foregroundStyle(OurDaysTheme.secondaryInk)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    } icon: {
-                        Image(systemName: "info.circle")
-                            .foregroundStyle(OurDaysTheme.secondaryInk)
-                    }
-                }
-                .listRowBackground(OurDaysTheme.surface)
-            }
-
-            Section(strings.profileSection) {
-                SettingsNavigationRow(title: strings.myAvatarLabel) {
                     activeSettingsSheet = .myAvatar
-                } leading: {
-                    MemberAvatarView(avatar: settings.currentAvatar, fallbackText: settings.myAvatarFallbackText, identity: .me, size: 28)
                 }
-                LabeledContent {
-                    TextField(
-                        strings.myDisplayNamePlaceholder,
-                        text: $settings.currentDisplayName
-                    )
-                    .multilineTextAlignment(.trailing)
-                    .accessibilityLabel(strings.myNicknameLabel)
-                } label: {
-                    Text(strings.myNicknameLabel)
-                }
-                LabeledContent {
-                    TextField(
-                        strings.partnerDisplayNamePlaceholder,
-                        text: $settings.partnerNoteName
-                    )
-                    .multilineTextAlignment(.trailing)
-                    .accessibilityLabel(strings.partnerNicknameEditLabel)
-                } label: {
-                    Text(strings.partnerNicknameEditLabel)
-                }
-                if pairingStatus != .notPaired {
-                    SettingsNavigationRow(
-                        title: strings.partnerAvatarLabel(settings.partnerDisplayName),
-                        subtitle: strings.partnerAvatarFootnote
+                if UsTabPolicy.showsPartnerProfileRow(pairingStatus: pairingStatus) {
+                    ProfileIdentityRow(
+                        avatar: settings.partnerAvatar,
+                        fallbackText: settings.partnerAvatarFallbackText,
+                        identity: .partner,
+                        avatarLabel: strings.partnerAvatarLabel(settings.partnerDisplayName),
+                        namePlaceholder: settings.partnerSyncedDisplayName ?? strings.partnerDisplayNamePlaceholder,
+                        nameLabel: strings.partnerNicknameEditLabel,
+                        name: $settings.partnerNoteName,
+                        footnote: strings.partnerProfileFootnote
                     ) {
                         activeSettingsSheet = .partnerAvatar
-                    } leading: {
-                        MemberAvatarView(avatar: settings.partnerAvatar, fallbackText: settings.partnerAvatarFallbackText, identity: .partner, size: 28)
                     }
                 }
             }
@@ -382,130 +336,101 @@ struct SettingsTabView: View {
                     }
                 }
             }
+            .listRowBackground(OurDaysTheme.surface)
 
-            Section(strings.calendarAccessSection) {
-                LabeledContent(strings.statusLabel, value: strings.calendarAuthorizationStatusText(authorizationState))
-                Button(calendarAccessButtonTitle) {
-                    Task { await requestAccess() }
-                }
-                .accessibilityIdentifier("settings-calendar-access-button")
-                .disabled(isRequestingCalendarAccess || authorizationState.canReadEvents)
-                if isRequestingCalendarAccess {
-                    HStack {
-                        ProgressView()
-                        Text(strings.requestingCalendarAccess)
+            Section {
+                if UsTabPolicy.showsCalendarPermissionRow(authorizationState) {
+                    SettingsNavigationRow(
+                        title: strings.calendarPermissionMissingTitle,
+                        subtitle: strings.calendarPermissionMissingMessage,
+                        value: strings.calendarPermissionTurnOnButton,
+                        isLoading: isRequestingCalendarAccess
+                    ) {
+                        Task { await requestAccess() }
+                    } leading: {
+                        Image(systemName: "calendar.badge.exclamationmark")
+                            .foregroundStyle(OurDaysTheme.destructive)
+                    }
+                    .accessibilityIdentifier("settings-calendar-access-button")
+                    .disabled(isRequestingCalendarAccess)
+                } else {
+                    if ShareCalCalendarBootstrapPolicy.shouldOfferCreation(calendars: calendars) {
+                        Button(strings.createShareCalCalendarButton) {
+                            createShareCalCalendar()
+                        }
+                    }
+                    if calendars.isEmpty {
+                        Text(strings.noCalendarsLoaded)
                             .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(calendars) { calendar in
+                            Toggle(isOn: Binding(
+                                get: { settings.selectedCalendarIDs.contains(calendar.id) },
+                                set: { settings.toggleCalendarSelection(calendar.id, isSelected: $0) }
+                            )) {
+                                HStack {
+                                    Circle()
+                                        .fill(Color(hex: calendar.colorHex) ?? .accentColor)
+                                        .frame(width: 10, height: 10)
+                                    Text(calendar.title)
+                                }
+                            }
+                        }
+                    }
+                    Picker(strings.partnerCanSeePicker, selection: $settings.defaultVisibility) {
+                        ForEach(EventVisibility.allCases) { visibility in
+                            Text(strings.defaultVisibilityLabel(for: visibility)).tag(visibility)
+                        }
                     }
                 }
                 if let calendarAccessMessage {
                     Text(calendarAccessMessage)
                         .font(.caption)
-                        .foregroundStyle(authorizationState.canReadEvents ? .green : .orange)
+                        .foregroundStyle(authorizationState.canReadEvents ? OurDaysTheme.secondaryInk : OurDaysTheme.destructive)
                 }
-                Button(strings.refreshCalendarsButton) {
-                    refreshCalendars()
+            } header: {
+                Text(strings.calendarsToShareSection)
+            } footer: {
+                if !UsTabPolicy.showsCalendarPermissionRow(authorizationState) {
+                    Text(strings.calendarsToShareFootnote(partnerName: settings.partnerDisplayName))
                 }
             }
+            .listRowBackground(OurDaysTheme.surface)
             .id(SettingsFocusTarget.calendarAccess)
 
-            Section(strings.calendarsToShareSection) {
-                if ShareCalCalendarBootstrapPolicy.shouldOfferCreation(calendars: calendars) {
-                    Button(strings.createShareCalCalendarButton) {
-                        createShareCalCalendar()
+            if UsTabPolicy.showsPairedSections(pairingStatus: pairingStatus) {
+                Section {
+                    SharingScopeRow(label: strings.sharingMyCalendarLabel, value: myCalendarScopeValue)
+                    SharingScopeRow(label: strings.partnersCalendarLabel, value: partnerCalendarScopeValue)
+                    SettingsNavigationRow(
+                        title: strings.prePairingHistoryLabel,
+                        subtitle: latestHistoryRequestLine,
+                        value: prePairingHistoryScopeValue
+                    ) {
+                        ensurePairingDateIfNeeded()
+                        activeSettingsSheet = .historyRequest
+                    } leading: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                    .accessibilityIdentifier("settings-history-request-button")
+                    .disabled(!services.isCloudKitEnabled || settings.pairingDate == nil)
+                } header: {
+                    Text(strings.sharingScopeTitle)
+                } footer: {
+                    if let accessRequestMessage {
+                        Text(accessRequestMessage)
                     }
                 }
-                if calendars.isEmpty {
-                    Text(strings.noCalendarsLoaded)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(calendars) { calendar in
-                        Toggle(isOn: Binding(
-                            get: { settings.selectedCalendarIDs.contains(calendar.id) },
-                            set: { settings.toggleCalendarSelection(calendar.id, isSelected: $0) }
-                        )) {
-                            HStack {
-                                Circle()
-                                    .fill(Color(hex: calendar.colorHex) ?? .accentColor)
-                                    .frame(width: 10, height: 10)
-                                Text(calendar.title)
-                            }
-                        }
-                    }
-                }
+                .listRowBackground(OurDaysTheme.surface)
             }
 
-            Section(strings.privacySection) {
-                Picker(strings.defaultVisibilityPicker, selection: $settings.defaultVisibility) {
-                    ForEach(EventVisibility.allCases) { visibility in
-                        Text(strings.defaultVisibilityLabel(for: visibility)).tag(visibility)
-                    }
+            Section(strings.moreSection) {
+                NavigationLink {
+                    dataRecoveryView
+                } label: {
+                    LabeledContent(strings.dataRecoveryTitle, value: strings.dataRecoveryRowValue)
                 }
-            }
-
-            Section(strings.accessRequestSection) {
-                if !pendingIncomingAccessRequests.isEmpty {
-                    Text(strings.pendingAccessRequestsLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    ForEach(pendingIncomingAccessRequests) { request in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(strings.incomingHistoryRequestText(
-                                requester: displayName(forRequesterMemberID: request.requesterMemberID),
-                                rangeText: accessRequestRangeText(for: request)
-                            ))
-                            .font(.subheadline.weight(.semibold))
-                            Text(strings.prePairingHistoryLabel)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            HStack {
-                                Button(strings.approveButton) {
-                                    update(request, status: .approved)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                Button(strings.declineButton, role: .destructive) {
-                                    update(request, status: .declined)
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-
-                if !outgoingAccessRequests.isEmpty {
-                    Text(strings.outgoingAccessRequestsLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    ForEach(outgoingAccessRequests) { request in
-                        LabeledContent(
-                            accessRequestRangeText(for: request),
-                            value: strings.accessRequestStatusTitle(for: request.status)
-                        )
-                    }
-                }
-
-                if let accessRequestMessage {
-                    Text(accessRequestMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section(strings.syncSection) {
-                LabeledContent(strings.lastSyncLabel, value: settings.lastSyncAt.map(strings.abbreviatedDateTimeText) ?? strings.never)
-                Button(
-                    isDeletingICloudData ? strings.deletingICloudDataButton : strings.deleteICloudDataButton,
-                    role: .destructive
-                ) {
-                    showDeleteICloudDataConfirmation = true
-                }
-                .disabled(!services.isCloudKitEnabled || isDeletingICloudData || isStoppingShare)
-                if let errorMessage {
-                    Text(errorMessage)
-                        .foregroundStyle(.red)
-                }
-            }
-            Section(strings.aboutSection) {
+                .accessibilityIdentifier("settings-data-recovery-link")
                 LabeledContent(strings.versionLabel, value: AppLegalInfo.versionText)
                 if let icpNumber = AppLegalInfo.icpFilingNumber {
                     VStack(alignment: .leading, spacing: 4) {
@@ -518,8 +443,9 @@ struct SettingsTabView: View {
                     }
                 }
             }
+            .listRowBackground(OurDaysTheme.surface)
 
-            if pairingStatus != .notPaired {
+            if UsTabPolicy.showsPairedSections(pairingStatus: pairingStatus) {
                 Section {
                     Button(strings.unpairButton, role: .destructive) {
                         showStopSharingConfirmation = true
@@ -532,6 +458,7 @@ struct SettingsTabView: View {
         }
         .listSectionSpacing(20)
         .ourDaysListBackground()
+        .ourDaysStatusBarCover()
         .refreshable {
             await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
         }
@@ -547,6 +474,8 @@ struct SettingsTabView: View {
         .onChange(of: scenePhase) { _, phase in
             // The fix for an iCloud problem happens in the Settings app; re-check on return.
             guard phase == .active else { return }
+            // Calendar permission and the calendar list change in the Settings and Calendar apps.
+            refreshCalendars()
             Task { await refreshICloudProblem() }
         }
         .onChange(of: focus) { _, _ in
@@ -618,14 +547,6 @@ struct SettingsTabView: View {
             Button(strings.cancelButton, role: .cancel) {}
         } message: {
             Text(strings.unpairConfirmationMessage)
-        }
-        .alert(strings.deleteICloudDataConfirmationTitle, isPresented: $showDeleteICloudDataConfirmation) {
-            Button(strings.deleteICloudDataButton, role: .destructive) {
-                Task { await deleteICloudData() }
-            }
-            Button(strings.cancelButton, role: .cancel) {}
-        } message: {
-            Text(strings.deleteICloudDataConfirmationMessage)
         }
     }
     }
@@ -797,20 +718,6 @@ struct SettingsTabView: View {
         }
     }
 
-    private func update(_ request: CalendarAccessRequest, status: CalendarAccessRequestStatus) {
-        errorMessage = nil
-        accessRequestMessage = nil
-
-        request.status = status
-        do {
-            try modelContext.save()
-            accessRequestMessage = settings.strings.accessRequestUpdatedMessage
-            saveAccessRequestToCloudKit(request)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
     private func saveAccessRequestToCloudKit(_ request: CalendarAccessRequest) {
         guard let cloudKit = services.cloudKitIfAvailable else { return }
         Task {
@@ -830,16 +737,6 @@ struct SettingsTabView: View {
         let displayedEndDate = PairingDatePolicy.displayedEndDate(forExclusiveEndDate: request.requestedEndDate)
         let end = settings.strings.abbreviatedDateText(displayedEndDate)
         return "\(start) - \(end)"
-    }
-
-    private func displayName(forRequesterMemberID requesterMemberID: String) -> String {
-        MemberDisplayNamePolicy.displayName(
-            forMemberID: requesterMemberID,
-            currentMemberID: settings.currentMemberID,
-            currentDisplayName: settings.currentDisplayName,
-            selfFallback: settings.strings.meTitle,
-            partnerDisplayName: settings.partnerStatusDisplayName
-        )
     }
 
     private enum SharePresentation {
@@ -1100,17 +997,7 @@ struct SettingsTabView: View {
             try await cloudKit.deleteICloudData(ownerMemberID: settings.currentMemberID)
             try ShareCalLocalDataCleanupService.purge(modelContext: modelContext)
             cloudKitDiagnosticMessage = nil
-            settings.iCloudSharingEnabled = false
-            settings.hasStartedPairing = false
-            settings.partnerShareOwnerID = nil
-            settings.partnerNoteName = ""
-            settings.hasPromptedPartnerNoteForCurrentPairing = false
-            settings.hasShownPairingSafetyNoticeForCurrentPairing = false
-            settings.partnerSyncedDisplayName = nil
-            settings.clearPartnerAvatars()
-            settings.outgoingShareParticipantIDs = []
-            settings.pairingConflict = nil
-            settings.clearPairingDate()
+            settings.clearPairingState()
             settings.lastSyncAt = nil
             settings.lastSyncError = nil
             settings.syncPhase = .idle

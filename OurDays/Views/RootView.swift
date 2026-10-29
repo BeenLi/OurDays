@@ -682,17 +682,7 @@ struct RootView: View {
 
         try await cloudKit.deleteICloudData(ownerMemberID: settings.currentMemberID)
         try ShareCalLocalDataCleanupService.purge(modelContext: modelContext)
-        settings.iCloudSharingEnabled = false
-        settings.hasStartedPairing = false
-        settings.partnerShareOwnerID = nil
-        settings.partnerNoteName = ""
-        settings.hasPromptedPartnerNoteForCurrentPairing = false
-        settings.hasShownPairingSafetyNoticeForCurrentPairing = false
-        settings.partnerSyncedDisplayName = nil
-        settings.clearPartnerAvatars()
-        settings.outgoingShareParticipantIDs = []
-        settings.pairingConflict = nil
-        settings.clearPairingDate()
+        settings.clearPairingState()
         settings.lastSyncAt = nil
         settings.lastSyncError = nil
         settings.syncPhase = .idle

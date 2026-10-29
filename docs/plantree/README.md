@@ -76,7 +76,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #35 | 2026-10-25 | 中国以外用英文：首次启动跟随系统语言；权限弹窗与 App Store 语言栏加简体中文；隐私政策加英文页 | [releases](plans/releases/decisions/0001-english-outside-china.md) |
 | #36 | 2026-10-25 | 版本号 1.7 (36)；英文界面截图（App Store 英文页、README.en.md） | [releases](plans/releases/) |
 | #37 | 2026-10-25 | Xcode 工程、target、scheme、目录 `CoupleCalendar` → `OurDays`；bundle ID、iCloud 容器、BGTask 标识、日志 subsystem 保持不变 | [code-structure](plans/code-structure/roadmap.md) |
-| #38 | 本 PR | 邀请链接提示登录 iCloud：去掉"仅限受邀的人"、未配对时检查本 App 的 iCloud、粘贴邀请链接入口 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
+| #38 | 2026-10-29 | 邀请链接提示登录 iCloud：去掉"仅限受邀的人"、未配对时检查本 App 的 iCloud、粘贴邀请链接入口 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
 | #39 | 本 PR | 配对引导：四步进度卡、自己的邀请页与分享文案、收下后提示回发、打不开链接帮助页 | [pairing-sync-integrity](plans/pairing-sync-integrity/decisions/0007-pairing-guide-two-letters.md) |
 
 ## Ideas

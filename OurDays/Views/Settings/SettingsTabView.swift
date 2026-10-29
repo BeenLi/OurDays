@@ -228,14 +228,25 @@ struct SettingsTabView: View {
         PairingInviteSheet(
             draft: draft,
             partnerName: guidePartnerName,
-            onSend: {
-                guard draft.isSendingBack else { return }
-                settings.sentInviteBackToOwnerID = settings.partnerShareOwnerID
+            onSent: {
+                // Only now has a letter left the phone; a cancelled sheet leaves the
+                // guide on the step it was on.
+                markPairingStarted()
+                if draft.isSendingBack {
+                    settings.sentInviteBackToOwnerID = settings.partnerShareOwnerID
+                }
             },
             onUseAppleSheet: {
+                markPairingStarted()
                 pendingAppleSharingShare = draft.preparedShare
             }
         )
+    }
+
+    private func markPairingStarted() {
+        settings.iCloudSharingEnabled = true
+        settings.hasStartedPairing = true
+        settings.markPairingDateIfNeeded()
     }
 
     private func presentPendingAppleSharingShare() {
@@ -366,7 +377,7 @@ struct SettingsTabView: View {
             }
 
             Section(strings.calendarAccessSection) {
-                LabeledContent(strings.statusLabel, value: String(describing: authorizationState))
+                LabeledContent(strings.statusLabel, value: strings.calendarAuthorizationStatusText(authorizationState))
                 Button(calendarAccessButtonTitle) {
                     Task { await requestAccess() }
                 }
@@ -543,7 +554,8 @@ struct SettingsTabView: View {
             )
         }
         .sheet(item: $inviteDraft, onDismiss: presentPendingAppleSharingShare) { draft in
-            inviteSheet(for: draft)
+            // Read the live draft: its link fills in after the sheet is already up.
+            inviteSheet(for: inviteDraft ?? draft)
         }
         .sheet(item: $activeSettingsSheet) { sheet in
             switch sheet {
@@ -837,6 +849,16 @@ struct SettingsTabView: View {
         let preparationID = UUID()
         activeSharePreparationID = preparationID
         isPreparingShare = true
+        // Making the link takes several CloudKit round trips; open the invite sheet on
+        // the tap and let the link fill in, instead of a few silent seconds.
+        let draftID: UUID?
+        if presentation == .inviteSheet {
+            let draft = PairingInviteDraft(isSendingBack: pairingStatus == .waitingForYouToShare)
+            inviteDraft = draft
+            draftID = draft.id
+        } else {
+            draftID = nil
+        }
         let timeoutTask = Task {
             try? await Task.sleep(nanoseconds: 30_000_000_000)
             await MainActor.run {
@@ -844,6 +866,7 @@ struct SettingsTabView: View {
                 errorMessage = CloudKitSharingError.operationTimedOut("share preparation").localizedDescription
                 isPreparingShare = false
                 activeSharePreparationID = nil
+                if let draftID, inviteDraft?.id == draftID { inviteDraft = nil }
             }
         }
         defer { timeoutTask.cancel() }
@@ -853,29 +876,37 @@ struct SettingsTabView: View {
                 settings.currentMemberID = try await cloudKit.fetchCurrentUserRecordID()
             }
             let share = try await cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
-            try await cloudKit.saveMemberProfileForSync(
+            guard activeSharePreparationID == preparationID else { return }
+            settings.outgoingShareParticipantIDs = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(
+                from: share.share
+            )
+            if let draftID {
+                if inviteDraft?.id == draftID {
+                    if share.share.url != nil {
+                        inviteDraft?.preparedShare = share
+                    } else {
+                        // No link to put in a message; Apple's panel can still invite.
+                        // It opens once the invite sheet is gone (onDismiss).
+                        markPairingStarted()
+                        pendingAppleSharingShare = share
+                        inviteDraft = nil
+                    }
+                }
+            } else {
+                markPairingStarted()
+                preparedShare = share
+            }
+            // The partner reads my nickname from this record. It can follow the link:
+            // a failure here must not close a sheet that already works, and the next
+            // sync saves the profile again.
+            try? await cloudKit.saveMemberProfileForSync(
                 ownerMemberID: settings.currentMemberID,
                 displayName: displayName,
                 avatar: settings.currentAvatar
             )
-            guard activeSharePreparationID == preparationID else { return }
-            settings.iCloudSharingEnabled = true
-            settings.hasStartedPairing = true
-            settings.markPairingDateIfNeeded()
-            settings.outgoingShareParticipantIDs = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(
-                from: share.share
-            )
-            if presentation == .inviteSheet, let shareURL = share.share.url {
-                inviteDraft = PairingInviteDraft(
-                    preparedShare: share,
-                    shareURL: shareURL,
-                    isSendingBack: pairingStatus == .waitingForYouToShare
-                )
-            } else {
-                preparedShare = share
-            }
         } catch {
             guard activeSharePreparationID == preparationID else { return }
+            if let draftID, inviteDraft?.id == draftID { inviteDraft = nil }
             errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
         }
         isPreparingShare = false

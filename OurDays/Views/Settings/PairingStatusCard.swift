@@ -101,7 +101,9 @@ struct PairingStatusCard: View {
 
             HStack(spacing: 8) {
                 OurDaysChip(
-                    title: strings.pairingStatusTitle(for: status),
+                    title: guideState?.currentStep == .linkBackAccepted
+                        ? strings.pairingGuideWaitingForPartnerToOpenChip
+                        : strings.pairingStatusTitle(for: status),
                     foreground: status == .paired ? OurDaysTheme.onInkFill : OurDaysTheme.ink,
                     background: status == .paired ? OurDaysTheme.inkFill : OurDaysTheme.sunken
                 )

@@ -201,6 +201,12 @@ struct RootView: View {
                 await reevaluateRootSheetFlow()
             }
         }
+        .onChange(of: settings.syncPhase) { _, newPhase in
+            guard newPhase != .syncing, pairingStatus == .waitingForYouToShare else { return }
+            Task {
+                await reevaluateRootSheetFlow()
+            }
+        }
         .onChange(of: activeRootSheet) { _, newSheet in
             guard newSheet == nil else { return }
             Task {
@@ -493,6 +499,9 @@ struct RootView: View {
         guard activeRootSheet == nil else { return }
         // Smoke runs drive both simulators by launch arguments; keep the sheet off them.
         guard ShareCalLaunchDiagnosticPolicy.seedProfileName() == nil else { return }
+        // Wait for the sync that found the partner's share to also bring their profile,
+        // so the sheet opens with their name rather than "TA". Re-run when it finishes.
+        guard settings.syncPhase != .syncing else { return }
         guard PairingGuidePolicy.shouldPresentShareBackPrompt(
             status: pairingStatus,
             partnerShareOwnerID: settings.partnerShareOwnerID,

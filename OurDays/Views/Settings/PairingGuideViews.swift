@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private extension OurDaysPerson {
     var identity: OurDaysIdentity {
@@ -117,12 +118,47 @@ struct PairingProgressGuide: View {
     }
 }
 
-/// A prepared share link plus which of the two letters it is.
+/// Which of the two letters is being written, and its link once CloudKit has made it.
+/// The sheet opens on the tap and the link fills in a few seconds later, so the id
+/// stays put while `preparedShare` arrives.
 struct PairingInviteDraft: Identifiable {
     let id = UUID()
-    let preparedShare: PreparedCloudShare
-    let shareURL: URL
     let isSendingBack: Bool
+    var preparedShare: PreparedCloudShare?
+
+    var shareURL: URL? { preparedShare?.share.url }
+}
+
+/// Presents the system share sheet from UIKit, because `ShareLink` cannot say whether
+/// anything was actually sent: a link only counts as sent when the sheet completes.
+@MainActor
+enum ActivitySharePresenter {
+    static func present(_ text: String, onCompleted: @escaping @MainActor () -> Void) {
+        guard let presenter = topViewController() else { return }
+        let controller = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, completed, _, _ in
+            guard completed else { return }
+            Task { @MainActor in onCompleted() }
+        }
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = presenter.view
+            popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.maxY - 80, width: 0, height: 0)
+            popover.permittedArrowDirections = []
+        }
+        presenter.present(controller, animated: true)
+    }
+
+    private static func topViewController() -> UIViewController? {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+        return top
+    }
 }
 
 /// Shown before the link leaves the phone. The link alone tells the other person
@@ -133,16 +169,14 @@ struct PairingInviteSheet: View {
     @Environment(SettingsStore.self) private var settings
     let draft: PairingInviteDraft
     let partnerName: String?
-    let onSend: () -> Void
+    let onSent: () -> Void
     let onUseAppleSheet: () -> Void
 
     var body: some View {
         let strings = settings.strings
-        let message = PairingInviteMessagePolicy.inviteMessage(
-            shareURL: draft.shareURL,
-            isSendingBack: draft.isSendingBack,
-            strings: strings
-        )
+        let message = draft.shareURL.map {
+            PairingInviteMessagePolicy.inviteMessage(shareURL: $0, isSendingBack: draft.isSendingBack, strings: strings)
+        }
 
         NavigationStack {
             ScrollView {
@@ -176,7 +210,7 @@ struct PairingInviteSheet: View {
                         Text(strings.pairingInvitePreviewTitle)
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(OurDaysTheme.secondaryInk)
-                        Text(message)
+                        Text(message ?? strings.pairingInvitePreparingLink)
                             .font(.subheadline)
                             .foregroundStyle(OurDaysIdentity.me.onTint)
                             .fixedSize(horizontal: false, vertical: true)
@@ -199,19 +233,35 @@ struct PairingInviteSheet: View {
             }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 4) {
-                    ShareLink(item: message) {
-                        Label(strings.pairingInviteSendButton, systemImage: "paperplane")
+                    Button {
+                        guard let message else { return }
+                        ActivitySharePresenter.present(message) {
+                            onSent()
+                            dismiss()
+                        }
+                    } label: {
+                        if message == nil {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text(strings.pairingInvitePreparingLink)
+                            }
+                        } else {
+                            Label(strings.pairingInviteSendButton, systemImage: "paperplane")
+                        }
                     }
                     .buttonStyle(OurDaysPrimaryButtonStyle())
-                    .simultaneousGesture(TapGesture().onEnded { onSend() })
+                    .disabled(message == nil)
                     .accessibilityIdentifier("pairing-invite-send")
 
                     Button(strings.pairingInviteAppleSheetButton) {
+                        guard draft.preparedShare != nil else { return }
                         onUseAppleSheet()
                         dismiss()
                     }
+                    .disabled(draft.preparedShare == nil)
                     .font(.subheadline)
                     .foregroundStyle(OurDaysTheme.secondaryInk)
+                    .opacity(draft.preparedShare == nil ? 0.4 : 1)
                     .frame(minHeight: 44)
                 }
                 .padding(.horizontal, 20)

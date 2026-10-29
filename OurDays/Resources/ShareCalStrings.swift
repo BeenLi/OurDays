@@ -730,11 +730,11 @@ extension ShareCalStrings {
         case (.initiator, .firstLinkSent):
             return text("Send your first letter", "寄出你的第一封信")
         case (.initiator, .firstLinkAccepted):
-            return text("Invite sent. Waiting for \(partner) to open it", "邀请已寄出，等\(partner)点开")
+            return text("Invite sent. Waiting for \(partner) to open it", "邀请已寄出，等\(partner)\(Self.keepTogether("点开"))")
         case (.initiator, _):
-            return text("\(subject) accepted. Waiting for one back", "\(subject)已收下你的信，等 TA 回寄一封")
+            return text("\(subject) accepted. Waiting for one back", "\(subject)已收下你的信，等 TA \(Self.keepTogether("回寄一封"))")
         case (.receiver, .linkBackAccepted):
-            return text("Sent back. Waiting for \(partner) to open it", "已回寄，等\(partner)点开")
+            return text("Sent back. Waiting for \(partner) to open it", "已回寄，等\(partner)\(Self.keepTogether("点开"))")
         case (.receiver, _):
             return text("Last step: send your link back", "最后一步：回寄你的信")
         }
@@ -828,6 +828,27 @@ extension ShareCalStrings {
     }
     var pairingInvitePreviewTitle: String { text("They'll receive", "对方会收到这段话") }
     var pairingInviteSendButton: String { text("Send Invite", "发送邀请") }
+    var pairingInvitePreparingLink: String { text("Making your link...", "正在生成链接...") }
+    /// The chip on the card once I have sent my link back: the status alone still reads
+    /// "waiting for you to share", which contradicts the headline.
+    var pairingGuideWaitingForPartnerToOpenChip: String { text("Waiting for Partner to Open", "等待对方点开") }
+
+    /// Chinese wraps between any two characters; a word joiner keeps a short verb
+    /// phrase such as 回寄 on one line in the large guide headlines.
+    static func keepTogether(_ phrase: String) -> String {
+        phrase.map(String.init).joined(separator: "\u{2060}")
+    }
+
+    func calendarAuthorizationStatusText(_ state: CalendarAuthorizationState) -> String {
+        switch state {
+        case .notDetermined: text("Not Requested", "尚未请求")
+        case .denied: text("Denied", "已拒绝")
+        case .restricted: text("Restricted", "受限制")
+        case .writeOnly: text("Add Events Only", "仅可添加")
+        case .fullAccess, .legacyAuthorized: text("Full Access", "完全访问")
+        case .unknown: text("Unknown", "未知")
+        }
+    }
     var pairingInviteAppleSheetButton: String {
         text("Use Apple's Sharing Panel (Manage People)", "用苹果的共享面板（管理共享人）")
     }
@@ -862,10 +883,11 @@ extension ShareCalStrings {
     // Calendar tab setup card
 
     var setupShareBackTitle: String { text("Send Your Invite Back", "回发你的邀请") }
-    var setupShareBackMessage: String {
-        text(
-            "You accepted your partner's calendar. Send your link back so they can see yours.",
-            "你已收下对方的日历。把你的链接回发过去，对方就能看到你的日程。"
+    func setupShareBackMessage(_ partnerName: String?) -> String {
+        let partner = guidePartner(partnerName)
+        return text(
+            "You accepted \(partner)'s calendar. Send your link back so \(partner) can see yours.",
+            "你已收下\(partner)的日历。把你的链接回发过去，\(partner)就能看到你的日程。"
         )
     }
 

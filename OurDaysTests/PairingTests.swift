@@ -979,9 +979,20 @@ final class PairingGuidePolicyTests: XCTestCase {
     func testGuideCopyFallsBackToTAWhenThePartnerIsUnknown() {
         let strings = ShareCalStrings(language: .chinese)
         let state = PairingGuideState(role: .initiator, currentStep: .firstLinkAccepted)
-        XCTAssertEqual(strings.pairingGuideHeadline(state, partnerName: nil), "邀请已寄出，等TA点开")
-        XCTAssertEqual(strings.pairingGuideHeadline(state, partnerName: "小鱼"), "邀请已寄出，等小鱼点开")
+        let visible = { (text: String) in text.replacingOccurrences(of: "\u{2060}", with: "") }
+        XCTAssertEqual(visible(strings.pairingGuideHeadline(state, partnerName: nil)), "邀请已寄出，等TA点开")
+        XCTAssertEqual(visible(strings.pairingGuideHeadline(state, partnerName: "小鱼")), "邀请已寄出，等小鱼点开")
         XCTAssertEqual(strings.pairingGuideSendBackButton("阿立"), "回发邀请给阿立")
+    }
+
+    func testGuideHeadlinesKeepTheVerbOnOneLine() {
+        let strings = ShareCalStrings(language: .chinese)
+        let headline = strings.pairingGuideHeadline(
+            PairingGuideState(role: .initiator, currentStep: .linkSentBack),
+            partnerName: nil
+        )
+        XCTAssertTrue(headline.contains("回\u{2060}寄"))
+        XCTAssertEqual(ShareCalStrings.keepTogether("点开"), "点\u{2060}开")
     }
 }
 

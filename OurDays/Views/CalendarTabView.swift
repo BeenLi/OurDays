@@ -233,8 +233,17 @@ struct CalendarTabView: View {
                     .padding(.horizontal)
             }
 
+            if setupGuidanceStep == .shareBack {
+                // I can already see the partner's events; the reminder sits above them
+                // instead of covering the calendar.
+                CalendarSetupGuidanceCard(step: .shareBack, isCompact: true) {
+                    onOpenSettings(settingsFocusTarget(for: .shareBack))
+                }
+                .padding(.horizontal)
+            }
+
             Group {
-                if let setupGuidanceStep {
+                if let setupGuidanceStep, setupGuidanceStep != .shareBack {
                     CalendarSetupGuidanceCard(step: setupGuidanceStep) {
                         onOpenSettings(settingsFocusTarget(for: setupGuidanceStep))
                     }
@@ -589,9 +598,49 @@ struct ShareCalEmptyState: View {
 struct CalendarSetupGuidanceCard: View {
     @Environment(SettingsStore.self) private var settings
     let step: CalendarSetupGuidanceStep
+    var isCompact = false
     let onPrimaryAction: () -> Void
 
     var body: some View {
+        if isCompact {
+            compactBody
+        } else {
+            fullBody
+        }
+    }
+
+    private var compactBody: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: iconName)
+                .font(.system(size: 22, weight: .semibold))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(OurDaysIdentity.me.color, OurDaysIdentity.partner.color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(OurDaysTheme.ink)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button(action: onPrimaryAction) {
+                Image(systemName: buttonIconName)
+                    .font(.body.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(OurDaysTheme.inkFill))
+                    .foregroundStyle(OurDaysTheme.onInkFill)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(buttonTitle)
+            .accessibilityIdentifier("calendar-setup-guidance-button")
+        }
+        .padding(14)
+        .background(OurDaysTheme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var fullBody: some View {
         VStack(spacing: 14) {
             Image(systemName: iconName)
                 .font(.system(size: 40, weight: .semibold))
@@ -639,7 +688,12 @@ struct CalendarSetupGuidanceCard: View {
         case .pairing:
             return settings.strings.setupPairingMessage
         case .shareBack:
-            return settings.strings.setupShareBackMessage
+            return settings.strings.setupShareBackMessage(
+                PairingGuidePolicy.knownPartnerName(
+                    partnerNoteName: settings.partnerNoteName,
+                    partnerSyncedDisplayName: settings.partnerSyncedDisplayName
+                )
+            )
         }
     }
 

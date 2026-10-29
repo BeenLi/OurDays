@@ -532,6 +532,9 @@ struct SettingsTabView: View {
         }
         .listSectionSpacing(20)
         .ourDaysListBackground()
+        .refreshable {
+            await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
+        }
         .navigationTitle(strings.settingsTitle)
         .toolbar(.hidden, for: .navigationBar)
         .task {

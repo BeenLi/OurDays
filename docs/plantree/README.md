@@ -82,7 +82,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #41 | 2026-10-29 | 被对方解除配对：不再误弹「回发邀请」，撤回我的分享，两边都回到第 1 步 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
 | #42 | 2026-10-29 | 冒烟脚本：「Own Comment Event」每次用唯一标题并在用完后删除，评论自己事件那一步不再取到旧事件 | [code-structure](plans/code-structure/roadmap.md) |
 | #43 | 2026-10-29 | 配对引导打磨：邀请页即点即开、取消不进到下一步、第 4 步标签、日历页小提示、回发提示带昵称 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
-| #44 | 本 PR | 「粘贴邀请链接」入口在发出邀请后也保留（第 2、3 步），回寄的链接也能粘贴 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
+| #44 | 本 PR | 「粘贴邀请链接」入口在发出邀请后也保留（第 2、3 步），回寄的链接也能粘贴；粘贴识别中国区 icloud.com.cn 链接 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

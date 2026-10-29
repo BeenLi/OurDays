@@ -392,7 +392,7 @@ enum ShareInvitationLinkPolicy {
         case other(String)
     }
 
-    /// The first `icloud.com/share/…` URL in the pasted text (chat apps often wrap the
+    /// The first `icloud.com/share/…` (or `icloud.com.cn`) URL in the pasted text (chat apps often wrap the
     /// link in a sentence).
     static func shareURL(from text: String) -> URL? {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
@@ -404,10 +404,13 @@ enum ShareInvitationLinkPolicy {
             .first(where: isShareURL)
     }
 
+    /// China-mainland Apple IDs get `www.icloud.com.cn/share/…` links.
+    private static let shareHosts = ["icloud.com", "icloud.com.cn"]
+
     static func isShareURL(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https",
               let host = url.host?.lowercased(),
-              host == "icloud.com" || host.hasSuffix(".icloud.com") else {
+              shareHosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") }) else {
             return false
         }
         return url.path.hasPrefix("/share/")

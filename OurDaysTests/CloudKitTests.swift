@@ -1494,6 +1494,17 @@ final class ShareInvitationLinkPolicyTests: XCTestCase {
         )
     }
 
+    func testAcceptsChinaMainlandShareLinks() {
+        let text = "我想和你一起用 OurDays 共享日程。② 复制这个链接：https://www.icloud.com.cn/share/0aBcD_efGh#OurDays"
+
+        XCTAssertEqual(
+            ShareInvitationLinkPolicy.shareURL(from: text)?.absoluteString,
+            "https://www.icloud.com.cn/share/0aBcD_efGh#OurDays"
+        )
+        XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "https://www.icloud.com.cn/notes/0aBcD"))
+        XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "https://icloud.com.cn.example.com/share/0aBcD"))
+    }
+
     func testIgnoresNonShareLinks() {
         XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "https://www.icloud.com/notes/0aBcD#Note"))
         XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "https://example.com/share/0aBcD"))

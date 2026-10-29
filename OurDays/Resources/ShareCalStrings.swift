@@ -401,8 +401,8 @@ struct ShareCalStrings {
         switch failure {
         case .noLinkFound:
             text(
-                "No OurDays invite link on the clipboard. Copy the whole link your partner sent (it starts with https://www.icloud.com/share/).",
-                "剪贴板里没有 OurDays 邀请链接。请复制对方发来的完整链接（以 https://www.icloud.com/share/ 开头）。"
+                "No OurDays invite link on the clipboard. Copy the whole link your partner sent (it starts with https://www.icloud.com/share/ or https://www.icloud.com.cn/share/).",
+                "剪贴板里没有 OurDays 邀请链接。请复制对方发来的完整链接（以 https://www.icloud.com/share/ 或 https://www.icloud.com.cn/share/ 开头）。"
             )
         case .ownLink:
             text("This is your own invite link. Send it to your partner instead.", "这是你自己的邀请链接，请把它发给对方。")

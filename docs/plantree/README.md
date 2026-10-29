@@ -80,8 +80,9 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #39 | 2026-10-29 | 配对引导：四步进度卡、自己的邀请页与分享文案、收下后提示回发、打不开链接帮助页 | [pairing-sync-integrity](plans/pairing-sync-integrity/decisions/0007-pairing-guide-two-letters.md) |
 | #40 | 2026-10-29 | 解除配对两边一起解除：同时退出对方的分享，对方回到未配对而不是停在「等待对方共享」 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
 | #41 | 2026-10-29 | 被对方解除配对：不再误弹「回发邀请」，撤回我的分享，两边都回到第 1 步 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
-| #42 | 本 PR | 冒烟脚本：「Own Comment Event」每次用唯一标题并在用完后删除，评论自己事件那一步不再取到旧事件 | [code-structure](plans/code-structure/roadmap.md) |
-| #43 | 本 PR | 配对引导打磨：邀请页即点即开、取消不进到下一步、第 4 步标签、日历页小提示、回发提示带昵称 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
+| #42 | 2026-10-29 | 冒烟脚本：「Own Comment Event」每次用唯一标题并在用完后删除，评论自己事件那一步不再取到旧事件 | [code-structure](plans/code-structure/roadmap.md) |
+| #43 | 2026-10-29 | 配对引导打磨：邀请页即点即开、取消不进到下一步、第 4 步标签、日历页小提示、回发提示带昵称 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
+| #45 | 本 PR | 日视图：日程块高度跟随真实时长（短日程两行压紧，不到 30 分钟单行），当前时间线不再穿过已结束的日程 | [ui-redesign](plans/ui-redesign/) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

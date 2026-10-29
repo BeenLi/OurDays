@@ -83,6 +83,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #42 | 2026-10-29 | 冒烟脚本：「Own Comment Event」每次用唯一标题并在用完后删除，评论自己事件那一步不再取到旧事件 | [code-structure](plans/code-structure/roadmap.md) |
 | #43 | 2026-10-29 | 配对引导打磨：邀请页即点即开、取消不进到下一步、第 4 步标签、日历页小提示、回发提示带昵称 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
 | #44 | 本 PR | 「粘贴邀请链接」入口在发出邀请后也保留（第 2、3 步），回寄的链接也能粘贴；粘贴识别中国区 icloud.com.cn 链接；解除配对时不再被正在进行的同步写回「邀请已寄出」；粘贴改为输入框 + 确认；收下后立刻进第 3 步；入口改成按钮样式；「我们」「动态」页下拉刷新 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
+| #45 | 2026-10-29 | 日视图：日程块高度跟随真实时长（短日程两行压紧，不到 30 分钟单行），当前时间线不再穿过已结束的日程 | [ui-redesign](plans/ui-redesign/) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

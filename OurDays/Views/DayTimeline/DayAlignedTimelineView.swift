@@ -172,7 +172,7 @@ struct DayAlignedTimelineView: View {
 
                             ForEach(jointEvents) { event in
                                 let frame = frame(for: event)
-                                let eventHeight = min(max(frame.height, 44), dayHeight)
+                                let eventHeight = DayTimelineLayoutPolicy.blockHeight(frameHeight: frame.height, availableHeight: dayHeight)
                                 let eventY = min(frame.y, max(0, dayHeight - eventHeight))
                                 // A joint block bridges both lanes, but yields the outer half of
                                 // a lane whose own event runs at the same time, so that event
@@ -192,6 +192,7 @@ struct DayAlignedTimelineView: View {
                                     DayTimelineJointEventBlock(
                                         event: event,
                                         isFocused: event.id == focusedJointEventID,
+                                        style: DayTimelineLayoutPolicy.blockStyle(height: eventHeight),
                                         hasComments: EventCommentIndicatorPolicy.hasComments(
                                             jointEvent: event,
                                             commentedKeys: commentedAnchorKeys

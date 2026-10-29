@@ -460,6 +460,8 @@ struct PairingGuideState: Equatable {
     let role: PairingGuideRole
     /// The step waiting to happen next.
     let currentStep: PairingGuideStep
+    /// The step before it is shown done while CloudKit is still accepting it.
+    var isConfirmingAccept = false
 }
 
 enum PairingGuidePolicy {
@@ -469,7 +471,8 @@ enum PairingGuidePolicy {
     static func state(
         status: PairingStatus,
         partnerShareOwnerID: String?,
-        sentInviteBackToOwnerID: String?
+        sentInviteBackToOwnerID: String?,
+        isConfirmingAccept: Bool = false
     ) -> PairingGuideState? {
         switch status {
         case .notPaired:
@@ -483,7 +486,11 @@ enum PairingGuidePolicy {
                 partnerShareOwnerID: partnerShareOwnerID,
                 sentInviteBackToOwnerID: sentInviteBackToOwnerID
             )
-            return PairingGuideState(role: .receiver, currentStep: hasSentBack ? .linkBackAccepted : .linkSentBack)
+            return PairingGuideState(
+                role: .receiver,
+                currentStep: hasSentBack ? .linkBackAccepted : .linkSentBack,
+                isConfirmingAccept: isConfirmingAccept
+            )
         case .paired:
             return nil
         }

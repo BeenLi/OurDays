@@ -62,7 +62,15 @@ func describeCloudKitFailure(_ error: Error) -> String {
     return parts.joined(separator: " | ")
 }
 
-struct PreparedCloudShare: Identifiable {
+/// "elapsed=1234ms", for timing the round trips a user waits on.
+func cloudKitElapsed(since start: ContinuousClock.Instant) -> String {
+    let duration = ContinuousClock.now - start
+    let milliseconds = duration.components.seconds * 1000 + duration.components.attoseconds / 1_000_000_000_000_000
+    return "elapsed=\(milliseconds)ms"
+}
+
+/// Unchecked: CloudKit records are handed between tasks but only read once made.
+struct PreparedCloudShare: Identifiable, @unchecked Sendable {
     let id = UUID()
     let rootRecord: CKRecord
     let share: CKShare
@@ -75,6 +83,64 @@ private struct ShareRootRecord {
     /// False when an existing root already carries the current metadata: saving it again
     /// would only push the partner for nothing.
     let needsSave: Bool
+}
+
+/// Remembers, per container, that this launch already created or found the private zone.
+/// Saving the zone is idempotent but costs a full round trip, and about ten service calls
+/// paid it every time: three or more per sync, two of the waits before an invite opens.
+final class CloudKitZoneReadiness: @unchecked Sendable {
+    static let shared = CloudKitZoneReadiness()
+
+    private let lock = NSLock()
+    private var readyContainerIDs: Set<String> = []
+
+    func isReady(_ containerID: String) -> Bool {
+        lock.withLock { readyContainerIDs.contains(containerID) }
+    }
+
+    func markReady(_ containerID: String) {
+        lock.withLock { _ = readyContainerIDs.insert(containerID) }
+    }
+
+    func reset(_ containerID: String) {
+        lock.withLock { _ = readyContainerIDs.remove(containerID) }
+    }
+}
+
+/// One piece of CloudKit work started before the user asks for it, handed over when
+/// they do. Used for my own invite link: it takes several round trips to make, and
+/// Apple's accept of the partner's link leaves seconds of waiting to make it in.
+@MainActor
+final class ShareCalPrewarm<Value: Sendable> {
+    static var maxAge: TimeInterval { 300 }
+
+    private var pending: (key: String, startedAt: Date, task: Task<Value, Error>)?
+
+    func start(key: String, now: Date = .now, work: @escaping @MainActor () async throws -> Value) {
+        if let pending, pending.key == key, now.timeIntervalSince(pending.startedAt) < Self.maxAge { return }
+        pending = (key, now, Task { try await work() })
+    }
+
+    /// The prewarmed value when one for this key is fresh and succeeded; otherwise `work`.
+    /// Either way it is used once.
+    func take(key: String, now: Date = .now, work: @MainActor () async throws -> Value) async throws -> Value {
+        let prewarmed = pending
+        pending = nil
+        if let prewarmed, prewarmed.key == key, now.timeIntervalSince(prewarmed.startedAt) < Self.maxAge,
+           let value = try? await prewarmed.task.value {
+            return value
+        }
+        return try await work()
+    }
+
+    func discard() {
+        pending = nil
+    }
+}
+
+@MainActor
+enum ShareCalOutgoingSharePrewarm {
+    static let shared = ShareCalPrewarm<PreparedCloudShare>()
 }
 
 final class CloudKitOperationCompletionGate: @unchecked Sendable {
@@ -176,11 +242,25 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
+    private var zoneReadinessKey: String {
+        container.containerIdentifier ?? Self.containerIdentifier
+    }
+
+    /// Forgets a confirmed zone when a failure says it is gone, so the next call creates it.
+    private func noteZoneFailure(_ error: Error) {
+        guard CloudKitZoneReadinessPolicy.meansZoneMissing(error) else { return }
+        cloudKitSharingInfo("zone missing; will create it again zone=\(Self.zoneName)")
+        CloudKitZoneReadiness.shared.reset(zoneReadinessKey)
+    }
+
     func ensureZone() async throws {
+        guard !CloudKitZoneReadiness.shared.isReady(zoneReadinessKey) else { return }
         let zone = CKRecordZone(zoneID: zoneID)
+        let started = ContinuousClock.now
         do {
             _ = try await privateDatabase.modifyRecordZones(saving: [zone], deleting: [])
-            cloudKitSharingInfo("ensureZone succeeded zone=\(Self.zoneName)")
+            CloudKitZoneReadiness.shared.markReady(zoneReadinessKey)
+            cloudKitSharingInfo("ensureZone succeeded zone=\(Self.zoneName) \(cloudKitElapsed(since: started))")
         } catch {
             cloudKitSharingError("ensureZone failed zone=\(Self.zoneName) error=\(describeCloudKitFailure(error))")
             throw error
@@ -189,6 +269,8 @@ final class CloudKitCoupleSpaceService {
 
     func prepareShare(ownerMemberID: String) async throws -> PreparedCloudShare {
         cloudKitSharingInfo("prepareShare begin ownerMemberIDPresent=\((!ownerMemberID.isEmpty).description)")
+        let started = ContinuousClock.now
+        defer { cloudKitSharingInfo("prepareShare finished \(cloudKitElapsed(since: started))") }
         try await ensureZone()
 
         let root = try await rootRecordForSharing(ownerMemberID: ownerMemberID)
@@ -254,8 +336,10 @@ final class CloudKitCoupleSpaceService {
     /// Resolves a share invitation URL to its metadata, bypassing the system
     /// acceptance prompt (used for pasted invite links and the scripted two-device smoke test).
     func fetchShareMetadata(from url: URL) async throws -> CKShare.Metadata {
-        try await withCheckedThrowingContinuation { continuation in
+        let started = ContinuousClock.now
+        return try await withCheckedThrowingContinuation { continuation in
             container.fetchShareMetadata(with: url) { metadata, error in
+                cloudKitSharingInfo("fetchShareMetadata finished found=\((metadata != nil).description) \(cloudKitElapsed(since: started))")
                 if let metadata {
                     continuation.resume(returning: metadata)
                 } else {
@@ -307,6 +391,8 @@ final class CloudKitCoupleSpaceService {
     /// share without the user choosing (see `removeOutgoingShareParticipants`).
     func fetchOutgoingShareParticipantIDs(ownerMemberID: String) async throws -> [String] {
         cloudKitSharingInfo("fetchOutgoingShareParticipantIDs begin ownerMemberIDPresent=\((!ownerMemberID.isEmpty).description)")
+        let started = ContinuousClock.now
+        defer { cloudKitSharingInfo("fetchOutgoingShareParticipantIDs finished \(cloudKitElapsed(since: started))") }
         try await ensureZone()
         guard let share = try await fetchOutgoingShare() else {
             cloudKitSharingInfo("fetchOutgoingShareParticipantIDs skipped; share missing")
@@ -373,6 +459,7 @@ final class CloudKitCoupleSpaceService {
 
     private func deletePrivateZone() async throws {
         do {
+            CloudKitZoneReadiness.shared.reset(zoneReadinessKey)
             _ = try await privateDatabase.modifyRecordZones(saving: [], deleting: [zoneID])
             cloudKitSharingInfo("deletePrivateZone succeeded zone=\(Self.zoneName)")
         } catch {
@@ -416,10 +503,18 @@ final class CloudKitCoupleSpaceService {
     func acceptShare(metadata: CKShare.Metadata) async throws {
         let containerIdentifier = metadata.containerIdentifier
         cloudKitSharingInfo("acceptShare begin container=\(containerIdentifier)")
+        let started = ContinuousClock.now
+        defer { cloudKitSharingInfo("acceptShare finished \(cloudKitElapsed(since: started))") }
 
         let acceptContainer = CKContainer(identifier: containerIdentifier)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let operation = CKAcceptSharesOperation(shareMetadatas: [metadata])
+            // The user is watching the card say "confirming"; never leave it there forever.
+            let configuration = CKOperation.Configuration()
+            configuration.qualityOfService = .userInitiated
+            configuration.timeoutIntervalForRequest = 20
+            configuration.timeoutIntervalForResource = 45
+            operation.configuration = configuration
 
             operation.perShareResultBlock = { _, result in
                 switch result {
@@ -687,10 +782,12 @@ final class CloudKitCoupleSpaceService {
                         complete(.success(results))
                     } catch {
                         cloudKitSharingError("modifyRecords completed with per-record failure error=\(describeCloudKitFailure(error))")
+                        self.noteZoneFailure(error)
                         complete(.failure(error))
                     }
                 case .failure(let error):
                     cloudKitSharingError("modifyRecords failed error=\(describeCloudKitFailure(error))")
+                    self.noteZoneFailure(error)
                     complete(.failure(error))
                 }
             }
@@ -809,6 +906,7 @@ final class CloudKitCoupleSpaceService {
             return try recordResult.get()
         } catch {
             cloudKitSharingError("fetchRecord failed record=\(recordID.recordName) error=\(describeCloudKitFailure(error))")
+            noteZoneFailure(error)
             throw error
         }
     }

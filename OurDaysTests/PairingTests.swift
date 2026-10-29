@@ -1139,3 +1139,97 @@ final class UsTabPolicyTests: XCTestCase {
         XCTAssertNil(UsTabPolicy.latestOutgoingHistoryRequest([incoming], currentMemberID: "_me"))
     }
 }
+
+final class ShareAcceptanceProgressTests: XCTestCase {
+    private func makeSettings() -> SettingsStore {
+        let suiteName = "ShareAcceptanceProgressTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return SettingsStore(defaults: defaults)
+    }
+
+    func testCardMovesOnWhileTheAcceptIsStillRunning() {
+        let settings = makeSettings()
+        settings.acceptingShareOwnerID = "_yu"
+
+        XCTAssertEqual(settings.displayedIncomingOwnerID, "_yu")
+        XCTAssertTrue(settings.isConfirmingShareAcceptance)
+        XCTAssertNil(settings.partnerShareOwnerID, "nothing is saved before CloudKit accepts")
+
+        let status = PairingSettingsPolicy.status(
+            hasStartedPairing: false,
+            outgoingParticipantIDs: [],
+            incomingOwnerID: settings.displayedIncomingOwnerID
+        )
+        XCTAssertEqual(status, .waitingForYouToShare)
+        XCTAssertEqual(
+            PairingGuidePolicy.state(
+                status: status,
+                partnerShareOwnerID: settings.displayedIncomingOwnerID,
+                sentInviteBackToOwnerID: nil,
+                isConfirmingAccept: settings.isConfirmingShareAcceptance
+            ),
+            PairingGuideState(role: .receiver, currentStep: .linkSentBack, isConfirmingAccept: true)
+        )
+    }
+
+    func testShareBackPromptWaitsForTheRealAccept() {
+        XCTAssertFalse(PairingGuidePolicy.shouldPresentShareBackPrompt(
+            status: .waitingForYouToShare,
+            partnerShareOwnerID: nil,
+            sentInviteBackToOwnerID: nil,
+            shareBackPromptShownForOwnerID: nil
+        ))
+    }
+
+    func testAcceptedPartnerEndsTheConfirmingState() {
+        let settings = makeSettings()
+        settings.acceptingShareOwnerID = "_yu"
+        settings.partnerShareOwnerID = "_yu"
+
+        XCTAssertFalse(settings.isConfirmingShareAcceptance)
+        XCTAssertEqual(settings.displayedIncomingOwnerID, "_yu")
+    }
+}
+
+@MainActor
+final class ShareCalPrewarmTests: XCTestCase {
+    func testTakeHandsOverTheValueStartedEarlierOnce() async throws {
+        let prewarm = ShareCalPrewarm<Int>()
+        var freshCalls = 0
+        prewarm.start(key: "_me") { 7 }
+
+        let first = try await prewarm.take(key: "_me") { freshCalls += 1; return 1 }
+        let second = try await prewarm.take(key: "_me") { freshCalls += 1; return 2 }
+
+        XCTAssertEqual(first, 7)
+        XCTAssertEqual(second, 2)
+        XCTAssertEqual(freshCalls, 1)
+    }
+
+    func testFailedStaleOrOtherOwnersPrewarmFallsBackToFreshWork() async throws {
+        struct Failure: Error {}
+        let start = Date()
+
+        let failed = ShareCalPrewarm<Int>()
+        failed.start(key: "_me") { throw Failure() }
+        let afterFailure = try await failed.take(key: "_me") { 1 }
+        XCTAssertEqual(afterFailure, 1)
+
+        let stale = ShareCalPrewarm<Int>()
+        stale.start(key: "_me", now: start) { 7 }
+        let afterStale = try await stale.take(key: "_me", now: start.addingTimeInterval(ShareCalPrewarm<Int>.maxAge + 1)) { 2 }
+        XCTAssertEqual(afterStale, 2)
+
+        let otherOwner = ShareCalPrewarm<Int>()
+        otherOwner.start(key: "_old") { 7 }
+        let afterOtherOwner = try await otherOwner.take(key: "_me") { 3 }
+        XCTAssertEqual(afterOtherOwner, 3)
+
+        let discarded = ShareCalPrewarm<Int>()
+        discarded.start(key: "_me") { 7 }
+        discarded.discard()
+        let afterDiscard = try await discarded.take(key: "_me") { 4 }
+        XCTAssertEqual(afterDiscard, 4)
+    }
+}

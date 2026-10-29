@@ -49,7 +49,11 @@ enum ShareCalCloudKitShareAcceptanceHandler {
         Task { try? await acceptNow(metadata: metadata, incomingOwnerID: incomingOwnerID) }
     }
 
+    /// The UI moves on when this starts and steps back, with the error, if it fails.
     static func acceptNow(metadata: CKShare.Metadata, incomingOwnerID: String) async throws {
+        await MainActor.run {
+            ShareCalShareAcceptanceProgressSignal.postStarted(ownerID: incomingOwnerID)
+        }
         do {
             try await CloudKitCoupleSpaceService().acceptShare(metadata: metadata)
             await MainActor.run {
@@ -57,6 +61,12 @@ enum ShareCalCloudKitShareAcceptanceHandler {
             }
         } catch {
             NSLog("ShareCal failed to accept CloudKit share: \(error)")
+            await MainActor.run {
+                ShareCalShareAcceptanceProgressSignal.postFailed(
+                    ownerID: incomingOwnerID,
+                    message: CloudKitSharingFailureMessage.userFacingMessage(for: error)
+                )
+            }
             throw error
         }
     }

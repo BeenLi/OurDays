@@ -643,6 +643,32 @@ struct ShareCalStrings {
     var usSubtitle: String { text("Pairing, sharing & settings", "配对、共享与设置") }
     var moreSection: String { text("More", "更多") }
     var sharedPeopleRowTitle: String { text("Shared People & Invite Link", "共享人与邀请链接") }
+    var usPairSection: String { text("Us Two", "我们俩") }
+    var myProfileFootnote: String { text("Your nickname and avatar sync to your partner", "我的昵称和头像，会同步给对方") }
+    var partnerProfileFootnote: String { text("Your note and avatar for them stay on this iPhone", "对方的备注和头像，只在你的手机上显示") }
+    var calendarPermissionMissingTitle: String { text("No calendar access yet", "还没有日历权限") }
+    var calendarPermissionMissingMessage: String {
+        text("OurDays reads your calendars to share events with your partner.", "OurDays 需要读取日历，才能把日程同步给对方。")
+    }
+    var calendarPermissionTurnOnButton: String { text("Turn On", "去开启") }
+    var partnerCanSeePicker: String { text("Partner sees", "对方能看到") }
+    func calendarsToShareFootnote(partnerName: String) -> String {
+        text("Calendars switched on are shared with \(partnerName).", "打开的日历会同步给\(partnerName)。")
+    }
+    func historyRequestStatusLine(rangeText: String, statusText: String) -> String {
+        text("Requested \(rangeText) · \(statusText)", "已申请 \(rangeText) · \(statusText)")
+    }
+    var dataRecoveryTitle: String { text("Data & Recovery", "数据与恢复") }
+    var dataRecoveryRowValue: String { text("Reinstall, iCloud", "重装、iCloud") }
+    var reinstallSection: String { text("Reinstalling the App", "重装 App") }
+    var troubleshootingSection: String { text("Troubleshooting", "排查") }
+    var startOverSection: String { text("Start Over", "从头开始") }
+    var sharedPeopleFootnote: String {
+        text(
+            "Opens Apple's sharing panel: see whether your partner has joined, or copy the raw iCloud link. To send an invite, use the card at the top of Us.",
+            "打开 Apple 的共享面板：看对方是否已经加入，或复制原始 iCloud 链接。发邀请请用「我们」页顶部的配对卡。"
+        )
+    }
     var todaySectionTitle: String { text("Today", "今天") }
     var yesterdaySectionTitle: String { text("Yesterday", "昨天") }
     var activitySubtitle: String { text("Conversations around your schedules", "你们围绕日程的对话") }

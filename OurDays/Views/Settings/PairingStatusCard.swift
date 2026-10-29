@@ -335,3 +335,37 @@ struct SettingsNavigationRow<Leading: View>: View {
         .buttonStyle(.plain)
     }
 }
+
+/// One person in 我们俩: the avatar opens its editor, the name is edited in place.
+struct ProfileIdentityRow: View {
+    let avatar: MemberAvatar?
+    let fallbackText: String
+    let identity: OurDaysIdentity
+    let avatarLabel: String
+    let namePlaceholder: String
+    let nameLabel: String
+    @Binding var name: String
+    let footnote: String
+    let onEditAvatar: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onEditAvatar) {
+                MemberAvatarView(avatar: avatar, fallbackText: fallbackText, identity: identity, size: 36)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(avatarLabel)
+
+            VStack(alignment: .leading, spacing: 2) {
+                TextField(namePlaceholder, text: $name)
+                    .foregroundStyle(OurDaysTheme.ink)
+                    .accessibilityLabel(nameLabel)
+                Text(footnote)
+                    .font(.caption)
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+            }
+        }
+    }
+}

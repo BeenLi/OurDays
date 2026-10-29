@@ -189,7 +189,7 @@ enum DayTimelineScrollTargetPolicy {
 enum DayTimelineBlockStyle: Equatable {
     /// Title on top, time range below.
     case regular
-    /// Title and start time on one line, for events too short for two lines.
+    /// Title and time range on one line, for events too short for two lines.
     case compact
 }
 

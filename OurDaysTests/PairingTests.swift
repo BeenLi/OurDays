@@ -903,6 +903,13 @@ final class MemberIDPolicyTests: XCTestCase {
 }
 
 final class PairingGuidePolicyTests: XCTestCase {
+    func testInviteCompletesPairingOnlyWhenItsSenderJoinedMyShare() {
+        XCTAssertTrue(PairingGuidePolicy.inviteCompletesPairing(inviterID: "_yu", outgoingParticipantIDs: [" _yu "]))
+        XCTAssertFalse(PairingGuidePolicy.inviteCompletesPairing(inviterID: "_yu", outgoingParticipantIDs: []))
+        XCTAssertFalse(PairingGuidePolicy.inviteCompletesPairing(inviterID: "_yu", outgoingParticipantIDs: ["_other"]))
+        XCTAssertFalse(PairingGuidePolicy.inviteCompletesPairing(inviterID: " ", outgoingParticipantIDs: [""]))
+    }
+
     func testInitiatorWalksThroughTheFirstThreeSteps() {
         XCTAssertEqual(
             PairingGuidePolicy.state(status: .notPaired, partnerShareOwnerID: nil, sentInviteBackToOwnerID: nil),

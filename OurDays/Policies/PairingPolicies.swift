@@ -488,6 +488,12 @@ enum PairingGuidePolicy {
         return MemberIDPolicy.normalized(shareBackPromptShownForOwnerID) != partnerID
     }
 
+    /// Accepting this invite completes pairing when its sender already joined my share.
+    static func inviteCompletesPairing(inviterID: String, outgoingParticipantIDs: [String]) -> Bool {
+        guard let inviterID = MemberIDPolicy.normalized(inviterID) else { return false }
+        return MemberIDPolicy.normalizedList(outgoingParticipantIDs).contains(inviterID)
+    }
+
     /// The partner's name when I know one; nil before their profile has synced, so
     /// copy can say "TA" / "your partner" instead of a placeholder.
     static func knownPartnerName(partnerNoteName: String?, partnerSyncedDisplayName: String?) -> String? {

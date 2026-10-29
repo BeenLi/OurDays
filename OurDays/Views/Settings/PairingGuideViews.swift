@@ -438,8 +438,8 @@ struct AcceptInviteLinkSheet: View {
     /// The OurDays nickname for an inviter this device already knows, else nil ("TA").
     /// Never the Apple ID name in the share metadata: partners appear by nickname only.
     let knownName: (_ ownerID: String) -> String?
-    /// Whether the partner has already accepted my letter, so this one completes pairing.
-    let completesPairing: Bool
+    /// Whether the inviter has already accepted my letter, so this one completes pairing.
+    let completesPairing: (_ ownerID: String) async -> Bool
     let onAccept: (CKShare.Metadata) -> Void
 
     @State private var text = ""
@@ -451,6 +451,7 @@ struct AcceptInviteLinkSheet: View {
         let id = UUID()
         let metadata: CKShare.Metadata
         let ownerName: String?
+        let completesPairing: Bool
     }
 
     var body: some View {
@@ -556,7 +557,7 @@ struct AcceptInviteLinkSheet: View {
                     dismiss()
                 }
             } message: { found in
-                Text(strings.acceptInviteConfirmMessage(found.ownerName, completesPairing: completesPairing))
+                Text(strings.acceptInviteConfirmMessage(found.ownerName, completesPairing: found.completesPairing))
             }
         }
     }
@@ -605,7 +606,11 @@ struct AcceptInviteLinkSheet: View {
         switch await lookUp(url) {
         case .success(let metadata):
             let ownerID = metadata.share.recordID.zoneID.ownerName
-            invite = FoundInvite(metadata: metadata, ownerName: knownName(ownerID))
+            invite = FoundInvite(
+                metadata: metadata,
+                ownerName: knownName(ownerID),
+                completesPairing: await completesPairing(ownerID)
+            )
         case .failure(let failure):
             self.failure = failure
         }

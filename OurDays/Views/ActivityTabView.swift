@@ -2,7 +2,9 @@ import SwiftData
 import SwiftUI
 
 struct ActivityTabView: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(SettingsStore.self) private var settings
+    @Environment(AppServices.self) private var services
     @Query(sort: \EventComment.createdAt) private var comments: [EventComment]
     @Query(sort: \EventMirror.startDate) private var mirrors: [EventMirror]
     @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
@@ -64,6 +66,9 @@ struct ActivityTabView: View {
         }
         .listStyle(.plain)
         .ourDaysListBackground()
+        .refreshable {
+            await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
+        }
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $selectedEvent) { event in
             EventDetailView(event: event)

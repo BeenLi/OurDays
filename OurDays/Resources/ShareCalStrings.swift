@@ -883,10 +883,11 @@ extension ShareCalStrings {
     // Calendar tab setup card
 
     var setupShareBackTitle: String { text("Send Your Invite Back", "回发你的邀请") }
-    var setupShareBackMessage: String {
-        text(
-            "You accepted your partner's calendar. Send your link back so they can see yours.",
-            "你已收下对方的日历。把你的链接回发过去，对方就能看到你的日程。"
+    func setupShareBackMessage(_ partnerName: String?) -> String {
+        let partner = guidePartner(partnerName)
+        return text(
+            "You accepted \(partner)'s calendar. Send your link back so \(partner) can see yours.",
+            "你已收下\(partner)的日历。把你的链接回发过去，\(partner)就能看到你的日程。"
         )
     }
 

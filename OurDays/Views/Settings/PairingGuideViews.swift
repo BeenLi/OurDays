@@ -254,12 +254,14 @@ struct PairingInviteSheet: View {
                     .accessibilityIdentifier("pairing-invite-send")
 
                     Button(strings.pairingInviteAppleSheetButton) {
+                        guard draft.preparedShare != nil else { return }
                         onUseAppleSheet()
                         dismiss()
                     }
                     .disabled(draft.preparedShare == nil)
                     .font(.subheadline)
                     .foregroundStyle(OurDaysTheme.secondaryInk)
+                    .opacity(draft.preparedShare == nil ? 0.4 : 1)
                     .frame(minHeight: 44)
                 }
                 .padding(.horizontal, 20)

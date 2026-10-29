@@ -688,7 +688,12 @@ struct CalendarSetupGuidanceCard: View {
         case .pairing:
             return settings.strings.setupPairingMessage
         case .shareBack:
-            return settings.strings.setupShareBackMessage
+            return settings.strings.setupShareBackMessage(
+                PairingGuidePolicy.knownPartnerName(
+                    partnerNoteName: settings.partnerNoteName,
+                    partnerSyncedDisplayName: settings.partnerSyncedDisplayName
+                )
+            )
         }
     }
 

@@ -70,10 +70,13 @@ final class DayTimelineBlockHeightTests: XCTestCase {
         XCTAssertEqual(DayTimelineLayoutPolicy.blockHeight(frameHeight: 15, availableHeight: 10), 10)
     }
 
-    func testEventsOfFortyFourMinutesOrMoreUseTheTwoLineLayout() {
-        XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: 44), .regular)
+    func testBlockStyleFollowsHeight() {
         XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: 90), .regular)
+        XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: 44), .regular)
         XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: 43), .compact)
+        XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: 30), .compact)
+        XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: 29), .singleLine)
+        XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: 15), .singleLine)
     }
 }
 

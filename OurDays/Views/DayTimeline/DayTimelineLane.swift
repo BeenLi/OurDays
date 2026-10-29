@@ -108,11 +108,11 @@ struct DayTimelineEventBlock: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(identity.tint, in: RoundedRectangle(cornerRadius: style == .compact ? 8 : 12, style: .continuous))
+            .background(identity.tint, in: RoundedRectangle(cornerRadius: style == .regular ? 12 : 8, style: .continuous))
             .clipped()
             .overlay(alignment: .topTrailing) {
                 CommentIndicatorDot(isVisible: hasComments, ringColor: identity.tint)
-                    .padding(style == .compact ? 4 : 6)
+                    .padding(style == .regular ? 6 : 4)
             }
     }
 
@@ -123,7 +123,23 @@ struct DayTimelineEventBlock: View {
             regularContent
         case .compact:
             compactContent
+        case .singleLine:
+            singleLineContent
         }
+    }
+
+    /// Title, then the time range on the same line; the title gives way first.
+    private var singleLineContent: some View {
+        HStack(spacing: 6) {
+            Text(event.title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(OurDaysTheme.ink)
+                .lineLimit(1)
+            timeLine
+                .fixedSize()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 1)
     }
 
     /// The same two lines as the regular block, packed tight: a short
@@ -192,7 +208,7 @@ struct DayTimelineJointEventBlock: View {
     var style: DayTimelineBlockStyle = .regular
     var hasComments: Bool = false
 
-    private var cornerRadius: CGFloat { style == .compact ? 8 : 14 }
+    private var cornerRadius: CGFloat { style == .regular ? 14 : 8 }
 
     var body: some View {
         content
@@ -206,7 +222,7 @@ struct DayTimelineJointEventBlock: View {
             .shadow(color: OurDaysTheme.joint.opacity(isFocused ? 0.35 : 0.12), radius: isFocused ? 8 : 3, x: 0, y: 2)
             .overlay(alignment: .topTrailing) {
                 CommentIndicatorDot(isVisible: hasComments, color: OurDaysTheme.onJoint, ringColor: OurDaysTheme.joint)
-                    .padding(style == .compact ? 4 : 7)
+                    .padding(style == .regular ? 7 : 4)
             }
     }
 
@@ -217,7 +233,27 @@ struct DayTimelineJointEventBlock: View {
             regularContent
         case .compact:
             compactContent
+        case .singleLine:
+            singleLineContent
         }
+    }
+
+    /// Dots, title and time range on one line; the title gives way first.
+    private var singleLineContent: some View {
+        HStack(spacing: 6) {
+            identityDots
+            Text(event.title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(OurDaysTheme.onJoint)
+                .lineLimit(1)
+            Text(timeText)
+                .font(.caption2)
+                .foregroundStyle(OurDaysTheme.onJointSecondary)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 1)
     }
 
     private var identityDots: some View {

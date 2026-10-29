@@ -96,6 +96,16 @@ extension View {
         scrollContentBackground(.hidden)
             .background(OurDaysTheme.paper)
     }
+
+    /// Paper behind the status bar on a tab whose navigation bar is hidden, so rows
+    /// scrolled up slide under it instead of running into the clock.
+    func ourDaysStatusBarCover() -> some View {
+        overlay(alignment: .top) {
+            OurDaysTheme.paper
+                .frame(height: 0)
+                .ignoresSafeArea(edges: .top)
+        }
+    }
 }
 
 struct OurDaysPrimaryButtonStyle: ButtonStyle {

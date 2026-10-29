@@ -458,6 +458,7 @@ struct SettingsTabView: View {
         }
         .listSectionSpacing(20)
         .ourDaysListBackground()
+        .ourDaysStatusBarCover()
         .refreshable {
             await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
         }

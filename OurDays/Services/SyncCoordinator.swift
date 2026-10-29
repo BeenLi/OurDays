@@ -252,10 +252,10 @@ struct SyncCoordinator {
                 // Resolve who the partner is BEFORE any cloud write: while a
                 // pairing conflict is unresolved (e.g. a stranger joined the
                 // share), nothing may be uploaded to the still-readable share.
-                var pairingResetCountAtStart = settings.pairingResetCount
-                // Unpairing while this sync waits on CloudKit leaves it holding the old
-                // pairing; writing that back would undo the unpair (e.g. "invite sent").
-                let pairingWasResetMeanwhile = { settings.pairingResetCount != pairingResetCountAtStart }
+                var pairingChangeCountAtStart = settings.localPairingChangeCount
+                // Unpairing (or accepting a share) while this sync waits on CloudKit leaves
+                // it holding the old pairing; writing that back would undo the change.
+                let pairingChangedMeanwhile = { settings.localPairingChangeCount != pairingChangeCountAtStart }
                 async let outgoingParticipantIDsTask = cloudKit.fetchOutgoingShareParticipantIDs(
                     ownerMemberID: settings.currentMemberID
                 )
@@ -272,7 +272,7 @@ struct SyncCoordinator {
                     outgoingAcceptedParticipantIDs: outgoingParticipantIDs,
                     sharedZoneOwnerIDs: fetchedSharedZoneIDs.map(\.ownerName)
                 )
-                if pairingWasResetMeanwhile() {
+                if pairingChangedMeanwhile() {
                     timing.mark("cloudPairingResetDuringSync")
                     settings.lastSyncAt = .now
                     settings.syncPhase = .idle
@@ -309,7 +309,7 @@ struct SyncCoordinator {
                     // half too, so both of us start over from step 1 instead of me holding
                     // an invitation nobody is coming back to.
                     settings.clearPairingState()
-                    pairingResetCountAtStart = settings.pairingResetCount
+                    pairingChangeCountAtStart = settings.localPairingChangeCount
                     do {
                         try await cloudKit.stopSharing(ownerMemberID: settings.currentMemberID)
                         try await cloudKit.purgeExPartnerRecordsFromPrivateZone(currentMemberID: settings.currentMemberID)
@@ -420,7 +420,7 @@ struct SyncCoordinator {
                 )
                 try upsert(accessRequests: cloudAccessRequests, modelContext: modelContext)
                 timing.mark("cloudAccessRequestsFetched count=\(cloudAccessRequests.count)")
-                if pairingWasResetMeanwhile() {
+                if pairingChangedMeanwhile() {
                     timing.mark("cloudPairingResetDuringSync")
                     settings.lastSyncAt = .now
                     settings.syncPhase = .idle

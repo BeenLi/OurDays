@@ -974,8 +974,30 @@ struct SettingsTabView: View {
 
     /// The user confirmed whose invite it is; hand it to the same path a tapped link takes.
     private func acceptInvite(_ metadata: CKShare.Metadata) {
-        ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
-        inviteLinkMessage = settings.strings.inviteLinkAccepted
+        let incomingOwnerID = metadata.share.recordID.zoneID.ownerName
+        guard !ShareAcceptanceGuardPolicy.requiresReplacementConfirmation(
+            incomingOwnerID: incomingOwnerID,
+            storedPartnerID: settings.partnerShareOwnerID,
+            outgoingParticipantIDs: settings.outgoingShareParticipantIDs
+        ) else {
+            // Someone other than the current partner: RootView asks first.
+            ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
+            return
+        }
+        // The button itself shows "joining…" until CloudKit has accepted.
+        isAcceptingInviteLink = true
+        inviteLinkMessage = nil
+        Task {
+            defer { isAcceptingInviteLink = false }
+            do {
+                try await ShareCalCloudKitShareAcceptanceHandler.acceptNow(
+                    metadata: metadata,
+                    incomingOwnerID: incomingOwnerID
+                )
+            } catch {
+                inviteLinkMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+            }
+        }
     }
 
     @MainActor

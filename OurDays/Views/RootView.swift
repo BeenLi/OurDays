@@ -155,6 +155,7 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: ShareCalAcceptedShareSignal.notificationName)) { _ in
             Task {
                 checkPendingShareReplacement()
+                applyAcceptedPartnerNow()
                 await syncAfterAcceptedShareIfNeeded()
             }
         }
@@ -573,6 +574,17 @@ struct RootView: View {
         presentPartnerNotePromptIfNeeded()
         presentPairingSafetyNoticeIfNeeded()
         presentShareBackPromptIfNeeded()
+    }
+
+    /// Shows the accepted partner (step 3) at once instead of after a running sync
+    /// finishes; the bump makes that sync drop its pre-accept view of the pairing.
+    @MainActor
+    private func applyAcceptedPartnerNow() {
+        guard let ownerID = ShareCalAcceptedShareSignal.pendingPartnerOwnerID(),
+              ownerID != MemberIDPolicy.normalized(settings.partnerShareOwnerID) else { return }
+        settings.localPairingChangeCount += 1
+        settings.iCloudSharingEnabled = true
+        settings.partnerShareOwnerID = ownerID
     }
 
     @MainActor

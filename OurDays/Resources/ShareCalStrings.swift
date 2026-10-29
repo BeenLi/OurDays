@@ -382,7 +382,7 @@ struct ShareCalStrings {
 
     func pasteInviteLinkButton(isAccepting: Bool) -> String {
         isAccepting
-            ? text("Opening invite link...", "正在打开邀请链接...")
+            ? text("Joining your partner...", "正在加入对方...")
             : text("Got an invite link? Open it here", "收到邀请链接？在这里打开")
     }
 

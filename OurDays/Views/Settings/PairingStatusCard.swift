@@ -235,17 +235,29 @@ struct PairingStatusCard: View {
     private func pasteInviteLinkSection(strings: ShareCalStrings) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Button(action: onPasteInviteLink) {
-                Label(strings.pasteInviteLinkButton(isAccepting: isAcceptingInviteLink), systemImage: "doc.on.clipboard")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(OurDaysTheme.ink)
+                HStack(spacing: 10) {
+                    Image(systemName: "link")
+                    Text(strings.pasteInviteLinkButton(isAccepting: isAcceptingInviteLink))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Spacer(minLength: 0)
+                    if isAcceptingInviteLink {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(OurDaysTheme.secondaryInk)
+                    }
+                }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(OurDaysSecondaryButtonStyle())
             .disabled(!isCloudKitEnabled || isAcceptingInviteLink)
             .accessibilityIdentifier("paste-invite-link")
             Text(inviteLinkMessage ?? strings.pasteInviteLinkHint)
                 .font(.caption)
                 .foregroundStyle(OurDaysTheme.secondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
         }
     }
 

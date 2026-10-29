@@ -46,13 +46,18 @@ enum ShareCalCloudKitShareAcceptanceHandler {
     }
 
     static func accept(metadata: CKShare.Metadata, incomingOwnerID: String) {
-        Task {
-            do {
-                try await CloudKitCoupleSpaceService().acceptShare(metadata: metadata)
+        Task { try? await acceptNow(metadata: metadata, incomingOwnerID: incomingOwnerID) }
+    }
+
+    static func acceptNow(metadata: CKShare.Metadata, incomingOwnerID: String) async throws {
+        do {
+            try await CloudKitCoupleSpaceService().acceptShare(metadata: metadata)
+            await MainActor.run {
                 ShareCalAcceptedShareSignal.markAccepted(partnerOwnerID: incomingOwnerID)
-            } catch {
-                NSLog("ShareCal failed to accept CloudKit share: \(error)")
             }
+        } catch {
+            NSLog("ShareCal failed to accept CloudKit share: \(error)")
+            throw error
         }
     }
 }

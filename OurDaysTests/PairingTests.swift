@@ -768,6 +768,24 @@ final class SettingsStoreIdentityMigrationTests: XCTestCase {
 }
 
 final class ShareCalAcceptedShareSignalTests: XCTestCase {
+    func testPendingPartnerOwnerIDPeeksWithoutConsuming() {
+        let suiteName = "ShareCalAcceptedShareSignalTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertNil(ShareCalAcceptedShareSignal.pendingPartnerOwnerID(defaults: defaults))
+        ShareCalAcceptedShareSignal.markAccepted(
+            partnerOwnerID: " _partner ",
+            defaults: defaults,
+            notificationCenter: NotificationCenter()
+        )
+        XCTAssertEqual(ShareCalAcceptedShareSignal.pendingPartnerOwnerID(defaults: defaults), "_partner")
+        XCTAssertEqual(ShareCalAcceptedShareSignal.pendingPartnerOwnerID(defaults: defaults), "_partner")
+        XCTAssertTrue(ShareCalAcceptedShareSignal.consumePending(defaults: defaults))
+        XCTAssertNil(ShareCalAcceptedShareSignal.pendingPartnerOwnerID(defaults: defaults))
+        XCTAssertEqual(ShareCalAcceptedShareSignal.consumePendingPartnerOwnerID(defaults: defaults), "_partner")
+    }
+
     func testMarkAcceptedCreatesPendingSyncSignalAndConsumeClearsIt() throws {
         let suiteName = "ShareCalAcceptedShareSignalTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -982,15 +1000,15 @@ final class PairingGuidePolicyTests: XCTestCase {
         let visible = { (text: String) in text.replacingOccurrences(of: "\u{2060}", with: "") }
         XCTAssertEqual(visible(strings.pairingGuideHeadline(state, partnerName: nil)), "邀请已寄出，等TA点开")
         XCTAssertEqual(visible(strings.pairingGuideHeadline(state, partnerName: "小鱼")), "邀请已寄出，等小鱼点开")
-        XCTAssertEqual(strings.pairingGuideSendBackButton("阿立"), "回发邀请给阿立")
+        XCTAssertEqual(strings.pairingGuideSendBackButton("阿力"), "回发邀请给阿力")
     }
 
     func testInviteConfirmationSaysWhenItFinishesPairing() {
         let strings = ShareCalStrings(language: .chinese)
         XCTAssertEqual(strings.acceptInviteConfirmTitle(nil), "打开TA的邀请？")
-        XCTAssertTrue(strings.acceptInviteConfirmMessage("阿立", completesPairing: false).contains("回发给阿立"))
-        XCTAssertTrue(strings.acceptInviteConfirmMessage("阿立", completesPairing: true).contains("配对完成"))
-        XCTAssertFalse(strings.acceptInviteConfirmMessage("阿立", completesPairing: true).contains("回发"))
+        XCTAssertTrue(strings.acceptInviteConfirmMessage("阿力", completesPairing: false).contains("回发给阿力"))
+        XCTAssertTrue(strings.acceptInviteConfirmMessage("阿力", completesPairing: true).contains("配对完成"))
+        XCTAssertFalse(strings.acceptInviteConfirmMessage("阿力", completesPairing: true).contains("回发"))
     }
 
     func testGuideHeadlinesKeepTheVerbOnOneLine() {

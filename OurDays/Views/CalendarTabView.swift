@@ -195,6 +195,10 @@ struct CalendarTabView: View {
                 hasStartedPairing: settings.hasStartedPairing,
                 outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
                 incomingOwnerID: settings.partnerShareOwnerID
+            ),
+            hasSentInviteBack: PairingGuidePolicy.hasSentInviteBack(
+                partnerShareOwnerID: settings.partnerShareOwnerID,
+                sentInviteBackToOwnerID: settings.sentInviteBackToOwnerID
             )
         )
     }
@@ -344,6 +348,8 @@ struct CalendarTabView: View {
             return .calendarAccess
         case .pairing:
             return .pairing
+        case .shareBack:
+            return .shareBack
         }
     }
 
@@ -621,6 +627,8 @@ struct CalendarSetupGuidanceCard: View {
             return settings.strings.setupCalendarAccessTitle
         case .pairing:
             return settings.strings.setupPairingTitle
+        case .shareBack:
+            return settings.strings.setupShareBackTitle
         }
     }
 
@@ -630,6 +638,8 @@ struct CalendarSetupGuidanceCard: View {
             return settings.strings.setupCalendarAccessMessage
         case .pairing:
             return settings.strings.setupPairingMessage
+        case .shareBack:
+            return settings.strings.setupShareBackMessage
         }
     }
 
@@ -639,6 +649,13 @@ struct CalendarSetupGuidanceCard: View {
             return settings.strings.setupCalendarAccessButton
         case .pairing:
             return settings.strings.setupPairingButton
+        case .shareBack:
+            return settings.strings.pairingGuideSendBackButton(
+                PairingGuidePolicy.knownPartnerName(
+                    partnerNoteName: settings.partnerNoteName,
+                    partnerSyncedDisplayName: settings.partnerSyncedDisplayName
+                )
+            )
         }
     }
 
@@ -646,7 +663,7 @@ struct CalendarSetupGuidanceCard: View {
         switch step {
         case .calendarAccess:
             return "calendar.badge.checkmark"
-        case .pairing:
+        case .pairing, .shareBack:
             return "person.2.badge.plus"
         }
     }
@@ -657,6 +674,8 @@ struct CalendarSetupGuidanceCard: View {
             return "gearshape"
         case .pairing:
             return "person.badge.plus"
+        case .shareBack:
+            return "arrowshape.turn.up.left"
         }
     }
 }

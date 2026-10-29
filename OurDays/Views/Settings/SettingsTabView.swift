@@ -7,12 +7,14 @@ enum SettingsSheet: Identifiable {
     case historyRequest
     case myAvatar
     case partnerAvatar
+    case inviteHelp
 
     var id: String {
         switch self {
         case .historyRequest: "historyRequest"
         case .myAvatar: "myAvatar"
         case .partnerAvatar: "partnerAvatar"
+        case .inviteHelp: "inviteHelp"
         }
     }
 }
@@ -28,6 +30,9 @@ struct SettingsTabView: View {
     @State private var authorizationState: CalendarAuthorizationState = .unknown
     @State private var calendars: [CalendarDescriptor] = []
     @State private var preparedShare: PreparedCloudShare?
+    @State private var inviteDraft: PairingInviteDraft?
+    /// Set when the invite sheet hands off to Apple's panel; shown once the sheet is gone.
+    @State private var pendingAppleSharingShare: PreparedCloudShare?
     @State private var errorMessage: String?
     @State private var accessRequestMessage: String?
     @State private var calendarAccessMessage: String?
@@ -66,6 +71,21 @@ struct SettingsTabView: View {
 
     private var outgoingAccessRequests: [CalendarAccessRequest] {
         CalendarAccessRequestListPolicy.outgoing(accessRequests, currentMemberID: settings.currentMemberID)
+    }
+
+    private var guidePartnerName: String? {
+        PairingGuidePolicy.knownPartnerName(
+            partnerNoteName: settings.partnerNoteName,
+            partnerSyncedDisplayName: settings.partnerSyncedDisplayName
+        )
+    }
+
+    private var pairingGuideState: PairingGuideState? {
+        PairingGuidePolicy.state(
+            status: pairingStatus,
+            partnerShareOwnerID: settings.partnerShareOwnerID,
+            sentInviteBackToOwnerID: settings.sentInviteBackToOwnerID
+        )
     }
 
     private var syncStatusText: String {
@@ -160,6 +180,70 @@ struct SettingsTabView: View {
         return strings.sharedAfterDateValue(authorizedStartDate)
     }
 
+    /// Kept out of `body` so the type checker handles the card's long argument list on its own.
+    private var pairingStatusCard: some View {
+        PairingStatusCard(
+            status: pairingStatus,
+            pairingDate: settings.pairingDate,
+            partnerName: settings.partnerStatusDisplayName,
+            syncStatusText: syncStatusText,
+            isCloudKitEnabled: services.isCloudKitEnabled,
+            isPreparingShare: isPreparingShare,
+            isCheckingCloudKitAccount: isCheckingCloudKitAccount,
+            isSyncing: settings.syncPhase == .syncing,
+            cloudKitDiagnosticMessage: cloudKitDiagnosticMessage,
+            iCloudProblem: iCloudProblem,
+            isAcceptingInviteLink: isAcceptingInviteLink,
+            inviteLinkMessage: inviteLinkMessage,
+            guideState: pairingGuideState,
+            guidePartnerName: guidePartnerName,
+            onStartPairing: {
+                Task { await prepareShare(presentation: .inviteSheet) }
+            },
+            onShowInviteHelp: {
+                activeSettingsSheet = .inviteHelp
+            },
+            onPasteInviteLink: {
+                Task { await acceptPastedInviteLink() }
+            },
+            onCheckCloudKitStatus: {
+                Task { await checkCloudKitStatus() }
+            },
+            onSync: {
+                syncNow()
+            },
+            onEditMyAvatar: {
+                activeSettingsSheet = .myAvatar
+            },
+            onEditPartnerAvatar: {
+                activeSettingsSheet = .partnerAvatar
+            },
+            onHideCloudKitDiagnostic: {
+                cloudKitDiagnosticMessage = nil
+            }
+        )
+    }
+
+    private func inviteSheet(for draft: PairingInviteDraft) -> some View {
+        PairingInviteSheet(
+            draft: draft,
+            partnerName: guidePartnerName,
+            onSend: {
+                guard draft.isSendingBack else { return }
+                settings.sentInviteBackToOwnerID = settings.partnerShareOwnerID
+            },
+            onUseAppleSheet: {
+                pendingAppleSharingShare = draft.preparedShare
+            }
+        )
+    }
+
+    private func presentPendingAppleSharingShare() {
+        guard let share = pendingAppleSharingShare else { return }
+        pendingAppleSharingShare = nil
+        preparedShare = share
+    }
+
     var body: some View {
         @Bindable var settings = settings
         let strings = settings.strings
@@ -172,44 +256,10 @@ struct SettingsTabView: View {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
 
-                    PairingStatusCard(
-                        status: pairingStatus,
-                        pairingDate: settings.pairingDate,
-                        partnerName: settings.partnerStatusDisplayName,
-                        syncStatusText: syncStatusText,
-                        isCloudKitEnabled: services.isCloudKitEnabled,
-                        isPreparingShare: isPreparingShare,
-                        isCheckingCloudKitAccount: isCheckingCloudKitAccount,
-                        isSyncing: settings.syncPhase == .syncing,
-                        cloudKitDiagnosticMessage: cloudKitDiagnosticMessage,
-                        iCloudProblem: iCloudProblem,
-                        isAcceptingInviteLink: isAcceptingInviteLink,
-                        inviteLinkMessage: inviteLinkMessage,
-                        onStartPairing: {
-                            Task { await prepareShare() }
-                        },
-                        onPasteInviteLink: {
-                            Task { await acceptPastedInviteLink() }
-                        },
-                        onCheckCloudKitStatus: {
-                            Task { await checkCloudKitStatus() }
-                        },
-                        onSync: {
-                            syncNow()
-                        },
-                        onEditMyAvatar: {
-                            activeSettingsSheet = .myAvatar
-                        },
-                        onEditPartnerAvatar: {
-                            activeSettingsSheet = .partnerAvatar
-                        },
-                        onHideCloudKitDiagnostic: {
-                            cloudKitDiagnosticMessage = nil
-                        }
-                    )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                    pairingStatusCard
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                 }
                 .id(SettingsFocusTarget.pairing)
 
@@ -236,7 +286,7 @@ struct SettingsTabView: View {
                     title: strings.sharedPeopleRowTitle,
                     isLoading: isPreparingShare
                 ) {
-                    Task { await prepareShare() }
+                    Task { await prepareShare(presentation: .appleSharingPanel) }
                 } leading: {
                     Image(systemName: "person.2.badge.gearshape")
                 }
@@ -492,6 +542,9 @@ struct SettingsTabView: View {
                 }
             )
         }
+        .sheet(item: $inviteDraft, onDismiss: presentPendingAppleSharingShare) { draft in
+            inviteSheet(for: draft)
+        }
         .sheet(item: $activeSettingsSheet) { sheet in
             switch sheet {
             case .historyRequest:
@@ -514,6 +567,8 @@ struct SettingsTabView: View {
                         syncNow()
                     }
                 }
+            case .inviteHelp:
+                InviteLinkHelpSheet()
             case .partnerAvatar:
                 AvatarEditorSheet(
                     title: strings.partnerAvatarLabel(settings.partnerDisplayName),
@@ -550,9 +605,12 @@ struct SettingsTabView: View {
         guard let focus else { return }
         DispatchQueue.main.async {
             withAnimation(.easeInOut(duration: 0.25)) {
-                proxy.scrollTo(focus, anchor: .top)
+                proxy.scrollTo(focus == .shareBack ? SettingsFocusTarget.pairing : focus, anchor: .top)
             }
             self.focus = nil
+            if focus == .shareBack {
+                Task { await prepareShare(presentation: .inviteSheet) }
+            }
         }
     }
 
@@ -755,8 +813,15 @@ struct SettingsTabView: View {
         )
     }
 
+    private enum SharePresentation {
+        /// The pairing guide's invite sheet: our message with the link inside it.
+        case inviteSheet
+        /// Apple's UICloudSharingController, for managing who is on the share.
+        case appleSharingPanel
+    }
+
     @MainActor
-    private func prepareShare() async {
+    private func prepareShare(presentation: SharePresentation) async {
         guard !isPreparingShare else { return }
         errorMessage = nil
         guard let cloudKit = services.cloudKitIfAvailable else {
@@ -800,7 +865,15 @@ struct SettingsTabView: View {
             settings.outgoingShareParticipantIDs = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(
                 from: share.share
             )
-            preparedShare = share
+            if presentation == .inviteSheet, let shareURL = share.share.url {
+                inviteDraft = PairingInviteDraft(
+                    preparedShare: share,
+                    shareURL: shareURL,
+                    isSendingBack: pairingStatus == .waitingForYouToShare
+                )
+            } else {
+                preparedShare = share
+            }
         } catch {
             guard activeSharePreparationID == preparationID else { return }
             errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)

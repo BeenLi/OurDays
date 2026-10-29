@@ -693,3 +693,215 @@ struct ShareCalStrings {
         }
     }
 }
+
+// MARK: - Pairing guide
+
+extension ShareCalStrings {
+    /// The partner's name, or "TA" / "your partner" before it is known.
+    func guidePartner(_ name: String?) -> String {
+        name ?? text("your partner", "TA")
+    }
+
+    private func guidePartnerSubject(_ name: String?) -> String {
+        name ?? text("Your partner", "TA")
+    }
+
+    func pairingGuideStepCounter(_ step: PairingGuideStep) -> String {
+        text("Step \(step.rawValue) of 4", "第 \(step.rawValue) 步 · 共 4 步")
+    }
+
+    func pairingGuideStepLabel(_ step: PairingGuideStep, role: PairingGuideRole) -> String {
+        switch (step, role) {
+        case (.firstLinkSent, .initiator): text("You send", "你寄出")
+        case (.firstLinkAccepted, .initiator): text("They accept", "TA 收下")
+        case (.linkSentBack, .initiator): text("They send back", "TA 回寄")
+        case (.linkBackAccepted, .initiator): text("You accept", "你收下")
+        case (.firstLinkSent, .receiver): text("They send", "TA 寄出")
+        case (.firstLinkAccepted, .receiver): text("You accept", "你收下")
+        case (.linkSentBack, .receiver): text("You send back", "你回寄")
+        case (.linkBackAccepted, .receiver): text("They accept", "TA 收下")
+        }
+    }
+
+    func pairingGuideHeadline(_ state: PairingGuideState, partnerName: String?) -> String {
+        let partner = guidePartner(partnerName)
+        let subject = guidePartnerSubject(partnerName)
+        switch (state.role, state.currentStep) {
+        case (.initiator, .firstLinkSent):
+            return text("Send your first letter", "寄出你的第一封信")
+        case (.initiator, .firstLinkAccepted):
+            return text("Invite sent. Waiting for \(partner) to open it", "邀请已寄出，等\(partner)点开")
+        case (.initiator, _):
+            return text("\(subject) accepted. Waiting for one back", "\(subject)已收下你的信，等 TA 回寄一封")
+        case (.receiver, .linkBackAccepted):
+            return text("Sent back. Waiting for \(partner) to open it", "已回寄，等\(partner)点开")
+        case (.receiver, _):
+            return text("Last step: send your link back", "最后一步：回寄你的信")
+        }
+    }
+
+    func pairingGuideMessage(_ state: PairingGuideState, partnerName: String?) -> String {
+        let partner = guidePartner(partnerName)
+        switch (state.role, state.currentStep) {
+        case (.initiator, .firstLinkSent):
+            return text(
+                "Your calendar stays in your own iCloud. Pairing means each of you sends the other a link: you send one, then \(partner) sends one back.",
+                "你的日程只存在你自己的 iCloud 里。配对就是两个人互相寄一个链接：你先寄，\(partner)再回寄一个。"
+            )
+        case (.initiator, .firstLinkAccepted):
+            return text(
+                "Ask \(partner) to install and open OurDays once, then tap the link on iPhone. Nothing happened? Send it again.",
+                "请\(partner)先安装并打开一次 OurDays，再在 iPhone 上点开链接。没反应可以再发一次。"
+            )
+        case (.initiator, _):
+            return text(
+                "Ask \(partner) to open OurDays and tap Send Invite Back on the Us tab. Open the link they send on your iPhone and you're paired.",
+                "请\(partner)打开 OurDays，在「我们」点「回发邀请」。收到链接后在 iPhone 上点开，配对就完成了。"
+            )
+        case (.receiver, .linkBackAccepted):
+            return text(
+                "When \(partner) taps your link on their iPhone you're paired. Not working? Send it again.",
+                "\(partner)在 iPhone 上点开你的链接，配对就完成了。不行的话可以再发一次。"
+            )
+        case (.receiver, _):
+            return text(
+                "You can already see \(partner)'s calendar; \(partner) can't see yours yet. Send your invite link back to finish pairing.",
+                "你已经能看到\(partner)的日程，\(partner)还看不到你的。把你的邀请链接回发过去，配对就完成了。"
+            )
+        }
+    }
+
+    var pairingGuideResendButton: String { text("Send Again", "再发一次") }
+    func pairingGuideRemindButton(_ partnerName: String?) -> String {
+        text("Remind \(guidePartner(partnerName))", "提醒\(guidePartner(partnerName))回发")
+    }
+    func pairingGuideSendBackButton(_ partnerName: String?) -> String {
+        text("Send Invite Back", "回发邀请给\(guidePartner(partnerName))")
+    }
+    var pairingGuideHelpLink: String { text("Link won't open?", "TA 打不开链接？") }
+
+    var pairingGuideRemindMessage: String {
+        text(
+            "I accepted your OurDays invite, but I can't see your calendar yet. Open OurDays, tap Send Invite Back on the Us tab and send me the link.",
+            "我已经收下你的 OurDays 邀请啦，但还看不到你的日程。打开 OurDays，在「我们」页点「回发邀请」，把链接发给我就好。"
+        )
+    }
+
+    // Invite sheet
+
+    func pairingInviteSheetTitle(isSendingBack: Bool) -> String {
+        isSendingBack ? text("Send Your Letter Back", "回寄你的信") : text("Send Your First Letter", "寄出你的第一封信")
+    }
+
+    func pairingInviteSheetCounter(isSendingBack: Bool) -> String {
+        isSendingBack ? text("Letter 2 of 2", "第 2 封 · 共 2 封") : text("Letter 1 of 2", "第 1 封 · 共 2 封")
+    }
+
+    func pairingInviteSheetMessage(isSendingBack: Bool, partnerName: String?) -> String {
+        let partner = guidePartner(partnerName)
+        return isSendingBack
+            ? text(
+                "This link carries the key to your calendar. Once \(partner) opens it, you're paired.",
+                "链接里装着你日历的钥匙。\(partner)点开后，你们就配对好了。"
+            )
+            : text(
+                "This link carries the key to your calendar. \(partner) sends one back after accepting, and then you're paired.",
+                "链接里装着你日历的钥匙。\(partner)收下后也要回寄一封，你们才算配对。"
+            )
+    }
+
+    var pairingInviteChecklistTitle: String { text("Ask them to do these first", "请对方先做好这三件事") }
+    var pairingInviteChecklistInstall: String {
+        text("Install OurDays on iPhone and open it once", "在 iPhone 上安装并打开一次 OurDays")
+    }
+    var pairingInviteChecklistICloud: String {
+        text(
+            "Keep iCloud on for OurDays (the app checks and shows the steps when it opens)",
+            "iCloud 里 OurDays 的开关是打开的（App 打开时会自动检查并提示）"
+        )
+    }
+    var pairingInviteChecklistWeChat: String {
+        text(
+            "Link in WeChat? Long-press › Copy, then paste it on the Us tab in OurDays. Tapping it inside WeChat opens a page asking for iCloud sign-in.",
+            "链接在微信里？长按 › 复制，回到 OurDays「我们」页粘贴；在微信里直接点会跳到要求登录的网页。"
+        )
+    }
+    var pairingInvitePreviewTitle: String { text("They'll receive", "对方会收到这段话") }
+    var pairingInviteSendButton: String { text("Send Invite", "发送邀请") }
+    var pairingInviteAppleSheetButton: String {
+        text("Use Apple's Sharing Panel (Manage People)", "用苹果的共享面板（管理共享人）")
+    }
+
+    func pairingInviteMessage(appStoreURL: String, shareURL: String, isSendingBack: Bool) -> String {
+        if isSendingBack {
+            return text(
+                "I accepted your OurDays invite. Here's mine back: open this link on your iPhone (in WeChat, copy it and paste it on the Us tab in OurDays):\n\(shareURL)",
+                "我收下你的 OurDays 邀请啦，这是我的回信。在 iPhone 上点开这个链接（在微信里就复制，到 OurDays「我们」页粘贴）：\n\(shareURL)"
+            )
+        }
+        return text(
+            "Let's share our calendars with OurDays.\n1. Install it and open it once: \(appStoreURL)\n2. Copy this link and paste it on the Us tab in OurDays (or tap it on your iPhone): \(shareURL)\n3. After accepting, tap Send Invite Back and send it to me.",
+            "我想和你一起用 OurDays 共享日程。\n① 先装 App 并打开一次：\(appStoreURL)\n② 复制这个链接，在 OurDays「我们」页粘贴（或在 iPhone 上直接点开）：\(shareURL)\n③ 收下后点「回发邀请」发给我。"
+        )
+    }
+
+    // Share-back prompt
+
+    func shareBackPromptTitle(_ partnerName: String?) -> String {
+        text("You accepted \(guidePartner(partnerName))'s calendar", "你已收下\(guidePartner(partnerName))的日历")
+    }
+    var shareBackPromptWhyTitle: String { text("Why send one back?", "为什么还要回发？") }
+    var shareBackPromptWhyMessage: String {
+        text(
+            "There's no server in between: each calendar lives in its owner's iCloud. You were handed a key; now hand one back.",
+            "你们的日程各自存在自己的 iCloud 里，没有中间服务器。对方给了你一把钥匙，你也要给对方一把。"
+        )
+    }
+    var shareBackPromptLaterButton: String { text("Later, from the Us tab", "稍后，在「我们」里继续") }
+
+    // Calendar tab setup card
+
+    var setupShareBackTitle: String { text("Send Your Invite Back", "回发你的邀请") }
+    var setupShareBackMessage: String {
+        text(
+            "You accepted your partner's calendar. Send your link back so they can see yours.",
+            "你已收下对方的日历。把你的链接回发过去，对方就能看到你的日程。"
+        )
+    }
+
+    // Link-won't-open help
+
+    var inviteHelpTitle: String { text("Link asks for iCloud sign-in?", "点开链接要求登录 iCloud？") }
+    var inviteHelpIntro: String {
+        text(
+            "The link is fine; it just went through the wrong door, the iCloud web page instead of OurDays. It's usually one of these.",
+            "链接本身没问题。它只是走错了门：没进到 OurDays，而是进了 iCloud 网页。通常是下面三种原因之一。"
+        )
+    }
+    var inviteHelpSwitchTitle: String { text("iCloud is off for OurDays", "OurDays 的 iCloud 开关是关的") }
+    var inviteHelpSwitchMessage: String {
+        text(
+            "Settings › your name › iCloud › Saved to iCloud › See All › turn on OurDays. Notes has its own switch, so Notes links still open.",
+            "设置 › 你的名字 › iCloud › 已存储到 iCloud › 显示全部 › 打开 OurDays。备忘录有自己的开关，所以备忘录链接照样能打开。"
+        )
+    }
+    var inviteHelpWeChatTitle: String { text("Tapped inside WeChat", "在微信里点的") }
+    var inviteHelpWeChatMessage: String {
+        text(
+            "WeChat's browser can't open apps. Long-press the link › Copy, then paste it on the Us tab in OurDays.",
+            "微信的内置浏览器打不开 App。长按链接 › 复制，回到 OurDays「我们」页粘贴。"
+        )
+    }
+    var inviteHelpInstallTitle: String { text("OurDays isn't installed yet", "还没装 OurDays") }
+    var inviteHelpInstallMessage: String {
+        text("Install it and open it once, then tap the link.", "先装好并打开一次，再点链接。")
+    }
+    var inviteHelpSendButton: String { text("Send These Tips", "把这段说明发给 TA") }
+
+    func inviteHelpShareMessage(appStoreURL: String) -> String {
+        text(
+            "If my OurDays link asks you to sign in to iCloud:\n1. Install OurDays and open it once: \(appStoreURL)\n2. Settings › your name › iCloud › Saved to iCloud › See All › turn on OurDays\n3. Don't tap the link inside WeChat: copy it and paste it on the Us tab in OurDays.",
+            "如果点开我的 OurDays 链接提示登录 iCloud：\n① 先装好并打开一次 OurDays：\(appStoreURL)\n② 设置 › 你的名字 › iCloud › 已存储到 iCloud › 显示全部 › 打开 OurDays\n③ 别在微信里直接点链接：复制后到 OurDays「我们」页粘贴。"
+        )
+    }
+}

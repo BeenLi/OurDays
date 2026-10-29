@@ -152,6 +152,8 @@ enum CalendarMirrorVisibilityPolicy {
 enum CalendarSetupGuidanceStep: Equatable {
     case calendarAccess
     case pairing
+    /// I accepted the partner's link and still owe them mine.
+    case shareBack
 }
 
 enum CalendarSetupGuidancePolicy {
@@ -160,18 +162,24 @@ enum CalendarSetupGuidancePolicy {
         currentDisplayName: String,
         authorizationState: CalendarAuthorizationState,
         selectedCalendarIDs: Set<String>,
-        pairingStatus: PairingStatus
+        pairingStatus: PairingStatus,
+        hasSentInviteBack: Bool = false
     ) -> CalendarSetupGuidanceStep? {
         guard hasCompletedInitialProfilePrompt else { return nil }
         guard PairingSettingsPolicy.normalizedDisplayName(currentDisplayName) != nil else { return nil }
+        // Sending my link back needs no calendar access, and until I do the partner
+        // sees nothing of mine, so it comes before calendar setup.
+        if pairingStatus == .waitingForYouToShare {
+            return hasSentInviteBack ? nil : .shareBack
+        }
         guard authorizationState.canReadEvents && !selectedCalendarIDs.isEmpty else {
             return .calendarAccess
         }
 
         switch pairingStatus {
-        case .notPaired, .waitingForYouToShare:
+        case .notPaired:
             return .pairing
-        case .waitingForPartner, .waitingForPartnerToShare, .paired:
+        case .waitingForPartner, .waitingForPartnerToShare, .waitingForYouToShare, .paired:
             return nil
         }
     }

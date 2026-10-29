@@ -37,6 +37,7 @@
 		11B5E15E1B1E5E20502C4054 /* AvatarEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B111CB1F6F19B395D69796 /* AvatarEditorSheet.swift */; };
 		11B5E3427BCA6A1ABF45AD70 /* HistoryRequestSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B693AFAA92B701C150BA57 /* HistoryRequestSheet.swift */; };
 		11B768A0F92230FE335D88B5 /* PairingStatusCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BB4D8AFA5D1FAF352384FF /* PairingStatusCard.swift */; };
+		11B768A0F92230FE335D88B6 /* PairingGuideViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BB4D8AFA5D1FAF35238500 /* PairingGuideViews.swift */; };
 		11B99F740B6AE842781A9A14 /* SettingsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BB4F3E256EE07273568EF5 /* SettingsTabView.swift */; };
 		11BE7B78D375C4D2B594FFE4 /* WeekAgendaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B609B2901DF1E7CD1180F5 /* WeekAgendaView.swift */; };
 		11B6B154FD1A43E9790D6C73 /* ShareCalStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B762A754D40721B13B3DD2 /* ShareCalStrings.swift */; };
@@ -133,6 +134,7 @@
 		11B111CB1F6F19B395D69796 /* AvatarEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarEditorSheet.swift; sourceTree = "<group>"; };
 		11B693AFAA92B701C150BA57 /* HistoryRequestSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryRequestSheet.swift; sourceTree = "<group>"; };
 		11BB4D8AFA5D1FAF352384FF /* PairingStatusCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingStatusCard.swift; sourceTree = "<group>"; };
+		11BB4D8AFA5D1FAF35238500 /* PairingGuideViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingGuideViews.swift; sourceTree = "<group>"; };
 		11BB4F3E256EE07273568EF5 /* SettingsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabView.swift; sourceTree = "<group>"; };
 		11B609B2901DF1E7CD1180F5 /* WeekAgendaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekAgendaView.swift; sourceTree = "<group>"; };
 		11B762A754D40721B13B3DD2 /* ShareCalStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCalStrings.swift; sourceTree = "<group>"; };
@@ -294,6 +296,7 @@
 			children = (
 				11BB4F3E256EE07273568EF5 /* SettingsTabView.swift */,
 				11BB4D8AFA5D1FAF352384FF /* PairingStatusCard.swift */,
+				11BB4D8AFA5D1FAF35238500 /* PairingGuideViews.swift */,
 				11B693AFAA92B701C150BA57 /* HistoryRequestSheet.swift */,
 				11B111CB1F6F19B395D69796 /* AvatarEditorSheet.swift */,
 			);
@@ -539,6 +542,7 @@
 				11B5E15E1B1E5E20502C4054 /* AvatarEditorSheet.swift in Sources */,
 				11B5E3427BCA6A1ABF45AD70 /* HistoryRequestSheet.swift in Sources */,
 				11B768A0F92230FE335D88B5 /* PairingStatusCard.swift in Sources */,
+				11B768A0F92230FE335D88B6 /* PairingGuideViews.swift in Sources */,
 				11B99F740B6AE842781A9A14 /* SettingsTabView.swift in Sources */,
 				11BE7B78D375C4D2B594FFE4 /* WeekAgendaView.swift in Sources */,
 				11A000010000000000000001 /* OurDaysApp.swift in Sources */,

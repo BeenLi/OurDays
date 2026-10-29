@@ -567,14 +567,35 @@ final class CalendarSetupGuidancePolicyTests: XCTestCase {
         ), .pairing)
     }
 
-    func testShowsPairingGuidanceWhenWaitingForYouToShareBack() {
+    func testShowsShareBackGuidanceWhenWaitingForYouToShareBack() {
         XCTAssertEqual(CalendarSetupGuidancePolicy.step(
             hasCompletedInitialProfilePrompt: true,
             currentDisplayName: "Yoki",
             authorizationState: .fullAccess,
             selectedCalendarIDs: ["work"],
             pairingStatus: .waitingForYouToShare
-        ), .pairing)
+        ), .shareBack)
+    }
+
+    func testShareBackGuidanceComesBeforeCalendarAccess() {
+        XCTAssertEqual(CalendarSetupGuidancePolicy.step(
+            hasCompletedInitialProfilePrompt: true,
+            currentDisplayName: "Yoki",
+            authorizationState: .notDetermined,
+            selectedCalendarIDs: [],
+            pairingStatus: .waitingForYouToShare
+        ), .shareBack)
+    }
+
+    func testHidesShareBackGuidanceOnceTheLinkWasSentBack() {
+        XCTAssertNil(CalendarSetupGuidancePolicy.step(
+            hasCompletedInitialProfilePrompt: true,
+            currentDisplayName: "Yoki",
+            authorizationState: .fullAccess,
+            selectedCalendarIDs: ["work"],
+            pairingStatus: .waitingForYouToShare,
+            hasSentInviteBack: true
+        ))
     }
 
     func testHidesGuidanceAfterOutgoingPairingStartsOrCompletes() {

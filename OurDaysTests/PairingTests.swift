@@ -883,3 +883,104 @@ final class MemberIDPolicyTests: XCTestCase {
         XCTAssertEqual(MemberIDPolicy.normalizedList([" a ", "", "b", "\t"]), ["a", "b"])
     }
 }
+
+final class PairingGuidePolicyTests: XCTestCase {
+    func testInitiatorWalksThroughTheFirstThreeSteps() {
+        XCTAssertEqual(
+            PairingGuidePolicy.state(status: .notPaired, partnerShareOwnerID: nil, sentInviteBackToOwnerID: nil),
+            PairingGuideState(role: .initiator, currentStep: .firstLinkSent)
+        )
+        XCTAssertEqual(
+            PairingGuidePolicy.state(status: .waitingForPartner, partnerShareOwnerID: nil, sentInviteBackToOwnerID: nil),
+            PairingGuideState(role: .initiator, currentStep: .firstLinkAccepted)
+        )
+        XCTAssertEqual(
+            PairingGuidePolicy.state(status: .waitingForPartnerToShare, partnerShareOwnerID: nil, sentInviteBackToOwnerID: nil),
+            PairingGuideState(role: .initiator, currentStep: .linkSentBack)
+        )
+        XCTAssertNil(PairingGuidePolicy.state(status: .paired, partnerShareOwnerID: "_a", sentInviteBackToOwnerID: nil))
+    }
+
+    func testReceiverOwesTheLinkBackUntilItIsSentToThisPartner() {
+        XCTAssertEqual(
+            PairingGuidePolicy.state(status: .waitingForYouToShare, partnerShareOwnerID: "_a", sentInviteBackToOwnerID: nil),
+            PairingGuideState(role: .receiver, currentStep: .linkSentBack)
+        )
+        XCTAssertEqual(
+            PairingGuidePolicy.state(status: .waitingForYouToShare, partnerShareOwnerID: "_a", sentInviteBackToOwnerID: "_a"),
+            PairingGuideState(role: .receiver, currentStep: .linkBackAccepted)
+        )
+        // A link sent back to an earlier partner does not count for the new one.
+        XCTAssertEqual(
+            PairingGuidePolicy.state(status: .waitingForYouToShare, partnerShareOwnerID: "_b", sentInviteBackToOwnerID: "_a"),
+            PairingGuideState(role: .receiver, currentStep: .linkSentBack)
+        )
+    }
+
+    func testStepActorAlternatesBetweenUs() {
+        XCTAssertEqual(PairingGuideStep.allCases.map { $0.actor(for: .initiator) }, [.me, .partner, .partner, .me])
+        XCTAssertEqual(PairingGuideStep.allCases.map { $0.actor(for: .receiver) }, [.partner, .me, .me, .partner])
+    }
+
+    func testShareBackPromptShowsOncePerPartnerAndOnlyBeforeSendingBack() {
+        XCTAssertTrue(PairingGuidePolicy.shouldPresentShareBackPrompt(
+            status: .waitingForYouToShare,
+            partnerShareOwnerID: "_a",
+            sentInviteBackToOwnerID: nil,
+            shareBackPromptShownForOwnerID: nil
+        ))
+        XCTAssertFalse(PairingGuidePolicy.shouldPresentShareBackPrompt(
+            status: .waitingForYouToShare,
+            partnerShareOwnerID: "_a",
+            sentInviteBackToOwnerID: nil,
+            shareBackPromptShownForOwnerID: "_a"
+        ))
+        XCTAssertFalse(PairingGuidePolicy.shouldPresentShareBackPrompt(
+            status: .waitingForYouToShare,
+            partnerShareOwnerID: "_a",
+            sentInviteBackToOwnerID: "_a",
+            shareBackPromptShownForOwnerID: nil
+        ))
+        XCTAssertTrue(PairingGuidePolicy.shouldPresentShareBackPrompt(
+            status: .waitingForYouToShare,
+            partnerShareOwnerID: "_b",
+            sentInviteBackToOwnerID: nil,
+            shareBackPromptShownForOwnerID: "_a"
+        ))
+        for status in [PairingStatus.notPaired, .waitingForPartner, .waitingForPartnerToShare, .paired] {
+            XCTAssertFalse(PairingGuidePolicy.shouldPresentShareBackPrompt(
+                status: status,
+                partnerShareOwnerID: "_a",
+                sentInviteBackToOwnerID: nil,
+                shareBackPromptShownForOwnerID: nil
+            ))
+        }
+    }
+
+    func testKnownPartnerNamePrefersMyNoteAndIsNilWhenUnknown() {
+        XCTAssertEqual(PairingGuidePolicy.knownPartnerName(partnerNoteName: " 小鱼 ", partnerSyncedDisplayName: "Yu"), "小鱼")
+        XCTAssertEqual(PairingGuidePolicy.knownPartnerName(partnerNoteName: "", partnerSyncedDisplayName: "Yu"), "Yu")
+        XCTAssertNil(PairingGuidePolicy.knownPartnerName(partnerNoteName: nil, partnerSyncedDisplayName: " "))
+    }
+
+    func testInviteMessageCarriesAppStoreLinkAndShareLink() {
+        let shareURL = URL(string: "https://www.icloud.com/share/0abcDEF")!
+        for language in [AppLanguage.chinese, .english] {
+            let strings = ShareCalStrings(language: language)
+            let first = PairingInviteMessagePolicy.inviteMessage(shareURL: shareURL, isSendingBack: false, strings: strings)
+            XCTAssertTrue(first.contains(shareURL.absoluteString))
+            XCTAssertTrue(first.contains(PairingInviteMessagePolicy.appStoreURL.absoluteString))
+            let back = PairingInviteMessagePolicy.inviteMessage(shareURL: shareURL, isSendingBack: true, strings: strings)
+            XCTAssertTrue(back.contains(shareURL.absoluteString))
+            XCTAssertFalse(back.contains(PairingInviteMessagePolicy.appStoreURL.absoluteString))
+        }
+    }
+
+    func testGuideCopyFallsBackToTAWhenThePartnerIsUnknown() {
+        let strings = ShareCalStrings(language: .chinese)
+        let state = PairingGuideState(role: .initiator, currentStep: .firstLinkAccepted)
+        XCTAssertEqual(strings.pairingGuideHeadline(state, partnerName: nil), "邀请已寄出，等TA点开")
+        XCTAssertEqual(strings.pairingGuideHeadline(state, partnerName: "小鱼"), "邀请已寄出，等小鱼点开")
+        XCTAssertEqual(strings.pairingGuideSendBackButton("阿立"), "回发邀请给阿立")
+    }
+}

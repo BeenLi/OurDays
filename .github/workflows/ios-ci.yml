@@ -57,11 +57,12 @@ jobs:
       - name: Skip Apple developer services lookup
         run: sudo sh -c 'echo "127.0.0.1 developerservices2.apple.com" >> /etc/hosts'
 
-      # Create and boot the simulator in the background. Creating it alone took
-      # 30 s to 3 min, and nothing in the build needs it: the build targets the
-      # generic simulator platform (arm64 only, like the device it later runs
-      # on), so the whole simulator setup overlaps the build.
-      - name: Start creating and booting the iOS simulator
+      # Create the simulator in the background. Creating it took 30 s to 3 min,
+      # and nothing in the build needs it: the build targets the generic
+      # simulator platform (arm64 only, like the device it later runs on).
+      # Booting waits until after the build: a boot running alongside the
+      # compile made the compile itself take minutes longer on the 3-core runner.
+      - name: Start creating the iOS simulator
         run: |
           (
             set -euo pipefail
@@ -102,7 +103,6 @@ jobs:
             fi
 
             SIMULATOR_UDID=$(xcrun simctl create "OurDays CI iPhone" "${DEVICE_TYPE}" "${RUNTIME_ID}")
-            xcrun simctl boot "${SIMULATOR_UDID}" || true
             echo "${SIMULATOR_UDID}" > "${RUNNER_TEMP}/simulator-udid"
           ) > "${RUNNER_TEMP}/simulator.log" 2>&1 &
 
@@ -117,7 +117,7 @@ jobs:
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Wait for simulator boot
+      - name: Boot the simulator
         id: simulator
         run: |
           set -euo pipefail
@@ -127,6 +127,7 @@ jobs:
           done
           cat "${RUNNER_TEMP}/simulator.log"
           SIMULATOR_UDID=$(cat "${RUNNER_TEMP}/simulator-udid")
+          xcrun simctl boot "${SIMULATOR_UDID}"
           xcrun simctl bootstatus "${SIMULATOR_UDID}" -b
           echo "udid=${SIMULATOR_UDID}" >> "${GITHUB_OUTPUT}"
 

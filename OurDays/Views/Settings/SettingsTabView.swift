@@ -222,6 +222,10 @@ struct SettingsTabView: View {
                 cloudKitDiagnosticMessage = nil
             }
         )
+        .onChange(of: pairingStatus) { _, _ in
+            // "Joining…" or a paste error belongs to the step it was shown on.
+            inviteLinkMessage = nil
+        }
     }
 
     private func inviteSheet(for draft: PairingInviteDraft) -> some View {

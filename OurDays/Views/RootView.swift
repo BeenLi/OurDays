@@ -202,9 +202,13 @@ struct RootView: View {
             }
         }
         .onChange(of: settings.syncPhase) { _, newPhase in
-            guard newPhase != .syncing, pairingStatus == .waitingForYouToShare else { return }
+            guard newPhase != .syncing else { return }
             Task {
-                await reevaluateRootSheetFlow()
+                // A link accepted during a screen-triggered sync waits for it to end.
+                await syncAfterAcceptedShareIfNeeded()
+                if pairingStatus == .waitingForYouToShare {
+                    await reevaluateRootSheetFlow()
+                }
             }
         }
         .onChange(of: activeRootSheet) { _, newSheet in
@@ -627,6 +631,11 @@ struct RootView: View {
             )
         }.value
         representPairingConflictIfNeeded()
+        if ShareCalAcceptedShareSignal.hasPending() {
+            // A share accepted while this sync ran was skipped by the guards above;
+            // pick it up now. The task runs after `isRunningForegroundSync` is reset.
+            Task { await syncAfterAcceptedShareIfNeeded() }
+        }
         return true
     }
 

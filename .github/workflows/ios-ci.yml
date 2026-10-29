@@ -64,11 +64,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          DEVICE_TYPE=$(
-            xcrun simctl list devicetypes \
-              | awk -F '[()]' '/iPhone 16 Pro/ { print $2; exit } /iPhone 16/ { print $2; exit } /iPhone 15/ { print $2; exit } /iPhone/ { print $2; exit }'
-          )
-
           # Use the runtime that matches the selected Xcode's simulator SDK. The
           # image also ships newer runtimes (iOS 26.x next to Xcode 16.4), and
           # building against a mismatched one made xcodebuild spend minutes
@@ -84,7 +79,19 @@ jobs:
                 | awk -F ' - ' '/iOS/ && !/unavailable/ { runtime=$NF } END { print runtime }'
             )
           fi
-          echo "Simulator SDK ${SDK_VERSION}, runtime ${RUNTIME_ID}"
+
+          # Pick an iPhone the chosen runtime supports (iOS 18 can't run an iPhone 17).
+          DEVICE_TYPE=$(
+            xcrun simctl list runtimes -j | python3 -c '
+          import json, sys
+          rid = sys.argv[1]
+          rt = next((r for r in json.load(sys.stdin)["runtimes"] if r["identifier"] == rid), None)
+          phones = [d for d in (rt or {}).get("supportedDeviceTypes", []) if d.get("productFamily") == "iPhone"]
+          pick = next((d for d in phones if d["name"] == "iPhone 16 Pro"), phones[-1] if phones else None)
+          print(pick["identifier"] if pick else "")
+          ' "${RUNTIME_ID}"
+          )
+          echo "Simulator SDK ${SDK_VERSION}, runtime ${RUNTIME_ID}, device ${DEVICE_TYPE}"
 
           if [[ -z "${DEVICE_TYPE}" || -z "${RUNTIME_ID}" ]]; then
             echo "No available iOS simulator device type or runtime found." >&2

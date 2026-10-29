@@ -66,6 +66,7 @@ struct ActivityTabView: View {
         }
         .listStyle(.plain)
         .ourDaysListBackground()
+        .ourDaysStatusBarCover()
         .refreshable {
             await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
         }

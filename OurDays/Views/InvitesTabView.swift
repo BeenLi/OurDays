@@ -122,6 +122,7 @@ struct InvitesTabView: View {
         }
         .listStyle(.plain)
         .ourDaysListBackground()
+        .ourDaysStatusBarCover()
         .toolbar(.hidden, for: .navigationBar)
         .refreshable {
             await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)

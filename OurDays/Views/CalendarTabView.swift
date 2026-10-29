@@ -303,6 +303,7 @@ struct CalendarTabView: View {
             }
         }
         .background(OurDaysTheme.paper)
+        .ourDaysStatusBarCover()
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $activeCalendarSheet) { sheet in
             switch sheet {

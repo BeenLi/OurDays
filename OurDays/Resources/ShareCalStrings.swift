@@ -380,6 +380,82 @@ struct ShareCalStrings {
         text("Last sync \(dateText)", "上次同步 \(dateText)")
     }
 
+    func pasteInviteLinkButton(isAccepting: Bool) -> String {
+        isAccepting
+            ? text("Opening invite link...", "正在打开邀请链接...")
+            : text("Got an invite link? Paste it here", "收到邀请链接？在这里粘贴")
+    }
+
+    var pasteInviteLinkHint: String {
+        text(
+            "If tapping the link in WeChat asks you to sign in to iCloud, copy the link, come back here and paste it.",
+            "如果在微信里点开链接提示登录 iCloud，复制链接，回到这里粘贴即可。"
+        )
+    }
+
+    var inviteLinkAccepted: String {
+        text("Invite found. Joining your partner...", "已找到邀请，正在加入对方...")
+    }
+
+    func inviteLinkFailure(_ failure: ShareInvitationLinkPolicy.Failure) -> String {
+        switch failure {
+        case .noLinkFound:
+            text(
+                "No OurDays invite link on the clipboard. Copy the whole link your partner sent (it starts with https://www.icloud.com/share/).",
+                "剪贴板里没有 OurDays 邀请链接。请复制对方发来的完整链接（以 https://www.icloud.com/share/ 开头）。"
+            )
+        case .ownLink:
+            text("This is your own invite link. Send it to your partner instead.", "这是你自己的邀请链接，请把它发给对方。")
+        case .iCloudUnavailable:
+            iCloudUnavailableForAppSteps
+        case .linkNoLongerValid:
+            text(
+                "This invite link no longer works. Ask your partner to tap Start Pairing again and send a new link.",
+                "这个邀请链接已失效。请对方重新点「发起配对」，再发一次链接。"
+            )
+        case .inviteOnly:
+            text(
+                "This link only opens for the iCloud account it was sent to. Ask your partner to send a new link.",
+                "这个链接只对受邀的 iCloud 账号开放。请对方重新发一次链接。"
+            )
+        case .other(let message):
+            text("Couldn't open the invite link: \(message)", "无法打开邀请链接：\(message)")
+        }
+    }
+
+    var iCloudUnavailableTitle: String {
+        text("OurDays can't use your iCloud", "OurDays 暂时用不了你的 iCloud")
+    }
+
+    var iCloudUnavailableForAppSteps: String {
+        text(
+            "Pairing runs on iCloud, so invite links ask you to sign in until this is fixed. Open Settings → your name → iCloud, make sure you're signed in, then under Saved to iCloud tap See All and turn on OurDays. Notes and Photos have their own switches, so they can work while OurDays can't.",
+            "配对通过 iCloud 完成，修好之前点开邀请链接都会提示登录 iCloud。请打开「设置」→ 你的名字 →「iCloud」，确认已登录，再在「已存储到 iCloud」里展开全部 App，打开 OurDays。备忘录、照片有各自的开关，所以它们能用不代表 OurDays 能用。"
+        )
+    }
+
+    var iCloudRestrictedSteps: String {
+        text(
+            "iCloud is restricted on this iPhone (Screen Time or device management). Allow iCloud changes in Settings → Screen Time → Content & Privacy Restrictions, then come back.",
+            "这台 iPhone 限制了 iCloud（屏幕使用时间或设备管理）。请在「设置」→「屏幕使用时间」→「内容和隐私访问限制」里允许更改 iCloud 账户，再回来。"
+        )
+    }
+
+    var iCloudNeedsReauthenticationSteps: String {
+        text(
+            "iCloud needs you to sign in again. Open Settings → your name and follow the prompt to re-enter your Apple Account password, then come back.",
+            "iCloud 需要你重新验证。请打开「设置」→ 你的名字，按提示重新输入 Apple 账户密码，再回来。"
+        )
+    }
+
+    func iCloudProblemSteps(_ problem: ICloudAvailabilityPolicy.Problem) -> String {
+        switch problem {
+        case .unavailableForApp: iCloudUnavailableForAppSteps
+        case .restricted: iCloudRestrictedSteps
+        case .needsReauthentication: iCloudNeedsReauthenticationSteps
+        }
+    }
+
     func startPairingButton(isPreparing: Bool) -> String {
         isPreparing ? text("Preparing Pairing...", "正在准备配对...") : text("Start Pairing", "发起配对")
     }

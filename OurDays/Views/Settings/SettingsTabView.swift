@@ -1,6 +1,7 @@
 import CloudKit
 import SwiftData
 import SwiftUI
+import UIKit
 
 enum SettingsSheet: Identifiable {
     case historyRequest
@@ -19,6 +20,7 @@ enum SettingsSheet: Identifiable {
 struct SettingsTabView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(SettingsStore.self) private var settings
     @Environment(AppServices.self) private var services
     @Binding var focus: SettingsFocusTarget?
@@ -33,6 +35,9 @@ struct SettingsTabView: View {
     @State private var cloudKitDiagnosticMessage: String?
     @State private var isCheckingCloudKitAccount = false
     @State private var isPreparingShare = false
+    @State private var iCloudProblem: ICloudAvailabilityPolicy.Problem?
+    @State private var isAcceptingInviteLink = false
+    @State private var inviteLinkMessage: String?
     @State private var isStoppingShare = false
     @State private var isDeletingICloudData = false
     @State private var activeSharePreparationID: UUID?
@@ -177,8 +182,14 @@ struct SettingsTabView: View {
                         isCheckingCloudKitAccount: isCheckingCloudKitAccount,
                         isSyncing: settings.syncPhase == .syncing,
                         cloudKitDiagnosticMessage: cloudKitDiagnosticMessage,
+                        iCloudProblem: iCloudProblem,
+                        isAcceptingInviteLink: isAcceptingInviteLink,
+                        inviteLinkMessage: inviteLinkMessage,
                         onStartPairing: {
                             Task { await prepareShare() }
+                        },
+                        onPasteInviteLink: {
+                            Task { await acceptPastedInviteLink() }
                         },
                         onCheckCloudKitStatus: {
                             Task { await checkCloudKitStatus() }
@@ -460,6 +471,12 @@ struct SettingsTabView: View {
             refreshCalendars()
             ensurePairingDateIfNeeded()
             consumeSettingsFocus(with: proxy)
+            await refreshICloudProblem()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // The fix for an iCloud problem happens in the Settings app; re-check on return.
+            guard phase == .active else { return }
+            Task { await refreshICloudProblem() }
         }
         .onChange(of: focus) { _, _ in
             consumeSettingsFocus(with: proxy)
@@ -790,6 +807,51 @@ struct SettingsTabView: View {
         }
         isPreparingShare = false
         activeSharePreparationID = nil
+    }
+
+    @MainActor
+    private func refreshICloudProblem() async {
+        guard pairingStatus != .paired, let cloudKit = services.cloudKitIfAvailable else {
+            iCloudProblem = nil
+            return
+        }
+        iCloudProblem = ICloudAvailabilityPolicy.problem(for: await cloudKit.accountStatus())
+    }
+
+    /// Accepts an invite link copied from a chat app. Links tapped inside WeChat open the
+    /// icloud.com web page (which can only ask for an Apple ID sign-in) instead of the app.
+    @MainActor
+    private func acceptPastedInviteLink() async {
+        guard !isAcceptingInviteLink else { return }
+        let strings = settings.strings
+        inviteLinkMessage = nil
+        guard let cloudKit = services.cloudKitIfAvailable else {
+            inviteLinkMessage = strings.iCloudSharingUnavailableLocalBuild
+            return
+        }
+        guard let url = ShareInvitationLinkPolicy.shareURL(from: UIPasteboard.general.string ?? "") else {
+            inviteLinkMessage = strings.inviteLinkFailure(.noLinkFound)
+            return
+        }
+
+        isAcceptingInviteLink = true
+        defer { isAcceptingInviteLink = false }
+        do {
+            let metadata = try await cloudKit.fetchShareMetadata(from: url)
+            guard metadata.participantRole != .owner else {
+                inviteLinkMessage = strings.inviteLinkFailure(.ownLink)
+                return
+            }
+            ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
+            inviteLinkMessage = strings.inviteLinkAccepted
+        } catch {
+            cloudKitSharingError("acceptPastedInviteLink failed error=\(describeCloudKitFailure(error))")
+            let failure = ShareInvitationLinkPolicy.failure(for: error)
+            inviteLinkMessage = strings.inviteLinkFailure(failure)
+            if failure == .iCloudUnavailable {
+                await refreshICloudProblem()
+            }
+        }
     }
 
     @MainActor

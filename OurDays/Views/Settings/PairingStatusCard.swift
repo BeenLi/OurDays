@@ -15,7 +15,11 @@ struct PairingStatusCard: View {
     let isCheckingCloudKitAccount: Bool
     let isSyncing: Bool
     let cloudKitDiagnosticMessage: String?
+    let iCloudProblem: ICloudAvailabilityPolicy.Problem?
+    let isAcceptingInviteLink: Bool
+    let inviteLinkMessage: String?
     let onStartPairing: () -> Void
+    let onPasteInviteLink: () -> Void
     let onCheckCloudKitStatus: () -> Void
     let onSync: () -> Void
     let onEditMyAvatar: () -> Void
@@ -112,6 +116,10 @@ struct PairingStatusCard: View {
                 OurDaysChip(title: syncStatusText, foreground: OurDaysTheme.secondaryInk)
             }
 
+            if let iCloudProblem, status != .paired {
+                iCloudProblemNotice(iCloudProblem, strings: strings)
+            }
+
             if status == .notPaired || status == .waitingForYouToShare {
                 HStack(spacing: 10) {
                     Button {
@@ -124,7 +132,11 @@ struct PairingStatusCard: View {
 
                     checkICloudButton(strings: strings)
                 }
-            } else if status != .paired {
+            }
+
+            if status == .notPaired {
+                pasteInviteLinkSection(strings: strings)
+            } else if status != .paired && status != .waitingForYouToShare {
                 HStack {
                     Spacer()
                     checkICloudButton(strings: strings)
@@ -167,6 +179,40 @@ struct PairingStatusCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(OurDaysTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: .black.opacity(0.06), radius: 14, x: 0, y: 8)
+    }
+
+    private func iCloudProblemNotice(_ problem: ICloudAvailabilityPolicy.Problem, strings: ShareCalStrings) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(strings.iCloudUnavailableTitle, systemImage: "exclamationmark.icloud")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(OurDaysTheme.destructive)
+            Text(strings.iCloudProblemSteps(problem))
+                .font(.caption)
+                .foregroundStyle(OurDaysTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(OurDaysTheme.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("icloud-problem-notice")
+    }
+
+    private func pasteInviteLinkSection(strings: ShareCalStrings) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: onPasteInviteLink) {
+                Label(strings.pasteInviteLinkButton(isAccepting: isAcceptingInviteLink), systemImage: "doc.on.clipboard")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(OurDaysTheme.ink)
+            }
+            .buttonStyle(.plain)
+            .disabled(!isCloudKitEnabled || isAcceptingInviteLink)
+            .accessibilityIdentifier("paste-invite-link")
+            Text(inviteLinkMessage ?? strings.pasteInviteLinkHint)
+                .font(.caption)
+                .foregroundStyle(OurDaysTheme.secondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func checkICloudButton(strings: ShareCalStrings) -> some View {

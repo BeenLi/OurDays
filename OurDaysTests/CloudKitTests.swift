@@ -579,12 +579,12 @@ final class CloudKitSharePermissionPolicyTests: XCTestCase {
         XCTAssertFalse(CloudKitSharePermissionPolicy.needsLinkInvitationUpgrade(share, acceptedParticipantCount: 1))
     }
 
-    func testControllerPermissionsExposePublicInviteLinks() {
+    func testControllerPermissionsOfferOnlyPublicReadWriteInviteLinks() {
         let permissions = CloudKitSharePermissionPolicy.controllerAvailablePermissions
 
         XCTAssertTrue(permissions.contains(.allowPublic))
-        XCTAssertTrue(permissions.contains(.allowPrivate))
         XCTAssertTrue(permissions.contains(.allowReadWrite))
+        XCTAssertFalse(permissions.contains(.allowPrivate))
     }
 }
 
@@ -1471,5 +1471,39 @@ final class MemberProfileAvatarRecordTests: XCTestCase {
         XCTAssertTrue(MemberProfileAvatarSchemaFallbackPolicy.shouldRetryWithoutAvatar(error: partial, profile: withAvatar))
         XCTAssertFalse(MemberProfileAvatarSchemaFallbackPolicy.shouldRetryWithoutAvatar(error: invalid, profile: withoutAvatar))
         XCTAssertFalse(MemberProfileAvatarSchemaFallbackPolicy.shouldRetryWithoutAvatar(error: CKError(.networkUnavailable), profile: withAvatar))
+    }
+}
+
+final class ICloudAvailabilityPolicyTests: XCTestCase {
+    func testMapsAccountStatusToActionableProblem() {
+        XCTAssertNil(ICloudAvailabilityPolicy.problem(for: .available))
+        XCTAssertNil(ICloudAvailabilityPolicy.problem(for: .couldNotDetermine))
+        XCTAssertEqual(ICloudAvailabilityPolicy.problem(for: .noAccount), .unavailableForApp)
+        XCTAssertEqual(ICloudAvailabilityPolicy.problem(for: .restricted), .restricted)
+        XCTAssertEqual(ICloudAvailabilityPolicy.problem(for: .temporarilyUnavailable), .needsReauthentication)
+    }
+}
+
+final class ShareInvitationLinkPolicyTests: XCTestCase {
+    func testFindsShareURLInsideChatText() {
+        let text = "我在 OurDays 邀请你配对：https://www.icloud.com/share/0aBcD_efGh#OurDays 点开就好"
+
+        XCTAssertEqual(
+            ShareInvitationLinkPolicy.shareURL(from: text)?.absoluteString,
+            "https://www.icloud.com/share/0aBcD_efGh#OurDays"
+        )
+    }
+
+    func testIgnoresNonShareLinks() {
+        XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "https://www.icloud.com/notes/0aBcD#Note"))
+        XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "https://example.com/share/0aBcD"))
+        XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "http://www.icloud.com/share/0aBcD"))
+        XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "no link here"))
+    }
+
+    func testMapsCloudKitErrorsToFailures() {
+        XCTAssertEqual(ShareInvitationLinkPolicy.failure(for: CKError(.notAuthenticated)), .iCloudUnavailable)
+        XCTAssertEqual(ShareInvitationLinkPolicy.failure(for: CKError(.unknownItem)), .linkNoLongerValid)
+        XCTAssertEqual(ShareInvitationLinkPolicy.failure(for: CKError(.participantMayNeedVerification)), .inviteOnly)
     }
 }

@@ -1095,6 +1095,51 @@ final class PairingInviteLinkEntryPolicyTests: XCTestCase {
     }
 }
 
+final class UsTabPolicyTests: XCTestCase {
+    func testCalendarPermissionRowShowsOnlyWhileEventsCannotBeRead() {
+        XCTAssertTrue(UsTabPolicy.showsCalendarPermissionRow(.notDetermined))
+        XCTAssertTrue(UsTabPolicy.showsCalendarPermissionRow(.denied))
+        XCTAssertTrue(UsTabPolicy.showsCalendarPermissionRow(.writeOnly))
+        XCTAssertFalse(UsTabPolicy.showsCalendarPermissionRow(.fullAccess))
+        XCTAssertFalse(UsTabPolicy.showsCalendarPermissionRow(.legacyAuthorized))
+    }
+
+    func testPartnerRowAndPairedSectionsWaitForAPairingToStart() {
+        XCTAssertFalse(UsTabPolicy.showsPartnerProfileRow(pairingStatus: .notPaired))
+        XCTAssertFalse(UsTabPolicy.showsPairedSections(pairingStatus: .notPaired))
+        for status in [PairingStatus.waitingForPartner, .waitingForPartnerToShare, .waitingForYouToShare, .paired] {
+            XCTAssertTrue(UsTabPolicy.showsPartnerProfileRow(pairingStatus: status))
+            XCTAssertTrue(UsTabPolicy.showsPairedSections(pairingStatus: status))
+        }
+    }
+
+    func testHistoryRowReportsMyNewestRequestAndIgnoresIncomingOnes() {
+        let start = Date(timeIntervalSince1970: 1_780_000_000)
+        func request(_ id: String, requester: String, createdAt: Date, dayOffset: Double) -> CalendarAccessRequest {
+            CalendarAccessRequest(
+                id: id,
+                requesterMemberID: requester,
+                ownerMemberID: requester == "_me" ? "_partner" : "_me",
+                requestedStartDate: start.addingTimeInterval(dayOffset * 86_400),
+                requestedEndDate: start.addingTimeInterval((dayOffset + 1) * 86_400),
+                statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
+                createdAt: createdAt,
+                updatedAt: createdAt,
+                sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
+            )
+        }
+        let older = request("older", requester: "_me", createdAt: start, dayOffset: -20)
+        let newer = request("newer", requester: "_me", createdAt: start.addingTimeInterval(60), dayOffset: -10)
+        let incoming = request("incoming", requester: "_partner", createdAt: start.addingTimeInterval(120), dayOffset: -5)
+
+        XCTAssertEqual(
+            UsTabPolicy.latestOutgoingHistoryRequest([newer, incoming, older], currentMemberID: "_me")?.id,
+            "newer"
+        )
+        XCTAssertNil(UsTabPolicy.latestOutgoingHistoryRequest([incoming], currentMemberID: "_me"))
+    }
+}
+
 final class ShareAcceptanceProgressTests: XCTestCase {
     private func makeSettings() -> SettingsStore {
         let suiteName = "ShareAcceptanceProgressTests-\(UUID().uuidString)"
@@ -1186,48 +1231,5 @@ final class ShareCalPrewarmTests: XCTestCase {
         discarded.discard()
         let afterDiscard = try await discarded.take(key: "_me") { 4 }
         XCTAssertEqual(afterDiscard, 4)
-
-final class UsTabPolicyTests: XCTestCase {
-    func testCalendarPermissionRowShowsOnlyWhileEventsCannotBeRead() {
-        XCTAssertTrue(UsTabPolicy.showsCalendarPermissionRow(.notDetermined))
-        XCTAssertTrue(UsTabPolicy.showsCalendarPermissionRow(.denied))
-        XCTAssertTrue(UsTabPolicy.showsCalendarPermissionRow(.writeOnly))
-        XCTAssertFalse(UsTabPolicy.showsCalendarPermissionRow(.fullAccess))
-        XCTAssertFalse(UsTabPolicy.showsCalendarPermissionRow(.legacyAuthorized))
-    }
-
-    func testPartnerRowAndPairedSectionsWaitForAPairingToStart() {
-        XCTAssertFalse(UsTabPolicy.showsPartnerProfileRow(pairingStatus: .notPaired))
-        XCTAssertFalse(UsTabPolicy.showsPairedSections(pairingStatus: .notPaired))
-        for status in [PairingStatus.waitingForPartner, .waitingForPartnerToShare, .waitingForYouToShare, .paired] {
-            XCTAssertTrue(UsTabPolicy.showsPartnerProfileRow(pairingStatus: status))
-            XCTAssertTrue(UsTabPolicy.showsPairedSections(pairingStatus: status))
-        }
-    }
-
-    func testHistoryRowReportsMyNewestRequestAndIgnoresIncomingOnes() {
-        let start = Date(timeIntervalSince1970: 1_780_000_000)
-        func request(_ id: String, requester: String, createdAt: Date, dayOffset: Double) -> CalendarAccessRequest {
-            CalendarAccessRequest(
-                id: id,
-                requesterMemberID: requester,
-                ownerMemberID: requester == "_me" ? "_partner" : "_me",
-                requestedStartDate: start.addingTimeInterval(dayOffset * 86_400),
-                requestedEndDate: start.addingTimeInterval((dayOffset + 1) * 86_400),
-                statusRawValue: CalendarAccessRequestStatus.pending.rawValue,
-                createdAt: createdAt,
-                updatedAt: createdAt,
-                sourceRawValue: CalendarAccessRequestSource.acceptedSharedZone.rawValue
-            )
-        }
-        let older = request("older", requester: "_me", createdAt: start, dayOffset: -20)
-        let newer = request("newer", requester: "_me", createdAt: start.addingTimeInterval(60), dayOffset: -10)
-        let incoming = request("incoming", requester: "_partner", createdAt: start.addingTimeInterval(120), dayOffset: -5)
-
-        XCTAssertEqual(
-            UsTabPolicy.latestOutgoingHistoryRequest([newer, incoming, older], currentMemberID: "_me")?.id,
-            "newer"
-        )
-        XCTAssertNil(UsTabPolicy.latestOutgoingHistoryRequest([incoming], currentMemberID: "_me"))
     }
 }

@@ -100,10 +100,12 @@ extension View {
     /// Paper behind the status bar on a tab whose navigation bar is hidden, so rows
     /// scrolled up slide under it instead of running into the clock.
     func ourDaysStatusBarCover() -> some View {
-        overlay(alignment: .top) {
-            OurDaysTheme.paper
+        // A zero-height inset sits right under the status bar; its background reaches
+        // up into the safe area and covers exactly the status bar's height.
+        safeAreaInset(edge: .top, spacing: 0) {
+            Color.clear
                 .frame(height: 0)
-                .ignoresSafeArea(edges: .top)
+                .background(OurDaysTheme.paper.ignoresSafeArea(edges: .top))
         }
     }
 }

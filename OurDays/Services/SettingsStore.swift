@@ -93,6 +93,21 @@ final class SettingsStore {
     }
     var lastSyncError: String?
     var syncPhase: SyncPhase = .idle
+    /// The partner whose share CloudKit is accepting right now. Not saved: it only lets
+    /// the pairing card move on during the several-second accept, and a relaunch
+    /// mid-accept simply shows the step it was on.
+    var acceptingShareOwnerID: String?
+    /// Why the last accept failed, shown on the pairing card it stepped back to.
+    var shareAcceptanceFailureMessage: String?
+    /// The incoming half of the pairing as the UI shows it: the accepted partner, or the
+    /// one being accepted.
+    var displayedIncomingOwnerID: String? {
+        partnerShareOwnerID ?? acceptingShareOwnerID
+    }
+    /// True while the step shown is ahead of CloudKit.
+    var isConfirmingShareAcceptance: Bool {
+        partnerShareOwnerID == nil && acceptingShareOwnerID != nil
+    }
     /// Bumped whenever this device changes the pairing itself: an unpair, or a share
     /// it just accepted. A sync that read the cloud before that change must not write
     /// its stale view of the pairing back (`SyncCoordinator`).

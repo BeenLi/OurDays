@@ -69,7 +69,8 @@ func cloudKitElapsed(since start: ContinuousClock.Instant) -> String {
     return "elapsed=\(milliseconds)ms"
 }
 
-struct PreparedCloudShare: Identifiable {
+/// Unchecked: CloudKit records are handed between tasks but only read once made.
+struct PreparedCloudShare: Identifiable, @unchecked Sendable {
     let id = UUID()
     let rootRecord: CKRecord
     let share: CKShare
@@ -104,6 +105,42 @@ final class CloudKitZoneReadiness: @unchecked Sendable {
     func reset(_ containerID: String) {
         lock.withLock { _ = readyContainerIDs.remove(containerID) }
     }
+}
+
+/// One piece of CloudKit work started before the user asks for it, handed over when
+/// they do. Used for my own invite link: it takes several round trips to make, and
+/// Apple's accept of the partner's link leaves seconds of waiting to make it in.
+@MainActor
+final class ShareCalPrewarm<Value: Sendable> {
+    static var maxAge: TimeInterval { 300 }
+
+    private var pending: (key: String, startedAt: Date, task: Task<Value, Error>)?
+
+    func start(key: String, now: Date = .now, work: @escaping @MainActor () async throws -> Value) {
+        if let pending, pending.key == key, now.timeIntervalSince(pending.startedAt) < Self.maxAge { return }
+        pending = (key, now, Task { try await work() })
+    }
+
+    /// The prewarmed value when one for this key is fresh and succeeded; otherwise `work`.
+    /// Either way it is used once.
+    func take(key: String, now: Date = .now, work: @MainActor () async throws -> Value) async throws -> Value {
+        let prewarmed = pending
+        pending = nil
+        if let prewarmed, prewarmed.key == key, now.timeIntervalSince(prewarmed.startedAt) < Self.maxAge,
+           let value = try? await prewarmed.task.value {
+            return value
+        }
+        return try await work()
+    }
+
+    func discard() {
+        pending = nil
+    }
+}
+
+@MainActor
+enum ShareCalOutgoingSharePrewarm {
+    static let shared = ShareCalPrewarm<PreparedCloudShare>()
 }
 
 final class CloudKitOperationCompletionGate: @unchecked Sendable {
@@ -472,8 +509,12 @@ final class CloudKitCoupleSpaceService {
         let acceptContainer = CKContainer(identifier: containerIdentifier)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let operation = CKAcceptSharesOperation(shareMetadatas: [metadata])
-            // The user is watching a spinner for this one.
-            operation.qualityOfService = .userInitiated
+            // The user is watching the card say "confirming"; never leave it there forever.
+            let configuration = CKOperation.Configuration()
+            configuration.qualityOfService = .userInitiated
+            configuration.timeoutIntervalForRequest = 20
+            configuration.timeoutIntervalForResource = 45
+            operation.configuration = configuration
 
             operation.perShareResultBlock = { _, result in
                 switch result {

@@ -40,6 +40,17 @@ struct PairingProgressGuide: View {
 
             progressLine(strings: strings)
                 .accessibilityHidden(true)
+
+            if state.isConfirmingAccept {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(strings.pairingGuideConfirmingAccept)
+                        .font(.footnote)
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("pairing-guide-confirming")
+            }
         }
         .accessibilityIdentifier("pairing-guide")
     }

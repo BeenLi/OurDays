@@ -92,6 +92,36 @@ enum ShareCalAcceptedShareSignal {
     }
 }
 
+/// Accepting a share is one Apple round trip of several seconds. These tell the UI it has
+/// started (show the next step now, marked as still confirming) and, rarely, that it
+/// failed (step back). Success is `ShareCalAcceptedShareSignal`.
+enum ShareCalShareAcceptanceProgressSignal {
+    static let startedNotificationName = Notification.Name("ShareCalShareAcceptanceStarted")
+    static let failedNotificationName = Notification.Name("ShareCalShareAcceptanceFailed")
+    static let ownerIDKey = "ownerID"
+    static let messageKey = "message"
+
+    static func postStarted(ownerID: String, notificationCenter: NotificationCenter = .default) {
+        notificationCenter.post(name: startedNotificationName, object: nil, userInfo: [ownerIDKey: ownerID])
+    }
+
+    static func postFailed(ownerID: String, message: String, notificationCenter: NotificationCenter = .default) {
+        notificationCenter.post(
+            name: failedNotificationName,
+            object: nil,
+            userInfo: [ownerIDKey: ownerID, messageKey: message]
+        )
+    }
+
+    static func ownerID(in notification: Notification) -> String? {
+        MemberIDPolicy.normalized(notification.userInfo?[ownerIDKey] as? String)
+    }
+
+    static func message(in notification: Notification) -> String? {
+        notification.userInfo?[messageKey] as? String
+    }
+}
+
 enum SyncPhase: String {
     case idle
     case syncing

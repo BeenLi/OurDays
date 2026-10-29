@@ -114,8 +114,8 @@ xcodebuild -project OurDays.xcodeproj -scheme OurDays \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # 单元测试
-xcodebuild -project OurDays.xcodeproj -scheme OurDays \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:OurDaysTests
+xcodebuild -project OurDays.xcodeproj -scheme OurDaysTests \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 
 # 把 CloudKit schema 导入 Development 环境（Production 在 CloudKit Console 部署）
 Scripts/import-cloudkit-schema.sh development
@@ -181,7 +181,7 @@ OurDays/
 │                                  InvitationAndAccessRequestTests / CommentTests /
 │                                  DayTimelineAndNavigationTests / ActivityAndNotificationTests / SettingsAndStringsTests
 ├── OurDaysUITests/                XCUITest：启动、滑动切日、首次引导，以及（配对模拟器上）对方日程与评论线程
-├── OurDays.xcodeproj              唯一的 scheme OurDays；App、单测、UI 测试三个 target
+├── OurDays.xcodeproj              scheme OurDays（全部）与 OurDaysTests（只跑单测）；App、单测、UI 测试三个 target
 ├── CloudKit/ShareCalSchema.ckdb   CloudKit schema 源文件
 ├── Scripts/                       CloudKit schema 导入、双模拟器配对冒烟脚本、App Store / TestFlight 导出配置
 ├── docs/                          开发流程、隐私政策、官网源码（docs/site）、README 架构图源文件（docs/diagrams）、审核记录、规划树（docs/plantree）

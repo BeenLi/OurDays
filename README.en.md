@@ -114,8 +114,8 @@ xcodebuild -project OurDays.xcodeproj -scheme OurDays \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # Unit tests
-xcodebuild -project OurDays.xcodeproj -scheme OurDays \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:OurDaysTests
+xcodebuild -project OurDays.xcodeproj -scheme OurDaysTests \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 
 # Import the CloudKit schema into Development (deploy Production in the CloudKit Console)
 Scripts/import-cloudkit-schema.sh development
@@ -181,7 +181,7 @@ OurDays/
 │                                  InvitationAndAccessRequestTests / CommentTests /
 │                                  DayTimelineAndNavigationTests / ActivityAndNotificationTests / SettingsAndStringsTests
 ├── OurDaysUITests/                XCUITest: launch, swipe between days, onboarding, and (on paired simulators) partner events and comment threads
-├── OurDays.xcodeproj              The single scheme OurDays; App, unit test and UI test targets
+├── OurDays.xcodeproj              Schemes OurDays (everything) and OurDaysTests (unit tests only); App, unit test and UI test targets
 ├── CloudKit/ShareCalSchema.ckdb   CloudKit schema source
 ├── Scripts/                       CloudKit schema import, two-simulator pairing smoke script, App Store / TestFlight export options
 ├── docs/                          Dev workflow, privacy policy, website source (docs/site), README diagram sources (docs/diagrams, *.en.* for English), review notes, plan tree (docs/plantree)

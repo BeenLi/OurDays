@@ -155,6 +155,7 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: ShareCalAcceptedShareSignal.notificationName)) { _ in
             Task {
                 checkPendingShareReplacement()
+                applyAcceptedPartnerNow()
                 await syncAfterAcceptedShareIfNeeded()
             }
         }
@@ -202,9 +203,13 @@ struct RootView: View {
             }
         }
         .onChange(of: settings.syncPhase) { _, newPhase in
-            guard newPhase != .syncing, pairingStatus == .waitingForYouToShare else { return }
+            guard newPhase != .syncing else { return }
             Task {
-                await reevaluateRootSheetFlow()
+                // A link accepted during a screen-triggered sync waits for it to end.
+                await syncAfterAcceptedShareIfNeeded()
+                if pairingStatus == .waitingForYouToShare {
+                    await reevaluateRootSheetFlow()
+                }
             }
         }
         .onChange(of: activeRootSheet) { _, newSheet in
@@ -571,6 +576,17 @@ struct RootView: View {
         presentShareBackPromptIfNeeded()
     }
 
+    /// Shows the accepted partner (step 3) at once instead of after a running sync
+    /// finishes; the bump makes that sync drop its pre-accept view of the pairing.
+    @MainActor
+    private func applyAcceptedPartnerNow() {
+        guard let ownerID = ShareCalAcceptedShareSignal.pendingPartnerOwnerID(),
+              ownerID != MemberIDPolicy.normalized(settings.partnerShareOwnerID) else { return }
+        settings.localPairingChangeCount += 1
+        settings.iCloudSharingEnabled = true
+        settings.partnerShareOwnerID = ownerID
+    }
+
     @MainActor
     private func syncAfterAcceptedShareIfNeeded() async {
         guard ShareCalAcceptedShareSignal.hasPending() else { return }
@@ -627,6 +643,11 @@ struct RootView: View {
             )
         }.value
         representPairingConflictIfNeeded()
+        if ShareCalAcceptedShareSignal.hasPending() {
+            // A share accepted while this sync ran was skipped by the guards above;
+            // pick it up now. The task runs after `isRunningForegroundSync` is reset.
+            Task { await syncAfterAcceptedShareIfNeeded() }
+        }
         return true
     }
 

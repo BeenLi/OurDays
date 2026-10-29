@@ -383,7 +383,7 @@ enum ICloudAvailabilityPolicy {
 /// which can only ask for an Apple ID sign-in. Pasting hands the same URL to
 /// `CKContainer.fetchShareMetadata` directly, using the device's own iCloud session.
 enum ShareInvitationLinkPolicy {
-    enum Failure: Equatable {
+    enum Failure: Error, Equatable {
         case noLinkFound
         case ownLink
         case iCloudUnavailable
@@ -392,7 +392,7 @@ enum ShareInvitationLinkPolicy {
         case other(String)
     }
 
-    /// The first `icloud.com/share/…` URL in the pasted text (chat apps often wrap the
+    /// The first `icloud.com/share/…` (or `icloud.com.cn`) URL in the pasted text (chat apps often wrap the
     /// link in a sentence).
     static func shareURL(from text: String) -> URL? {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
@@ -404,10 +404,25 @@ enum ShareInvitationLinkPolicy {
             .first(where: isShareURL)
     }
 
+    /// China-mainland Apple IDs get `www.icloud.com.cn/share/…` links.
+    private static let shareHosts = ["icloud.com", "icloud.com.cn"]
+
+    /// What the invite box currently holds, so the sheet can say so as the user types.
+    enum InputState: Equatable {
+        case empty
+        case noLink
+        case found(URL)
+    }
+
+    static func inputState(for text: String) -> InputState {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .empty }
+        return shareURL(from: text).map(InputState.found) ?? .noLink
+    }
+
     static func isShareURL(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https",
               let host = url.host?.lowercased(),
-              host == "icloud.com" || host.hasSuffix(".icloud.com") else {
+              shareHosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") }) else {
             return false
         }
         return url.path.hasPrefix("/share/")

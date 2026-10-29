@@ -93,6 +93,10 @@ final class SettingsStore {
     }
     var lastSyncError: String?
     var syncPhase: SyncPhase = .idle
+    /// Bumped whenever this device changes the pairing itself: an unpair, or a share
+    /// it just accepted. A sync that read the cloud before that change must not write
+    /// its stale view of the pairing back (`SyncCoordinator`).
+    var localPairingChangeCount = 0
 
     private let defaults: UserDefaults
 
@@ -205,6 +209,7 @@ final class SettingsStore {
     /// Back to not paired: everything this device knew about the partner and both
     /// halves of the pairing. Used when I unpair and when the partner unpairs me.
     func clearPairingState() {
+        localPairingChangeCount += 1
         iCloudSharingEnabled = false
         hasStartedPairing = false
         partnerShareOwnerID = nil

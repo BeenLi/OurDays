@@ -76,6 +76,13 @@ enum ShareCalAcceptedShareSignal {
         return true
     }
 
+    /// The accepted partner, without consuming it: lets the UI show the new pairing
+    /// while the follow-up sync is still waiting for a running one to finish.
+    static func pendingPartnerOwnerID(defaults: UserDefaults = .standard) -> String? {
+        guard hasPending(defaults: defaults) else { return nil }
+        return MemberIDPolicy.normalized(defaults.string(forKey: pendingPartnerOwnerIDKey))
+    }
+
     static func consumePendingPartnerOwnerID(defaults: UserDefaults = .standard) -> String? {
         let ownerID = defaults.string(forKey: pendingPartnerOwnerIDKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines)

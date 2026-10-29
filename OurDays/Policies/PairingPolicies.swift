@@ -26,6 +26,21 @@ enum PartnerDeparturePolicy {
     }
 }
 
+/// Where the "paste an invite link" entry shows. Any time before I have accepted
+/// the partner's link I may be holding one to paste: before sending mine, while mine
+/// waits to be opened (they sent theirs too), and above all at step 3, when their
+/// link comes back.
+enum PairingInviteLinkEntryPolicy {
+    static func showsPasteEntry(status: PairingStatus) -> Bool {
+        switch status {
+        case .notPaired, .waitingForPartner, .waitingForPartnerToShare:
+            true
+        case .waitingForYouToShare, .paired:
+            false
+        }
+    }
+}
+
 enum PairingStatus: Equatable {
     case notPaired
     case waitingForPartner
@@ -471,6 +486,12 @@ enum PairingGuidePolicy {
             sentInviteBackToOwnerID: sentInviteBackToOwnerID
         ) == PairingGuideState(role: .receiver, currentStep: .linkSentBack) else { return false }
         return MemberIDPolicy.normalized(shareBackPromptShownForOwnerID) != partnerID
+    }
+
+    /// Accepting this invite completes pairing when its sender already joined my share.
+    static func inviteCompletesPairing(inviterID: String, outgoingParticipantIDs: [String]) -> Bool {
+        guard let inviterID = MemberIDPolicy.normalized(inviterID) else { return false }
+        return MemberIDPolicy.normalizedList(outgoingParticipantIDs).contains(inviterID)
     }
 
     /// The partner's name when I know one; nil before their profile has synced, so

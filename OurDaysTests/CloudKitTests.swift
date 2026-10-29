@@ -1494,11 +1494,32 @@ final class ShareInvitationLinkPolicyTests: XCTestCase {
         )
     }
 
+    func testAcceptsChinaMainlandShareLinks() {
+        let text = "我想和你一起用 OurDays 共享日程。② 复制这个链接：https://www.icloud.com.cn/share/0aBcD_efGh#OurDays"
+
+        XCTAssertEqual(
+            ShareInvitationLinkPolicy.shareURL(from: text)?.absoluteString,
+            "https://www.icloud.com.cn/share/0aBcD_efGh#OurDays"
+        )
+        XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "https://www.icloud.com.cn/notes/0aBcD"))
+        XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "https://icloud.com.cn.example.com/share/0aBcD"))
+    }
+
     func testIgnoresNonShareLinks() {
         XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "https://www.icloud.com/notes/0aBcD#Note"))
         XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "https://example.com/share/0aBcD"))
         XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "http://www.icloud.com/share/0aBcD"))
         XCTAssertNil(ShareInvitationLinkPolicy.shareURL(from: "no link here"))
+    }
+
+    func testInputStateTellsWhetherTheBoxHoldsALink() {
+        XCTAssertEqual(ShareInvitationLinkPolicy.inputState(for: ""), .empty)
+        XCTAssertEqual(ShareInvitationLinkPolicy.inputState(for: "  \n "), .empty)
+        XCTAssertEqual(ShareInvitationLinkPolicy.inputState(for: "在吗？发我一下链接"), .noLink)
+        XCTAssertEqual(
+            ShareInvitationLinkPolicy.inputState(for: "② 复制这个链接：https://www.icloud.com.cn/share/0aBcD#OurDays"),
+            .found(URL(string: "https://www.icloud.com.cn/share/0aBcD#OurDays")!)
+        )
     }
 
     func testMapsCloudKitErrorsToFailures() {

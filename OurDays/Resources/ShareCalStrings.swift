@@ -382,16 +382,54 @@ struct ShareCalStrings {
 
     func pasteInviteLinkButton(isAccepting: Bool) -> String {
         isAccepting
-            ? text("Opening invite link...", "正在打开邀请链接...")
-            : text("Got an invite link? Paste it here", "收到邀请链接？在这里粘贴")
+            ? text("Joining your partner...", "正在加入对方...")
+            : text("Got an invite link? Open it here", "收到邀请链接？在这里打开")
     }
 
     var pasteInviteLinkHint: String {
         text(
-            "If tapping the link in WeChat asks you to sign in to iCloud, copy the link, come back here and paste it.",
-            "如果在微信里点开链接提示登录 iCloud，复制链接，回到这里粘贴即可。"
+            "If tapping the link in WeChat asks you to sign in to iCloud, copy the message, come back here and paste it in.",
+            "如果在微信里点开链接提示登录 iCloud，复制对方的消息，回到这里粘贴进去即可。"
         )
     }
+
+    var acceptInviteSheetTitle: String { text("Open Your Partner's Invite", "打开对方的邀请") }
+    var acceptInviteSheetMessage: String {
+        text(
+            "Paste the message or link your partner sent. The whole message is fine; OurDays finds the link in it.",
+            "把对方发来的消息或链接粘贴到下面，整段消息也可以，OurDays 会从里面找出链接。"
+        )
+    }
+    var acceptInvitePlaceholder: String { text("Paste here", "粘贴到这里") }
+    var acceptInviteClearButton: String { text("Clear", "清空") }
+    var acceptInviteInputEmpty: String { text("Nothing pasted yet", "还没有粘贴内容") }
+    var acceptInviteInputNoLink: String {
+        text(
+            "No invite link in this text. It starts with https://www.icloud.com/share/ or https://www.icloud.com.cn/share/.",
+            "这段文字里没有邀请链接。链接以 https://www.icloud.com/share/ 或 https://www.icloud.com.cn/share/ 开头。"
+        )
+    }
+    var acceptInviteInputFound: String { text("Invite link found", "已识别到邀请链接") }
+    func acceptInviteOpenButton(isLookingUp: Bool) -> String {
+        isLookingUp ? text("Checking the invite...", "正在查看邀请...") : text("Open Invite", "打开邀请")
+    }
+    func acceptInviteConfirmTitle(_ ownerName: String?) -> String {
+        text("Open \(guidePartner(ownerName))'s invite?", "打开\(guidePartner(ownerName))的邀请？")
+    }
+    func acceptInviteConfirmMessage(_ ownerName: String?, completesPairing: Bool) -> String {
+        let owner = guidePartner(ownerName)
+        if completesPairing {
+            return text(
+                "\(owner) already accepted yours, so opening this one finishes pairing.",
+                "\(owner)已经收下了你的信，收下这一封你们就配对完成了。"
+            )
+        }
+        return text(
+            "You'll see \(owner)'s calendar. To finish pairing, send your own link back to \(owner) afterwards.",
+            "收下后你能看到\(owner)的日程。之后还要把你的邀请回发给\(owner)，才算配对完成。"
+        )
+    }
+    var acceptInviteConfirmButton: String { text("Open", "收下") }
 
     var inviteLinkAccepted: String {
         text("Invite found. Joining your partner...", "已找到邀请，正在加入对方...")
@@ -401,8 +439,8 @@ struct ShareCalStrings {
         switch failure {
         case .noLinkFound:
             text(
-                "No OurDays invite link on the clipboard. Copy the whole link your partner sent (it starts with https://www.icloud.com/share/).",
-                "剪贴板里没有 OurDays 邀请链接。请复制对方发来的完整链接（以 https://www.icloud.com/share/ 开头）。"
+                "No OurDays invite link on the clipboard. Copy the whole link your partner sent (it starts with https://www.icloud.com/share/ or https://www.icloud.com.cn/share/).",
+                "剪贴板里没有 OurDays 邀请链接。请复制对方发来的完整链接（以 https://www.icloud.com/share/ 或 https://www.icloud.com.cn/share/ 开头）。"
             )
         case .ownLink:
             text("This is your own invite link. Send it to your partner instead.", "这是你自己的邀请链接，请把它发给对方。")

@@ -8,6 +8,7 @@ enum SettingsSheet: Identifiable {
     case myAvatar
     case partnerAvatar
     case inviteHelp
+    case acceptInvite
 
     var id: String {
         switch self {
@@ -15,6 +16,7 @@ enum SettingsSheet: Identifiable {
         case .myAvatar: "myAvatar"
         case .partnerAvatar: "partnerAvatar"
         case .inviteHelp: "inviteHelp"
+        case .acceptInvite: "acceptInvite"
         }
     }
 }
@@ -204,7 +206,8 @@ struct SettingsTabView: View {
                 activeSettingsSheet = .inviteHelp
             },
             onPasteInviteLink: {
-                Task { await acceptPastedInviteLink() }
+                inviteLinkMessage = nil
+                activeSettingsSheet = .acceptInvite
             },
             onCheckCloudKitStatus: {
                 Task { await checkCloudKitStatus() }
@@ -222,6 +225,10 @@ struct SettingsTabView: View {
                 cloudKitDiagnosticMessage = nil
             }
         )
+        .onChange(of: pairingStatus) { _, _ in
+            // "Joining…" or a paste error belongs to the step it was shown on.
+            inviteLinkMessage = nil
+        }
     }
 
     private func inviteSheet(for draft: PairingInviteDraft) -> some View {
@@ -525,6 +532,9 @@ struct SettingsTabView: View {
         }
         .listSectionSpacing(20)
         .ourDaysListBackground()
+        .refreshable {
+            await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
+        }
         .navigationTitle(strings.settingsTitle)
         .toolbar(.hidden, for: .navigationBar)
         .task {
@@ -581,6 +591,13 @@ struct SettingsTabView: View {
                 }
             case .inviteHelp:
                 InviteLinkHelpSheet()
+            case .acceptInvite:
+                AcceptInviteLinkSheet(
+                    lookUp: { url in await lookUpInvite(url) },
+                    knownName: { ownerID in knownInviterName(ownerID) },
+                    completesPairing: { ownerID in await inviteCompletesPairing(ownerID) },
+                    onAccept: { metadata in acceptInvite(metadata) }
+                )
             case .partnerAvatar:
                 AvatarEditorSheet(
                     title: strings.partnerAvatarLabel(settings.partnerDisplayName),
@@ -922,38 +939,77 @@ struct SettingsTabView: View {
         iCloudProblem = ICloudAvailabilityPolicy.problem(for: await cloudKit.accountStatus())
     }
 
-    /// Accepts an invite link copied from a chat app. Links tapped inside WeChat open the
+    /// Looks up an invite link copied from a chat app. Links tapped inside WeChat open the
     /// icloud.com web page (which can only ask for an Apple ID sign-in) instead of the app.
     @MainActor
-    private func acceptPastedInviteLink() async {
-        guard !isAcceptingInviteLink else { return }
-        let strings = settings.strings
-        inviteLinkMessage = nil
+    private func lookUpInvite(_ url: URL) async -> Result<CKShare.Metadata, ShareInvitationLinkPolicy.Failure> {
         guard let cloudKit = services.cloudKitIfAvailable else {
-            inviteLinkMessage = strings.iCloudSharingUnavailableLocalBuild
-            return
+            return .failure(.other(settings.strings.iCloudSharingUnavailableLocalBuild))
         }
-        guard let url = ShareInvitationLinkPolicy.shareURL(from: UIPasteboard.general.string ?? "") else {
-            inviteLinkMessage = strings.inviteLinkFailure(.noLinkFound)
-            return
-        }
-
         isAcceptingInviteLink = true
         defer { isAcceptingInviteLink = false }
         do {
             let metadata = try await cloudKit.fetchShareMetadata(from: url)
-            guard metadata.participantRole != .owner else {
-                inviteLinkMessage = strings.inviteLinkFailure(.ownLink)
-                return
-            }
-            ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
-            inviteLinkMessage = strings.inviteLinkAccepted
+            guard metadata.participantRole != .owner else { return .failure(.ownLink) }
+            return .success(metadata)
         } catch {
-            cloudKitSharingError("acceptPastedInviteLink failed error=\(describeCloudKitFailure(error))")
+            cloudKitSharingError("lookUpInvite failed error=\(describeCloudKitFailure(error))")
             let failure = ShareInvitationLinkPolicy.failure(for: error)
-            inviteLinkMessage = strings.inviteLinkFailure(failure)
             if failure == .iCloudUnavailable {
                 await refreshICloudProblem()
+            }
+            return .failure(failure)
+        }
+    }
+
+    /// Asks CloudKit who has joined my share rather than trusting the last sync: the
+    /// inviter may have accepted my letter since, and then this one completes pairing.
+    private func inviteCompletesPairing(_ ownerID: String) async -> Bool {
+        var participantIDs = settings.outgoingShareParticipantIDs
+        if let cloudKit = services.cloudKitIfAvailable,
+           let fetched = try? await cloudKit.fetchOutgoingShareParticipantIDs(ownerMemberID: settings.currentMemberID) {
+            participantIDs = fetched
+        }
+        return PairingGuidePolicy.inviteCompletesPairing(inviterID: ownerID, outgoingParticipantIDs: participantIDs)
+    }
+
+    /// A nickname only for someone already on one half of this pairing; a stranger's
+    /// invite reads "TA" rather than exposing their Apple ID name.
+    private func knownInviterName(_ ownerID: String) -> String? {
+        let knownIDs = Set(([settings.partnerShareOwnerID] + settings.outgoingShareParticipantIDs).compactMap {
+            MemberIDPolicy.normalized($0)
+        })
+        guard knownIDs.contains(ownerID) else { return nil }
+        return PairingGuidePolicy.knownPartnerName(
+            partnerNoteName: settings.partnerNoteName,
+            partnerSyncedDisplayName: settings.partnerSyncedDisplayName
+        )
+    }
+
+    /// The user confirmed whose invite it is; hand it to the same path a tapped link takes.
+    private func acceptInvite(_ metadata: CKShare.Metadata) {
+        let incomingOwnerID = metadata.share.recordID.zoneID.ownerName
+        guard !ShareAcceptanceGuardPolicy.requiresReplacementConfirmation(
+            incomingOwnerID: incomingOwnerID,
+            storedPartnerID: settings.partnerShareOwnerID,
+            outgoingParticipantIDs: settings.outgoingShareParticipantIDs
+        ) else {
+            // Someone other than the current partner: RootView asks first.
+            ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
+            return
+        }
+        // The button itself shows "joining…" until CloudKit has accepted.
+        isAcceptingInviteLink = true
+        inviteLinkMessage = nil
+        Task {
+            defer { isAcceptingInviteLink = false }
+            do {
+                try await ShareCalCloudKitShareAcceptanceHandler.acceptNow(
+                    metadata: metadata,
+                    incomingOwnerID: incomingOwnerID
+                )
+            } catch {
+                inviteLinkMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
             }
         }
     }

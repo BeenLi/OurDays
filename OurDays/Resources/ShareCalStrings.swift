@@ -416,8 +416,14 @@ struct ShareCalStrings {
     func acceptInviteConfirmTitle(_ ownerName: String?) -> String {
         text("Open \(guidePartner(ownerName))'s invite?", "打开\(guidePartner(ownerName))的邀请？")
     }
-    func acceptInviteConfirmMessage(_ ownerName: String?) -> String {
+    func acceptInviteConfirmMessage(_ ownerName: String?, completesPairing: Bool) -> String {
         let owner = guidePartner(ownerName)
+        if completesPairing {
+            return text(
+                "\(owner) already accepted yours, so opening this one finishes pairing.",
+                "\(owner)已经收下了你的信，收下这一封你们就配对完成了。"
+            )
+        }
         return text(
             "You'll see \(owner)'s calendar. To finish pairing, send your own link back to \(owner) afterwards.",
             "收下后你能看到\(owner)的日程。之后还要把你的邀请回发给\(owner)，才算配对完成。"

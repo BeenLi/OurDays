@@ -985,6 +985,14 @@ final class PairingGuidePolicyTests: XCTestCase {
         XCTAssertEqual(strings.pairingGuideSendBackButton("阿立"), "回发邀请给阿立")
     }
 
+    func testInviteConfirmationSaysWhenItFinishesPairing() {
+        let strings = ShareCalStrings(language: .chinese)
+        XCTAssertEqual(strings.acceptInviteConfirmTitle(nil), "打开TA的邀请？")
+        XCTAssertTrue(strings.acceptInviteConfirmMessage("阿立", completesPairing: false).contains("回发给阿立"))
+        XCTAssertTrue(strings.acceptInviteConfirmMessage("阿立", completesPairing: true).contains("配对完成"))
+        XCTAssertFalse(strings.acceptInviteConfirmMessage("阿立", completesPairing: true).contains("回发"))
+    }
+
     func testGuideHeadlinesKeepTheVerbOnOneLine() {
         let strings = ShareCalStrings(language: .chinese)
         let headline = strings.pairingGuideHeadline(

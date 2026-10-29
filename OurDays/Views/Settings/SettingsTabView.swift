@@ -591,6 +591,8 @@ struct SettingsTabView: View {
             case .acceptInvite:
                 AcceptInviteLinkSheet(
                     lookUp: { url in await lookUpInvite(url) },
+                    knownName: { ownerID in knownInviterName(ownerID) },
+                    completesPairing: pairingStatus == .waitingForPartnerToShare,
                     onAccept: { metadata in acceptInvite(metadata) }
                 )
             case .partnerAvatar:
@@ -955,6 +957,19 @@ struct SettingsTabView: View {
             }
             return .failure(failure)
         }
+    }
+
+    /// A nickname only for someone already on one half of this pairing; a stranger's
+    /// invite reads "TA" rather than exposing their Apple ID name.
+    private func knownInviterName(_ ownerID: String) -> String? {
+        let knownIDs = Set(([settings.partnerShareOwnerID] + settings.outgoingShareParticipantIDs).compactMap {
+            MemberIDPolicy.normalized($0)
+        })
+        guard knownIDs.contains(ownerID) else { return nil }
+        return PairingGuidePolicy.knownPartnerName(
+            partnerNoteName: settings.partnerNoteName,
+            partnerSyncedDisplayName: settings.partnerSyncedDisplayName
+        )
     }
 
     /// The user confirmed whose invite it is; hand it to the same path a tapped link takes.

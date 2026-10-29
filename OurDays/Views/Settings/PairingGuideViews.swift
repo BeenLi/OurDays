@@ -435,6 +435,11 @@ struct AcceptInviteLinkSheet: View {
     @Environment(SettingsStore.self) private var settings
     /// Fetches the share behind the link, or returns a message saying why not.
     let lookUp: (URL) async -> Result<CKShare.Metadata, ShareInvitationLinkPolicy.Failure>
+    /// The OurDays nickname for an inviter this device already knows, else nil ("TA").
+    /// Never the Apple ID name in the share metadata: partners appear by nickname only.
+    let knownName: (_ ownerID: String) -> String?
+    /// Whether the partner has already accepted my letter, so this one completes pairing.
+    let completesPairing: Bool
     let onAccept: (CKShare.Metadata) -> Void
 
     @State private var text = ""
@@ -551,7 +556,7 @@ struct AcceptInviteLinkSheet: View {
                     dismiss()
                 }
             } message: { found in
-                Text(strings.acceptInviteConfirmMessage(found.ownerName))
+                Text(strings.acceptInviteConfirmMessage(found.ownerName, completesPairing: completesPairing))
             }
         }
     }
@@ -599,10 +604,8 @@ struct AcceptInviteLinkSheet: View {
         defer { isLookingUp = false }
         switch await lookUp(url) {
         case .success(let metadata):
-            let name = metadata.ownerIdentity.nameComponents.flatMap {
-                MemberIDPolicy.normalized(PersonNameComponentsFormatter.localizedString(from: $0, style: .short))
-            }
-            invite = FoundInvite(metadata: metadata, ownerName: name)
+            let ownerID = metadata.share.recordID.zoneID.ownerName
+            invite = FoundInvite(metadata: metadata, ownerName: knownName(ownerID))
         case .failure(let failure):
             self.failure = failure
         }

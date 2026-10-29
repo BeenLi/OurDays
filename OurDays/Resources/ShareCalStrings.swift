@@ -277,21 +277,11 @@ struct ShareCalStrings {
     var unpairConfirmationTitle: String { text("Unpair?", "解除配对？") }
     var unpairConfirmationMessage: String {
         text(
-            "After unpairing, you will no longer be able to view each other's calendars. To pair with someone else, unpair first.",
-            "解除后，你们将不能继续互相查看日历。要和其他人配对，需要先解除当前配对。"
+            "You'll stop seeing each other's calendars. Your own OurDays data stays in your iCloud, so you can pair again later, with them or someone else.",
+            "你们将互相看不到日程。你自己的 OurDays 数据仍留在你的 iCloud 里，之后可以重新配对，和 TA 或其他人都行。"
         )
     }
     var unpairSucceeded: String { text("Unpaired.", "已解除配对。") }
-    var pairingSafetySection: String { text("If You Reinstall", "重装提醒") }
-    var pairingSafetyPersistentWarningTitle: String {
-        text("Deleting the app does not delete your shared data.", "删除 App 不会丢失共享数据。")
-    }
-    var pairingSafetyPersistentWarningMessage: String {
-        text(
-            "Your pairing, comments and invitations live in your own iCloud. After a reinstall, choose “Keep Existing iCloud Data” on first launch to get them back. Removing OurDays iCloud data will not delete your original calendars or events in the system Calendar app.",
-            "配对、评论和邀请都保存在你自己的 iCloud 里。重装后首次启动时选择「继续使用现有 iCloud 数据」即可找回。删除 OurDays 的 iCloud 数据不会删除系统日历中的原始日历或事件。"
-        )
-    }
     var pairingConflictTitle: String { text("Pairing Conflict", "配对冲突") }
     var pairingConflictMismatchMessage: String {
         text(
@@ -327,8 +317,8 @@ struct ShareCalStrings {
     var deleteICloudDataConfirmationTitle: String { text("Delete My iCloud Data?", "删除我的 iCloud 数据？") }
     var deleteICloudDataConfirmationMessage: String {
         text(
-            "This stops sharing, deletes your OurDays iCloud data, leaves your partner's share, and clears the local OurDays cache. It will not delete original events from the system Calendar app.",
-            "这会停止共享、删除你上传到 iCloud 的 OurDays 数据、退出对方的共享，并清除本地 OurDays 缓存。它不会删除系统日历中的原始日程。"
+            "Unpairs, then deletes all of your OurDays data in iCloud and on this iPhone. This cannot be undone, and a reinstall will have nothing to restore. Events in the system Calendar app are not affected.",
+            "解除配对，并删除你在 iCloud 和本机上的全部 OurDays 数据。无法恢复，重装后也找不回来。系统日历里的日程不受影响。"
         )
     }
     var deleteICloudDataSucceeded: String { text("iCloud data deleted.", "iCloud 数据已删除。") }
@@ -643,6 +633,31 @@ struct ShareCalStrings {
     var usSubtitle: String { text("Pairing, sharing & settings", "配对、共享与设置") }
     var moreSection: String { text("More", "更多") }
     var sharedPeopleRowTitle: String { text("Shared People & Invite Link", "共享人与邀请链接") }
+    var usPairSection: String { text("Us Two", "我们俩") }
+    var myProfileFootnote: String { text("Your nickname and avatar sync to your partner", "我的昵称和头像，会同步给对方") }
+    var partnerProfileFootnote: String { text("Your note and avatar for them stay on this iPhone", "对方的备注和头像，只在你的手机上显示") }
+    var calendarPermissionMissingTitle: String { text("No calendar access yet", "还没有日历权限") }
+    var calendarPermissionMissingMessage: String {
+        text("OurDays reads your calendars to share events with your partner.", "OurDays 需要读取日历，才能把日程同步给对方。")
+    }
+    var calendarPermissionTurnOnButton: String { text("Turn On", "去开启") }
+    var partnerCanSeePicker: String { text("Partner sees", "对方能看到") }
+    func calendarsToShareFootnote(partnerName: String) -> String {
+        text("Calendars switched on are shared with \(partnerName).", "打开的日历会同步给\(partnerName)。")
+    }
+    func historyRequestStatusLine(rangeText: String, statusText: String) -> String {
+        text("Requested \(rangeText) · \(statusText)", "已申请 \(rangeText) · \(statusText)")
+    }
+    var dataRecoveryTitle: String { text("Data & Recovery", "数据与恢复") }
+    var dataRecoveryRowValue: String { text("Troubleshoot, reset", "排查、重置") }
+    var troubleshootingSection: String { text("Troubleshooting", "排查") }
+    var startOverSection: String { text("Start Over", "从头开始") }
+    var sharedPeopleFootnote: String {
+        text(
+            "Opens Apple's sharing panel: see whether your partner has joined, or copy the raw iCloud link. To send an invite, use the card at the top of Us.",
+            "打开 Apple 的共享面板：看对方是否已经加入，或复制原始 iCloud 链接。发邀请请用「我们」页顶部的配对卡。"
+        )
+    }
     var todaySectionTitle: String { text("Today", "今天") }
     var yesterdaySectionTitle: String { text("Yesterday", "昨天") }
     var activitySubtitle: String { text("Conversations around your schedules", "你们围绕日程的对话") }

@@ -224,10 +224,6 @@ enum PairingSafetyEducationPolicy {
         guard hasPromptedPartnerNoteForCurrentPairing else { return false }
         return !hasShownPairingSafetyNoticeForCurrentPairing
     }
-
-    static func shouldShowPersistentWarning(pairingStatus: PairingStatus) -> Bool {
-        pairingStatus != .notPaired
-    }
 }
 
 enum SharedPeoplePresentationPolicy {
@@ -237,6 +233,33 @@ enum SharedPeoplePresentationPolicy {
         isStoppingShare: Bool
     ) -> Bool {
         isCloudKitEnabled && !isPreparingShare && !isStoppingShare
+    }
+}
+
+/// What the 我们 tab shows beyond the pairing card. Rows that only report a settled
+/// state (calendar access granted) or repeat the card (last sync) are left out.
+enum UsTabPolicy {
+    /// The calendar permission row appears only while there is something to do about it.
+    static func showsCalendarPermissionRow(_ state: CalendarAuthorizationState) -> Bool {
+        !state.canReadEvents
+    }
+
+    /// The partner's note and avatar wait until a pairing has started.
+    static func showsPartnerProfileRow(pairingStatus: PairingStatus) -> Bool {
+        pairingStatus != .notPaired
+    }
+
+    /// Sharing scope, the history request and unpairing only mean something once paired.
+    static func showsPairedSections(pairingStatus: PairingStatus) -> Bool {
+        pairingStatus != .notPaired
+    }
+
+    /// The request the 配对前历史 row reports under its title: the newest one I sent.
+    static func latestOutgoingHistoryRequest(
+        _ requests: [CalendarAccessRequest],
+        currentMemberID: String
+    ) -> CalendarAccessRequest? {
+        CalendarAccessRequestListPolicy.outgoing(requests, currentMemberID: currentMemberID).last
     }
 }
 

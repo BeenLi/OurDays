@@ -31,7 +31,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | [pairing-sync-integrity](plans/pairing-sync-integrity/) | ✅ Code landed | #4 随 1.5；#20 #22 #23 随 1.6；#38 #39 #40 #41 #43 #44 #47 待发布 | 配对冲突改由用户选择；共享记录只在变化时保存；重装恢复；解除配对清理前任数据；邀请链接的 iCloud 检查与粘贴入口；配对引导 |
 | [invitation-lifecycle](plans/invitation-lifecycle/) | ✅ Code landed | 1.6 | 已结束的日程不可邀请、待处理邀请会过期、发起方可撤销 |
 | [comment-visibility](plans/comment-visibility/) | ✅ 已发布 + 扩展 | 1.4；#24 随 1.6 | 评论红点、我的日程可看/可回评论；#24 起未同步也可先发起评论 |
-| [ui-redesign](plans/ui-redesign/) | ✅ 已发布 | 1.5；#7 随 1.6 | 「纸上双线」视觉、身份泳道、头像同步、日视图打磨 |
+| [ui-redesign](plans/ui-redesign/) | ✅ 已发布 | 1.5；#7 随 1.6；#45 #46 待发布 | 「纸上双线」视觉、身份泳道、头像同步、日视图打磨、「我们」页精简 |
 | [calendar-ux-fixes](plans/calendar-ux-fixes/) | ✅ 已发布 | 1.3 | 今天红线、邀请乐观发送、共同日程可评论 |
 | [notifications](plans/notifications/) | ✅ 已发布 | 1.3 | 静默推送 + 后台同步 + 本地通知；两机端到端已自动化（2026-06-17） |
 | [activity-feed](plans/activity-feed/) | ✅ 已发布 | 1.3 | 「动态」tab；1.5 改为按天分组的聊天卡片样式 |
@@ -84,6 +84,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #43 | 2026-10-29 | 配对引导打磨：邀请页即点即开、取消不进到下一步、第 4 步标签、日历页小提示、回发提示带昵称 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
 | #44 | 2026-10-29 | 「粘贴邀请链接」入口在发出邀请后也保留（第 2、3 步），回寄的链接也能粘贴；粘贴识别中国区 icloud.com.cn 链接；解除配对时不再被正在进行的同步写回「邀请已寄出」；粘贴改为输入框 + 确认；收下后立刻进第 3 步；入口改成按钮样式；「我们」「动态」页下拉刷新 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
 | #45 | 2026-10-29 | 日视图：日程块高度跟随真实时长（短日程两行压紧，不到 30 分钟单行），当前时间线不再穿过已结束的日程 | [ui-redesign](plans/ui-redesign/) |
+| #46 | 2026-10-29 | 「我们」页从 11 段收成 5 段：我们俩 / 语言 / 要共享的日历前置；日历权限只在缺失时出现；删掉重复的「上次同步」；配对前历史合成一行；去掉常驻的重装提醒；共享人与邀请链接、删除 iCloud 数据（文案改直白）移进「数据与恢复」子页 | [ui-redesign](plans/ui-redesign/roadmap.md) |
 | #47 | 本 PR | 接受邀请提速：zone 每次启动只建一次、打开邀请两次查询并行、收下即进第 3 步（确认中提示，失败退回）、接受期间提前做好回发链接、关键 CloudKit 调用记耗时 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
 
 ## Ideas

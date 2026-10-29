@@ -126,26 +126,18 @@ struct DayTimelineEventBlock: View {
         }
     }
 
-    /// One line, title first, then the time range: a short event's block is
-    /// only as tall as the event lasts.
+    /// The same two lines as the regular block, packed tight: a short
+    /// event's block is only as tall as the event lasts.
     private var compactContent: some View {
-        HStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(event.title)
                 .font(.caption.weight(.bold))
                 .foregroundStyle(OurDaysTheme.ink)
                 .lineLimit(1)
-                .layoutPriority(1)
-            calendarDot
-            if !event.isAllDay {
-                Text(compactTimeText)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(identity.onTint)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
+            timeLine
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
     }
 
     private var regularContent: some View {
@@ -156,17 +148,21 @@ struct DayTimelineEventBlock: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
 
-            HStack(spacing: 4) {
-                calendarDot
-                Text(timeText)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(identity.onTint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
+            timeLine
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
+    }
+
+    private var timeLine: some View {
+        HStack(spacing: 4) {
+            calendarDot
+            Text(timeText)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(identity.onTint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
     }
 
     // The source calendar's own color survives as a small dot, so people
@@ -186,11 +182,6 @@ struct DayTimelineEventBlock: View {
             return settings.strings.allDay
         }
         return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
-    }
-
-    /// The range without spaces, so it fits beside the title on one line.
-    private var compactTimeText: String {
-        "\(event.startDate.formatted(date: .omitted, time: .shortened))–\(event.endDate.formatted(date: .omitted, time: .shortened))"
     }
 }
 
@@ -237,26 +228,25 @@ struct DayTimelineJointEventBlock: View {
         .accessibilityHidden(true)
     }
 
-    /// One line for a short joint event: the two dots stand in for the
-    /// "joint" label, then the title and time range.
+    /// Two tight lines for a short joint event: the two dots stand in for
+    /// the "joint" label in front of the title, then the time.
     private var compactContent: some View {
-        HStack(spacing: 6) {
-            identityDots
-            Text(event.title)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(OurDaysTheme.onJoint)
-                .lineLimit(1)
-                .layoutPriority(1)
-            if !event.isAllDay {
-                Text(compactTimeText)
-                    .font(.caption2)
-                    .foregroundStyle(OurDaysTheme.onJointSecondary)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                identityDots
+                Text(event.title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(OurDaysTheme.onJoint)
                     .lineLimit(1)
-                    .fixedSize()
             }
+            Text(timeText)
+                .font(.caption2)
+                .foregroundStyle(OurDaysTheme.onJointSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
     }
 
     private var regularContent: some View {
@@ -297,10 +287,5 @@ struct DayTimelineJointEventBlock: View {
             return settings.strings.allDay
         }
         return "\(event.startDate.formatted(date: .omitted, time: .shortened)) - \(event.endDate.formatted(date: .omitted, time: .shortened))"
-    }
-
-    /// The range without spaces, so it fits beside the title on one line.
-    private var compactTimeText: String {
-        "\(event.startDate.formatted(date: .omitted, time: .shortened))–\(event.endDate.formatted(date: .omitted, time: .shortened))"
     }
 }

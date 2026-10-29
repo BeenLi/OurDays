@@ -184,22 +184,22 @@ enum DayTimelineScrollTargetPolicy {
     }
 }
 
-/// How much an event block shows. A block is as tall as its event lasts, so a
-/// short event has no room for the two-line title + time layout.
+/// How an event block lays out its title and time. A block is as tall as its
+/// event lasts, so a short event gets the same two lines with tighter padding.
 enum DayTimelineBlockStyle: Equatable {
-    /// Title on top, time range below.
+    /// Title (up to two lines) on top, time range below, roomy padding.
     case regular
-    /// Title and time range on one line, for events too short for two lines.
+    /// One title line and the time range, packed tight, for short events.
     case compact
 }
 
 enum DayTimelineLayoutPolicy {
     static let hoursPerDay = 24
-    /// Shortest block drawn, just enough for one line of text. Only events
-    /// shorter than this many minutes (at 60 pt/hour) are drawn longer than
-    /// they are.
-    static let minimumBlockHeight: CGFloat = 20
-    /// From this height up a block has room for the two-line layout.
+    /// Shortest block drawn, just enough for the title and time lines packed
+    /// tight. Only events shorter than this many minutes (at 60 pt/hour) are
+    /// drawn longer than they are.
+    static let minimumBlockHeight: CGFloat = 30
+    /// From this height up a block gets the roomy regular padding.
     static let regularBlockHeight: CGFloat = 44
 
     /// The drawn height of a timed block. It follows the event's real

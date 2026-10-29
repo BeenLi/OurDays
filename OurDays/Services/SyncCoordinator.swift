@@ -257,17 +257,19 @@ struct SyncCoordinator {
                 )
                 async let sharedZoneIDsTask = cloudKit.fetchSharedCoupleSpaceZoneIDs()
                 let outgoingParticipantIDs = try await outgoingParticipantIDsTask
-                settings.outgoingShareParticipantIDs = outgoingParticipantIDs
                 timing.mark("cloudOutgoingParticipantsFetched count=\(outgoingParticipantIDs.count)")
                 let fetchedSharedZoneIDs = try await sharedZoneIDsTask
                 timing.mark("cloudSharedZonesFetched count=\(fetchedSharedZoneIDs.count)")
 
+                let previousPartnerShareOwnerID = settings.partnerShareOwnerID
+                let previousOutgoingParticipantIDs = settings.outgoingShareParticipantIDs
                 let resolution = TwoPersonPairingPolicy.resolve(
-                    storedPartnerID: settings.partnerShareOwnerID,
+                    storedPartnerID: previousPartnerShareOwnerID,
                     outgoingAcceptedParticipantIDs: outgoingParticipantIDs,
                     sharedZoneOwnerIDs: fetchedSharedZoneIDs.map(\.ownerName)
                 )
                 settings.pairingConflict = resolution.conflict
+                settings.outgoingShareParticipantIDs = outgoingParticipantIDs
                 if resolution.conflict != nil {
                     // Do not upload, import, or clean up anything until the user
                     // picks a partner; otherwise we could expose fresh data to a
@@ -279,6 +281,35 @@ struct SyncCoordinator {
                     try purge(mirrors: hardDeletedMirrors, modelContext: modelContext)
                     try purgeShadows(mirrorKeys: hardDeletedMirrorKeys, modelContext: modelContext)
                     return
+                }
+                // Both halves of the pairing change together: written across awaits, the
+                // status would pass through a half-pairing (an unpairing partner reads as
+                // "waiting for you to share" for a moment) and the UI would react to it.
+                settings.partnerShareOwnerID = resolution.partnerID
+
+                if PartnerDeparturePolicy.partnerHasLeft(
+                    previousPartnerID: previousPartnerShareOwnerID,
+                    previousOutgoingParticipantIDs: previousOutgoingParticipantIDs,
+                    resolvedPartnerID: resolution.partnerID,
+                    outgoingParticipantIDs: outgoingParticipantIDs
+                ) {
+                    // The partner unpaired (left my share, deleted theirs). Take back my
+                    // half too, so both of us start over from step 1 instead of me holding
+                    // an invitation nobody is coming back to.
+                    settings.clearPairingState()
+                    do {
+                        try await cloudKit.stopSharing(ownerMemberID: settings.currentMemberID)
+                        try await cloudKit.purgeExPartnerRecordsFromPrivateZone(currentMemberID: settings.currentMemberID)
+                        timing.mark("cloudPartnerLeftSharingStopped")
+                    } catch {
+                        timing.mark("cloudPartnerLeftCleanupFailed")
+                    }
+                    try ShareCalLocalDataCleanupService.purgeSharedOwnerData(
+                        ownerMemberIDs: ICloudSharingTeardownPolicy.localOwnerIDsToPurge(
+                            partnerShareOwnerID: previousPartnerShareOwnerID
+                        ),
+                        modelContext: modelContext
+                    )
                 }
 
                 // Reinstall reconciliation: until this install has confirmed one cloud
@@ -376,9 +407,7 @@ struct SyncCoordinator {
                 )
                 try upsert(accessRequests: cloudAccessRequests, modelContext: modelContext)
                 timing.mark("cloudAccessRequestsFetched count=\(cloudAccessRequests.count)")
-                let previousPartnerShareOwnerID = settings.partnerShareOwnerID
                 let partnerShareOwnerID = resolution.partnerID
-                settings.partnerShareOwnerID = partnerShareOwnerID
                 if partnerShareOwnerID != nil || !settings.outgoingShareParticipantIDs.isEmpty {
                     settings.hasStartedPairing = true
                     settings.markPairingDateIfNeeded(at: syncedAt)

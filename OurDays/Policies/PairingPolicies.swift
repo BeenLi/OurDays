@@ -8,6 +8,24 @@ enum ICloudSharingTeardownPolicy {
     }
 }
 
+/// Unpairing is two-sided: the partner leaves my share and deletes theirs. Seen from
+/// my side, someone was on at least one half of the pairing and now nobody is on
+/// either. A partner I never had (a link not yet opened) is not a departure.
+enum PartnerDeparturePolicy {
+    static func partnerHasLeft(
+        previousPartnerID: String?,
+        previousOutgoingParticipantIDs: [String],
+        resolvedPartnerID: String?,
+        outgoingParticipantIDs: [String]
+    ) -> Bool {
+        let hadSomeone = MemberIDPolicy.normalized(previousPartnerID) != nil
+            || !MemberIDPolicy.normalizedList(previousOutgoingParticipantIDs).isEmpty
+        let hasSomeone = MemberIDPolicy.normalized(resolvedPartnerID) != nil
+            || !MemberIDPolicy.normalizedList(outgoingParticipantIDs).isEmpty
+        return hadSomeone && !hasSomeone
+    }
+}
+
 enum PairingStatus: Equatable {
     case notPaired
     case waitingForPartner

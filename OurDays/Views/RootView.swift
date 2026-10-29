@@ -192,6 +192,10 @@ struct RootView: View {
                 settings.sentInviteBackToOwnerID = nil
                 settings.shareBackPromptShownForOwnerID = nil
             }
+            if newStatus != .waitingForYouToShare, activeRootSheet == .shareBackPrompt {
+                // "Send yours back" only makes sense while I hold their share alone.
+                activeRootSheet = nil
+            }
             guard newStatus == .paired || newStatus == .waitingForYouToShare else { return }
             Task {
                 await reevaluateRootSheetFlow()

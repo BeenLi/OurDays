@@ -130,7 +130,7 @@ struct PairingStatusCard: View {
                 }
             }
 
-            if status == .notPaired {
+            if PairingInviteLinkEntryPolicy.showsPasteEntry(status: status) {
                 pasteInviteLinkSection(strings: strings)
             }
 

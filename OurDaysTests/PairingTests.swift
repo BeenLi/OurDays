@@ -1056,3 +1056,14 @@ final class PartnerDeparturePolicyTests: XCTestCase {
         ))
     }
 }
+
+final class PairingInviteLinkEntryPolicyTests: XCTestCase {
+    func testPasteEntryStaysUntilThePartnersLinkIsAccepted() {
+        XCTAssertTrue(PairingInviteLinkEntryPolicy.showsPasteEntry(status: .notPaired))
+        XCTAssertTrue(PairingInviteLinkEntryPolicy.showsPasteEntry(status: .waitingForPartner))
+        // Step 3: the partner's link back is exactly what gets pasted here.
+        XCTAssertTrue(PairingInviteLinkEntryPolicy.showsPasteEntry(status: .waitingForPartnerToShare))
+        XCTAssertFalse(PairingInviteLinkEntryPolicy.showsPasteEntry(status: .waitingForYouToShare))
+        XCTAssertFalse(PairingInviteLinkEntryPolicy.showsPasteEntry(status: .paired))
+    }
+}

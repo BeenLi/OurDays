@@ -79,7 +79,8 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #38 | 2026-10-29 | 邀请链接提示登录 iCloud：去掉"仅限受邀的人"、未配对时检查本 App 的 iCloud、粘贴邀请链接入口 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
 | #39 | 2026-10-29 | 配对引导：四步进度卡、自己的邀请页与分享文案、收下后提示回发、打不开链接帮助页 | [pairing-sync-integrity](plans/pairing-sync-integrity/decisions/0007-pairing-guide-two-letters.md) |
 | #40 | 2026-10-29 | 解除配对两边一起解除：同时退出对方的分享，对方回到未配对而不是停在「等待对方共享」 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
-| #41 | 本 PR | 被对方解除配对：不再误弹「回发邀请」，撤回我的分享，两边都回到第 1 步 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
+| #41 | 2026-10-29 | 被对方解除配对：不再误弹「回发邀请」，撤回我的分享，两边都回到第 1 步 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
+| #42 | 本 PR | 冒烟脚本：先清理残留的「Own Comment Event」，评论自己事件那一步不再超时 | [code-structure](plans/code-structure/roadmap.md) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

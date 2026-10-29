@@ -3,6 +3,9 @@
 ## In Progress
 - （无）
 
+## Done（2026-10-29）
+- ✅ **#42**（本 PR）冒烟脚本 9b 步先删掉历次运行留下的「Own Comment Event」再新建。诊断按标题取第一个匹配，旧事件早于配对日，落在分享窗口外，于是这一步超时 15 分钟。
+
 ## Done（2026-10-25）
 - ✅ **#37 Xcode 工程改名 `CoupleCalendar` → `OurDays`**（用户 2026-10-25 定名，按 Swift 模块名惯例用 UpperCamel 而非 ourDays）。改的：`.xcodeproj`、三个 target 与 scheme、`OurDays/` `OurDaysTests/` `OurDaysUITests/` 目录、`OurDaysApp.swift`、三个 entitlements 文件名、CI、脚本、README、CLAUDE.md。没改的：bundle ID `com.leeberty.CoupleCalendar`（含测试 target）、iCloud 容器 `iCloud.com.leeberty.CoupleCalendar`、BGTask 标识 `com.leeberty.CoupleCalendar.refresh`、OSLog subsystem，以及 `ShareCal*` 标识符；这些一改，已安装用户的数据和后台任务就对不上。SwiftData 用默认存储位置，与模块名无关；场景代理在 Info.plist 里写的是 `$(PRODUCT_MODULE_NAME)`，随之变化。plantree 里的历史记录保留旧路径。
 

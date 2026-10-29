@@ -335,6 +335,14 @@ OWN_EVENT_TITLE="Own Comment Event"
 OWN_COMMENT="own-first-$RANDOM"
 OWN_REPLY="partner-on-own-$RANDOM"
 
+# Earlier runs (or an interrupted one) leave events with this title behind; the comment
+# diag picks the first match, which can predate the pairing day and fall outside the
+# sharing window. Start from none.
+log "Owner: removing leftover '$OWN_EVENT_TITLE' events from earlier runs..."
+launch_app "$OWNER_UDID" "owner-own-cleanup" -ShareCalDeleteCalendarEventTitled "$OWN_EVENT_TITLE"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag deleteCalendarEvent succeeded title=.* count=[0-9]" $DIAG_TIMEOUT \
+  "owner removes leftover own-comment events" >/dev/null
+
 log "Owner: creating a fresh own event and commenting on it right away ('$OWN_COMMENT')..."
 launch_app "$OWNER_UDID" "owner-own-comment" \
   -ShareCalSeedCalendarEvent -ShareCalSeedCalendarEventTitle "$OWN_EVENT_TITLE" \

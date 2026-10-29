@@ -18,7 +18,12 @@ struct PairingStatusCard: View {
     let iCloudProblem: ICloudAvailabilityPolicy.Problem?
     let isAcceptingInviteLink: Bool
     let inviteLinkMessage: String?
+    /// Where the link exchange stands; nil once paired.
+    let guideState: PairingGuideState?
+    /// The partner's name when known, nil before their profile syncs.
+    let guidePartnerName: String?
     let onStartPairing: () -> Void
+    let onShowInviteHelp: () -> Void
     let onPasteInviteLink: () -> Void
     let onCheckCloudKitStatus: () -> Void
     let onSync: () -> Void
@@ -90,21 +95,8 @@ struct PairingStatusCard: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("pairing-day-count")
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(strings.pairingStatusTitle(for: status))
-                        .font(OurDaysTheme.displayFont(28))
-                        .foregroundStyle(OurDaysTheme.ink)
-                    Text(status == .waitingForYouToShare ? strings.pairingWaitingForYouToShareDescription : strings.pairingDescription)
-                        .font(.subheadline)
-                        .foregroundStyle(OurDaysTheme.secondaryInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let pairingDate {
-                        Text(strings.pairingDateLine(strings.pairingDateText(for: pairingDate)))
-                            .font(.caption)
-                            .foregroundStyle(OurDaysTheme.secondaryInk)
-                    }
-                }
+            } else if let guideState {
+                PairingProgressGuide(state: guideState, partnerName: guidePartnerName)
             }
 
             HStack(spacing: 8) {
@@ -120,27 +112,24 @@ struct PairingStatusCard: View {
                 iCloudProblemNotice(iCloudProblem, strings: strings)
             }
 
-            if status == .notPaired || status == .waitingForYouToShare {
+            if let guideState {
                 HStack(spacing: 10) {
-                    Button {
-                        onStartPairing()
-                    } label: {
-                        Label(strings.startPairingButton(isPreparing: isPreparingShare), systemImage: "person.badge.plus")
-                    }
-                    .buttonStyle(OurDaysPrimaryButtonStyle())
-                    .disabled(!isCloudKitEnabled || isPreparingShare)
-
+                    guidePrimaryButton(for: guideState, strings: strings)
                     checkICloudButton(strings: strings)
+                }
+
+                if guideState.currentStep == .firstLinkAccepted || guideState.currentStep == .linkBackAccepted {
+                    Button(strings.pairingGuideHelpLink, action: onShowInviteHelp)
+                        .font(.subheadline)
+                        .foregroundStyle(OurDaysIdentity.me.onTint)
+                        .buttonStyle(.plain)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("pairing-guide-help")
                 }
             }
 
             if status == .notPaired {
                 pasteInviteLinkSection(strings: strings)
-            } else if status != .paired && status != .waitingForYouToShare {
-                HStack {
-                    Spacer()
-                    checkICloudButton(strings: strings)
-                }
             }
 
             if !isCloudKitEnabled {
@@ -179,6 +168,49 @@ struct PairingStatusCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(OurDaysTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: .black.opacity(0.06), radius: 14, x: 0, y: 8)
+    }
+
+    /// One button per step: send the first link, send it again, remind the partner to
+    /// send theirs back, or send mine back.
+    @ViewBuilder
+    private func guidePrimaryButton(for state: PairingGuideState, strings: ShareCalStrings) -> some View {
+        switch (state.role, state.currentStep) {
+        case (.initiator, .linkSentBack):
+            ShareLink(item: strings.pairingGuideRemindMessage) {
+                Label(strings.pairingGuideRemindButton(guidePartnerName), systemImage: "bell")
+            }
+            .buttonStyle(OurDaysPrimaryButtonStyle())
+            .accessibilityIdentifier("pairing-guide-remind")
+        default:
+            Button(action: onStartPairing) {
+                Label(guideButtonTitle(for: state, strings: strings), systemImage: guideButtonIcon(for: state))
+            }
+            .buttonStyle(OurDaysPrimaryButtonStyle())
+            .disabled(!isCloudKitEnabled || isPreparingShare)
+            .accessibilityIdentifier("pairing-guide-primary")
+        }
+    }
+
+    private func guideButtonTitle(for state: PairingGuideState, strings: ShareCalStrings) -> String {
+        if isPreparingShare {
+            return strings.startPairingButton(isPreparing: true)
+        }
+        switch (state.role, state.currentStep) {
+        case (.initiator, .firstLinkSent):
+            return strings.startPairingButton(isPreparing: false)
+        case (.receiver, .linkSentBack):
+            return strings.pairingGuideSendBackButton(guidePartnerName)
+        default:
+            return strings.pairingGuideResendButton
+        }
+    }
+
+    private func guideButtonIcon(for state: PairingGuideState) -> String {
+        switch (state.role, state.currentStep) {
+        case (.initiator, .firstLinkSent): "person.badge.plus"
+        case (.receiver, .linkSentBack): "arrowshape.turn.up.left"
+        default: "arrow.clockwise"
+        }
     }
 
     private func iCloudProblemNotice(_ problem: ICloudAvailabilityPolicy.Problem, strings: ShareCalStrings) -> some View {

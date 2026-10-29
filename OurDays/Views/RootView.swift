@@ -13,6 +13,8 @@ enum ShareCalTab {
 enum SettingsFocusTarget: Hashable {
     case calendarAccess
     case pairing
+    /// Scroll to the pairing card and open the invite sheet to send my link back.
+    case shareBack
 }
 
 enum RootSheet: Identifiable, Equatable {
@@ -20,6 +22,7 @@ enum RootSheet: Identifiable, Equatable {
     case existingICloudDataRecovery
     case partnerNotePrompt
     case pairingSafetyNotice
+    case shareBackPrompt
 
     var id: String {
         switch self {
@@ -31,6 +34,8 @@ enum RootSheet: Identifiable, Equatable {
             return "partnerNotePrompt"
         case .pairingSafetyNotice:
             return "pairingSafetyNotice"
+        case .shareBackPrompt:
+            return "shareBackPrompt"
         }
     }
 }
@@ -182,7 +187,12 @@ struct RootView: View {
             }
         }
         .onChange(of: pairingStatus) { _, newStatus in
-            guard newStatus == .paired else { return }
+            if newStatus == .notPaired {
+                // A later pairing, even with the same person, starts the guide over.
+                settings.sentInviteBackToOwnerID = nil
+                settings.shareBackPromptShownForOwnerID = nil
+            }
+            guard newStatus == .paired || newStatus == .waitingForYouToShare else { return }
             Task {
                 await reevaluateRootSheetFlow()
             }
@@ -232,6 +242,21 @@ struct RootView: View {
                 PairingSafetyNoticeSheet {
                     settings.hasShownPairingSafetyNoticeForCurrentPairing = true
                 }
+            case .shareBackPrompt:
+                ShareBackPromptSheet(
+                    partnerName: PairingGuidePolicy.knownPartnerName(
+                        partnerNoteName: settings.partnerNoteName,
+                        partnerSyncedDisplayName: settings.partnerSyncedDisplayName
+                    ),
+                    onSendBack: {
+                        settings.shareBackPromptShownForOwnerID = settings.partnerShareOwnerID
+                        settingsFocus = .shareBack
+                        selectedTab = .settings
+                    },
+                    onLater: {
+                        settings.shareBackPromptShownForOwnerID = settings.partnerShareOwnerID
+                    }
+                )
             }
         }
         .alert(
@@ -460,6 +485,19 @@ struct RootView: View {
         activeRootSheet = .pairingSafetyNotice
     }
 
+    private func presentShareBackPromptIfNeeded() {
+        guard activeRootSheet == nil else { return }
+        // Smoke runs drive both simulators by launch arguments; keep the sheet off them.
+        guard ShareCalLaunchDiagnosticPolicy.seedProfileName() == nil else { return }
+        guard PairingGuidePolicy.shouldPresentShareBackPrompt(
+            status: pairingStatus,
+            partnerShareOwnerID: settings.partnerShareOwnerID,
+            sentInviteBackToOwnerID: settings.sentInviteBackToOwnerID,
+            shareBackPromptShownForOwnerID: settings.shareBackPromptShownForOwnerID
+        ) else { return }
+        activeRootSheet = .shareBackPrompt
+    }
+
     @MainActor
     private func presentExistingICloudDataPromptIfNeeded() async {
         guard activeRootSheet == nil else { return }
@@ -517,6 +555,7 @@ struct RootView: View {
         await presentExistingICloudDataPromptIfNeeded()
         presentPartnerNotePromptIfNeeded()
         presentPairingSafetyNoticeIfNeeded()
+        presentShareBackPromptIfNeeded()
     }
 
     @MainActor

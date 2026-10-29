@@ -43,6 +43,14 @@ final class SettingsStore {
     var hasShownPairingSafetyNoticeForCurrentPairing: Bool {
         didSet { defaults.set(hasShownPairingSafetyNoticeForCurrentPairing, forKey: Key.hasShownPairingSafetyNoticeForCurrentPairing) }
     }
+    /// The partner I sent my own invite link back to (receiver side of the pairing guide).
+    var sentInviteBackToOwnerID: String? {
+        didSet { defaults.set(sentInviteBackToOwnerID, forKey: Key.sentInviteBackToOwnerID) }
+    }
+    /// The partner whose share I was last prompted to answer with my own link.
+    var shareBackPromptShownForOwnerID: String? {
+        didSet { defaults.set(shareBackPromptShownForOwnerID, forKey: Key.shareBackPromptShownForOwnerID) }
+    }
     var hasResolvedExistingICloudDataPrompt: Bool {
         didSet { defaults.set(hasResolvedExistingICloudDataPrompt, forKey: Key.hasResolvedExistingICloudDataPrompt) }
     }
@@ -111,6 +119,8 @@ final class SettingsStore {
         }
         hasPromptedPartnerNoteForCurrentPairing = defaults.object(forKey: Key.hasPromptedPartnerNoteForCurrentPairing) as? Bool ?? false
         hasShownPairingSafetyNoticeForCurrentPairing = defaults.object(forKey: Key.hasShownPairingSafetyNoticeForCurrentPairing) as? Bool ?? false
+        sentInviteBackToOwnerID = MemberIDPolicy.normalized(defaults.string(forKey: Key.sentInviteBackToOwnerID))
+        shareBackPromptShownForOwnerID = MemberIDPolicy.normalized(defaults.string(forKey: Key.shareBackPromptShownForOwnerID))
         hasResolvedExistingICloudDataPrompt = defaults.object(forKey: Key.hasResolvedExistingICloudDataPrompt) as? Bool ?? false
         outgoingShareParticipantIDs = defaults.stringArray(forKey: Key.outgoingShareParticipantIDs) ?? []
         pairingConflict = (defaults.data(forKey: Key.pairingConflict)).flatMap {
@@ -248,6 +258,8 @@ final class SettingsStore {
         static let hasCompletedInitialProfilePrompt = "hasCompletedInitialProfilePrompt"
         static let hasPromptedPartnerNoteForCurrentPairing = "hasPromptedPartnerNoteForCurrentPairing"
         static let hasShownPairingSafetyNoticeForCurrentPairing = "hasShownPairingSafetyNoticeForCurrentPairing"
+        static let sentInviteBackToOwnerID = "sentInviteBackToOwnerID"
+        static let shareBackPromptShownForOwnerID = "shareBackPromptShownForOwnerID"
         static let hasResolvedExistingICloudDataPrompt = "hasResolvedExistingICloudDataPrompt"
         static let outgoingShareParticipantIDs = "outgoingShareParticipantIDs"
         static let pairingConflict = "pairingConflict"

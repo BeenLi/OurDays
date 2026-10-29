@@ -368,3 +368,111 @@ enum PartnerScopedDataPolicy {
         requests.filter { !isForeign($0, currentMemberID: currentMemberID, partnerID: partnerID) }
     }
 }
+
+/// Pairing is two link exchanges, not one handshake: each person's calendar lives in
+/// their own iCloud, so each has to hand the other a share link. Whoever sends the
+/// first link is the initiator; the guide shows the same four steps from either side.
+enum PairingGuideRole: Equatable {
+    case initiator
+    case receiver
+}
+
+enum PairingGuideStep: Int, CaseIterable, Equatable {
+    case firstLinkSent = 1
+    case firstLinkAccepted
+    case linkSentBack
+    case linkBackAccepted
+
+    /// Who has to act for this step to complete, seen from `role`.
+    func actor(for role: PairingGuideRole) -> OurDaysPerson {
+        switch (self, role) {
+        case (.firstLinkSent, .initiator), (.linkBackAccepted, .initiator),
+             (.firstLinkAccepted, .receiver), (.linkSentBack, .receiver):
+            return .me
+        default:
+            return .partner
+        }
+    }
+}
+
+enum OurDaysPerson: Equatable {
+    case me
+    case partner
+}
+
+struct PairingGuideState: Equatable {
+    let role: PairingGuideRole
+    /// The step waiting to happen next.
+    let currentStep: PairingGuideStep
+}
+
+enum PairingGuidePolicy {
+    /// `sentInviteBackToOwnerID` is the partner I last sent my own link to while I
+    /// was the receiver. Comparing it to the current partner keeps a stale value from
+    /// an earlier pairing from skipping the share-back step.
+    static func state(
+        status: PairingStatus,
+        partnerShareOwnerID: String?,
+        sentInviteBackToOwnerID: String?
+    ) -> PairingGuideState? {
+        switch status {
+        case .notPaired:
+            return PairingGuideState(role: .initiator, currentStep: .firstLinkSent)
+        case .waitingForPartner:
+            return PairingGuideState(role: .initiator, currentStep: .firstLinkAccepted)
+        case .waitingForPartnerToShare:
+            return PairingGuideState(role: .initiator, currentStep: .linkSentBack)
+        case .waitingForYouToShare:
+            let hasSentBack = hasSentInviteBack(
+                partnerShareOwnerID: partnerShareOwnerID,
+                sentInviteBackToOwnerID: sentInviteBackToOwnerID
+            )
+            return PairingGuideState(role: .receiver, currentStep: hasSentBack ? .linkBackAccepted : .linkSentBack)
+        case .paired:
+            return nil
+        }
+    }
+
+    static func hasSentInviteBack(partnerShareOwnerID: String?, sentInviteBackToOwnerID: String?) -> Bool {
+        guard let partnerID = MemberIDPolicy.normalized(partnerShareOwnerID) else { return false }
+        return partnerID == MemberIDPolicy.normalized(sentInviteBackToOwnerID)
+    }
+
+    /// The one-time "last step: send your link back" sheet, right after I accept the
+    /// partner's link and before I have sent mine.
+    static func shouldPresentShareBackPrompt(
+        status: PairingStatus,
+        partnerShareOwnerID: String?,
+        sentInviteBackToOwnerID: String?,
+        shareBackPromptShownForOwnerID: String?
+    ) -> Bool {
+        guard let partnerID = MemberIDPolicy.normalized(partnerShareOwnerID) else { return false }
+        guard state(
+            status: status,
+            partnerShareOwnerID: partnerID,
+            sentInviteBackToOwnerID: sentInviteBackToOwnerID
+        ) == PairingGuideState(role: .receiver, currentStep: .linkSentBack) else { return false }
+        return MemberIDPolicy.normalized(shareBackPromptShownForOwnerID) != partnerID
+    }
+
+    /// The partner's name when I know one; nil before their profile has synced, so
+    /// copy can say "TA" / "your partner" instead of a placeholder.
+    static func knownPartnerName(partnerNoteName: String?, partnerSyncedDisplayName: String?) -> String? {
+        MemberIDPolicy.normalized(partnerNoteName) ?? MemberIDPolicy.normalized(partnerSyncedDisplayName)
+    }
+}
+
+enum PairingInviteMessagePolicy {
+    static let appStoreURL = URL(string: "https://apps.apple.com/cn/app/id6772868166")!
+
+    /// The text sent with the share link. A bare icloud.com link tells the other person
+    /// nothing, and tapping it without the app, or inside WeChat, opens a web page that
+    /// asks for an iCloud sign-in, so the message says what to do first.
+    static func inviteMessage(shareURL: URL, isSendingBack: Bool, strings: ShareCalStrings) -> String {
+        strings.pairingInviteMessage(
+            appStoreURL: appStoreURL.absoluteString,
+            shareURL: shareURL.absoluteString,
+            isSendingBack: isSendingBack
+        )
+    }
+}

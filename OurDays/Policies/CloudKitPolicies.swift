@@ -383,7 +383,7 @@ enum ICloudAvailabilityPolicy {
 /// which can only ask for an Apple ID sign-in. Pasting hands the same URL to
 /// `CKContainer.fetchShareMetadata` directly, using the device's own iCloud session.
 enum ShareInvitationLinkPolicy {
-    enum Failure: Equatable {
+    enum Failure: Error, Equatable {
         case noLinkFound
         case ownLink
         case iCloudUnavailable

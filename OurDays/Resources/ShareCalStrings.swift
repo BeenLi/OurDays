@@ -277,8 +277,8 @@ struct ShareCalStrings {
     var unpairConfirmationTitle: String { text("Unpair?", "解除配对？") }
     var unpairConfirmationMessage: String {
         text(
-            "After unpairing, you will no longer be able to view each other's calendars. To pair with someone else, unpair first.",
-            "解除后，你们将不能继续互相查看日历。要和其他人配对，需要先解除当前配对。"
+            "You'll stop seeing each other's calendars. Your own OurDays data stays in your iCloud, so you can pair again later, with them or someone else.",
+            "你们将互相看不到日程。你自己的 OurDays 数据仍留在你的 iCloud 里，之后可以重新配对，和 TA 或其他人都行。"
         )
     }
     var unpairSucceeded: String { text("Unpaired.", "已解除配对。") }

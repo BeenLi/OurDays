@@ -184,7 +184,7 @@ OurDays/
 ├── OurDays.xcodeproj              scheme OurDays（全部）与 OurDaysTests（只跑单测）；App、单测、UI 测试三个 target
 ├── CloudKit/ShareCalSchema.ckdb   CloudKit schema 源文件
 ├── Scripts/                       CloudKit schema 导入、双模拟器配对冒烟脚本、App Store / TestFlight 导出配置
-├── docs/                          开发流程、隐私政策、官网源码（docs/site）、README 架构图源文件（docs/diagrams）、审核记录、规划树（docs/plantree）
+├── docs/                          开发流程、隐私政策、官网源码（docs/site）、README 架构图源文件（docs/diagrams）、审核记录、设计决策记录（docs/plantree）
 ├── .github/workflows/ios-ci.yml   CI：macOS runner 构建并跑全部测试
 └── CLAUDE.md                      代码架构与约定（身份模型、CloudKit 布局、Policy 约定）
 ```

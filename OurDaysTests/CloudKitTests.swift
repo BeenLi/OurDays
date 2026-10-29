@@ -551,6 +551,49 @@ final class CloudKitRootLookupPolicyTests: XCTestCase {
     }
 }
 
+final class CloudKitZoneReadinessTests: XCTestCase {
+    func testZoneMissingErrorsForgetTheConfirmedZone() {
+        let zoneNotFound = NSError(domain: CKError.errorDomain, code: CKError.Code.zoneNotFound.rawValue)
+        let userDeletedZone = NSError(domain: CKError.errorDomain, code: CKError.Code.userDeletedZone.rawValue)
+        let partial = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.partialFailure.rawValue,
+            userInfo: [CKPartialErrorsByItemIDKey: ["mirror": zoneNotFound]]
+        )
+
+        XCTAssertTrue(CloudKitZoneReadinessPolicy.meansZoneMissing(zoneNotFound))
+        XCTAssertTrue(CloudKitZoneReadinessPolicy.meansZoneMissing(userDeletedZone))
+        XCTAssertTrue(CloudKitZoneReadinessPolicy.meansZoneMissing(partial))
+    }
+
+    func testOtherFailuresKeepTheConfirmedZone() {
+        let unknownItem = NSError(domain: CKError.errorDomain, code: CKError.Code.unknownItem.rawValue)
+        let networkFailure = NSError(domain: CKError.errorDomain, code: CKError.Code.networkFailure.rawValue)
+        let partial = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.partialFailure.rawValue,
+            userInfo: [CKPartialErrorsByItemIDKey: ["mirror": unknownItem]]
+        )
+
+        XCTAssertFalse(CloudKitZoneReadinessPolicy.meansZoneMissing(unknownItem))
+        XCTAssertFalse(CloudKitZoneReadinessPolicy.meansZoneMissing(networkFailure))
+        XCTAssertFalse(CloudKitZoneReadinessPolicy.meansZoneMissing(partial))
+        XCTAssertFalse(CloudKitZoneReadinessPolicy.meansZoneMissing(NSError(domain: "other", code: 26)))
+    }
+
+    func testReadinessIsRememberedPerContainerUntilReset() {
+        let readiness = CloudKitZoneReadiness()
+        XCTAssertFalse(readiness.isReady("a"))
+
+        readiness.markReady("a")
+        XCTAssertTrue(readiness.isReady("a"))
+        XCTAssertFalse(readiness.isReady("b"))
+
+        readiness.reset("a")
+        XCTAssertFalse(readiness.isReady("a"))
+    }
+}
+
 final class CloudKitSharePermissionPolicyTests: XCTestCase {
     func testConfiguresShareForInviteLinksUntilPartnerJoins() {
         let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")

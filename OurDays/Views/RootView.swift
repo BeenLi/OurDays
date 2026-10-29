@@ -62,7 +62,7 @@ struct RootView: View {
         PairingSettingsPolicy.status(
             hasStartedPairing: settings.hasStartedPairing,
             outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
-            incomingOwnerID: settings.partnerShareOwnerID
+            incomingOwnerID: settings.displayedIncomingOwnerID
         )
     }
 
@@ -152,6 +152,15 @@ struct RootView: View {
         }
         .onChange(of: unreadActivityCount) { _, _ in syncAppIconBadge() }
         .onChange(of: pendingInviteBadgeCount) { _, _ in syncAppIconBadge() }
+        .onReceive(NotificationCenter.default.publisher(for: ShareCalShareAcceptanceProgressSignal.startedNotificationName)) { notification in
+            showAcceptanceStarted(ownerID: ShareCalShareAcceptanceProgressSignal.ownerID(in: notification))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ShareCalShareAcceptanceProgressSignal.failedNotificationName)) { notification in
+            guard let ownerID = ShareCalShareAcceptanceProgressSignal.ownerID(in: notification),
+                  settings.acceptingShareOwnerID == ownerID else { return }
+            settings.acceptingShareOwnerID = nil
+            settings.shareAcceptanceFailureMessage = ShareCalShareAcceptanceProgressSignal.message(in: notification)
+        }
         .onReceive(NotificationCenter.default.publisher(for: ShareCalAcceptedShareSignal.notificationName)) { _ in
             Task {
                 checkPendingShareReplacement()
@@ -578,8 +587,27 @@ struct RootView: View {
 
     /// Shows the accepted partner (step 3) at once instead of after a running sync
     /// finishes; the bump makes that sync drop its pre-accept view of the pairing.
+    /// Apple's accept takes seconds; show the next step now and, while it runs, make the
+    /// link I will send back so that sheet opens at once. Neither needs the accept: the
+    /// card only reads `acceptingShareOwnerID`, and my share exists apart from theirs.
+    @MainActor
+    private func showAcceptanceStarted(ownerID: String?) {
+        guard let ownerID, settings.partnerShareOwnerID == nil else { return }
+        settings.shareAcceptanceFailureMessage = nil
+        settings.acceptingShareOwnerID = ownerID
+        guard settings.outgoingShareParticipantIDs.isEmpty,
+              settings.hasSyncedMemberID,
+              let cloudKit = services.cloudKitIfAvailable else { return }
+        let ownerMemberID = settings.currentMemberID
+        ShareCalOutgoingSharePrewarm.shared.start(key: ownerMemberID) {
+            try await cloudKit.prepareShare(ownerMemberID: ownerMemberID)
+        }
+    }
+
     @MainActor
     private func applyAcceptedPartnerNow() {
+        settings.acceptingShareOwnerID = nil
+        settings.shareAcceptanceFailureMessage = nil
         guard let ownerID = ShareCalAcceptedShareSignal.pendingPartnerOwnerID(),
               ownerID != MemberIDPolicy.normalized(settings.partnerShareOwnerID) else { return }
         settings.localPairingChangeCount += 1
@@ -680,6 +708,7 @@ struct RootView: View {
             )
         }
 
+        ShareCalOutgoingSharePrewarm.shared.discard()
         try await cloudKit.deleteICloudData(ownerMemberID: settings.currentMemberID)
         try ShareCalLocalDataCleanupService.purge(modelContext: modelContext)
         settings.clearPairingState()

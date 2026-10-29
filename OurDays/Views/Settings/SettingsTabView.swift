@@ -44,7 +44,6 @@ struct SettingsTabView: View {
     @State private var isPreparingShare = false
     @State private var iCloudProblem: ICloudAvailabilityPolicy.Problem?
     @State private var isAcceptingInviteLink = false
-    @State private var inviteLinkMessage: String?
     @State private var isStoppingShare = false
     @State private var isDeletingICloudData = false
     @State private var activeSharePreparationID: UUID?
@@ -61,8 +60,9 @@ struct SettingsTabView: View {
     private var pairingGuideState: PairingGuideState? {
         PairingGuidePolicy.state(
             status: pairingStatus,
-            partnerShareOwnerID: settings.partnerShareOwnerID,
-            sentInviteBackToOwnerID: settings.sentInviteBackToOwnerID
+            partnerShareOwnerID: settings.displayedIncomingOwnerID,
+            sentInviteBackToOwnerID: settings.sentInviteBackToOwnerID,
+            isConfirmingAccept: settings.isConfirmingShareAcceptance
         )
     }
 
@@ -81,7 +81,7 @@ struct SettingsTabView: View {
         PairingSettingsPolicy.status(
             hasStartedPairing: settings.hasStartedPairing,
             outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
-            incomingOwnerID: settings.partnerShareOwnerID
+            incomingOwnerID: settings.displayedIncomingOwnerID
         )
     }
 
@@ -205,7 +205,7 @@ struct SettingsTabView: View {
             cloudKitDiagnosticMessage: cloudKitDiagnosticMessage,
             iCloudProblem: iCloudProblem,
             isAcceptingInviteLink: isAcceptingInviteLink,
-            inviteLinkMessage: inviteLinkMessage,
+            inviteLinkMessage: settings.shareAcceptanceFailureMessage,
             guideState: pairingGuideState,
             guidePartnerName: guidePartnerName,
             onStartPairing: {
@@ -215,7 +215,7 @@ struct SettingsTabView: View {
                 activeSettingsSheet = .inviteHelp
             },
             onPasteInviteLink: {
-                inviteLinkMessage = nil
+                settings.shareAcceptanceFailureMessage = nil
                 activeSettingsSheet = .acceptInvite
             },
             onCheckCloudKitStatus: {
@@ -234,10 +234,6 @@ struct SettingsTabView: View {
                 cloudKitDiagnosticMessage = nil
             }
         )
-        .onChange(of: pairingStatus) { _, _ in
-            // "Joining…" or a paste error belongs to the step it was shown on.
-            inviteLinkMessage = nil
-        }
     }
 
     private func inviteSheet(for draft: PairingInviteDraft) -> some View {
@@ -524,7 +520,7 @@ struct SettingsTabView: View {
                 AcceptInviteLinkSheet(
                     lookUp: { url in await lookUpInvite(url) },
                     knownName: { ownerID in knownInviterName(ownerID) },
-                    completesPairing: { ownerID in await inviteCompletesPairing(ownerID) },
+                    outgoingParticipantIDs: { await fetchOutgoingParticipantIDs() },
                     onAccept: { metadata in acceptInvite(metadata) }
                 )
             case .partnerAvatar:
@@ -789,7 +785,9 @@ struct SettingsTabView: View {
             if !settings.hasSyncedMemberID {
                 settings.currentMemberID = try await cloudKit.fetchCurrentUserRecordID()
             }
-            let share = try await cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
+            let share = try await ShareCalOutgoingSharePrewarm.shared.take(key: settings.currentMemberID) {
+                try await cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
+            }
             guard activeSharePreparationID == preparationID else { return }
             settings.outgoingShareParticipantIDs = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(
                 from: share.share
@@ -861,13 +859,12 @@ struct SettingsTabView: View {
 
     /// Asks CloudKit who has joined my share rather than trusting the last sync: the
     /// inviter may have accepted my letter since, and then this one completes pairing.
-    private func inviteCompletesPairing(_ ownerID: String) async -> Bool {
-        var participantIDs = settings.outgoingShareParticipantIDs
+    private func fetchOutgoingParticipantIDs() async -> [String] {
         if let cloudKit = services.cloudKitIfAvailable,
            let fetched = try? await cloudKit.fetchOutgoingShareParticipantIDs(ownerMemberID: settings.currentMemberID) {
-            participantIDs = fetched
+            return fetched
         }
-        return PairingGuidePolicy.inviteCompletesPairing(inviterID: ownerID, outgoingParticipantIDs: participantIDs)
+        return settings.outgoingShareParticipantIDs
     }
 
     /// A nickname only for someone already on one half of this pairing; a stranger's
@@ -895,19 +892,19 @@ struct SettingsTabView: View {
             ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
             return
         }
-        // The button itself shows "joining…" until CloudKit has accepted.
+        // The card moves to the next step at once, marked "confirming with iCloud" until
+        // CloudKit has accepted. A failure steps back, and RootView shows the error. Set
+        // here as well as on the handler's signal, which lands a hop later: otherwise step 1
+        // flashes "joining…" while the paste sheet closes.
+        settings.shareAcceptanceFailureMessage = nil
+        settings.acceptingShareOwnerID = MemberIDPolicy.normalized(incomingOwnerID)
         isAcceptingInviteLink = true
-        inviteLinkMessage = nil
         Task {
             defer { isAcceptingInviteLink = false }
-            do {
-                try await ShareCalCloudKitShareAcceptanceHandler.acceptNow(
-                    metadata: metadata,
-                    incomingOwnerID: incomingOwnerID
-                )
-            } catch {
-                inviteLinkMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
-            }
+            try? await ShareCalCloudKitShareAcceptanceHandler.acceptNow(
+                metadata: metadata,
+                incomingOwnerID: incomingOwnerID
+            )
         }
     }
 
@@ -949,6 +946,7 @@ struct SettingsTabView: View {
         isStoppingShare = true
         defer { isStoppingShare = false }
 
+        ShareCalOutgoingSharePrewarm.shared.discard()
         do {
             try await cloudKit.stopSharing(ownerMemberID: settings.currentMemberID)
         } catch {
@@ -994,6 +992,7 @@ struct SettingsTabView: View {
         defer { isDeletingICloudData = false }
 
         do {
+            ShareCalOutgoingSharePrewarm.shared.discard()
             try await cloudKit.deleteICloudData(ownerMemberID: settings.currentMemberID)
             try ShareCalLocalDataCleanupService.purge(modelContext: modelContext)
             cloudKitDiagnosticMessage = nil

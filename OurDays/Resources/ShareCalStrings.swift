@@ -885,6 +885,7 @@ extension ShareCalStrings {
     /// The chip on the card once I have sent my link back: the status alone still reads
     /// "waiting for you to share", which contradicts the headline.
     var pairingGuideWaitingForPartnerToOpenChip: String { text("Waiting for Partner to Open", "等待对方点开") }
+    var pairingGuideConfirmingAccept: String { text("Confirming with iCloud…", "正在和 iCloud 确认…") }
 
     /// Chinese wraps between any two characters; a word joiner keeps a short verb
     /// phrase such as 回寄 on one line in the large guide headlines.

@@ -5,7 +5,7 @@
 ## 1. 站点域名 → 先删 beenli.cn 恢复 github.io；后改用 leeberty.uk（Cloudflare）
 - 背景：`beenli.cn` 在 DNS 注册局层面已无委派（`dig @8.8.8.8 beenli.cn A/NS` 全空，SOA 落在 `cn.` 父级），GitHub Pages 对 `CNAME=beenli.cn` 的 301 强制跳转使 `beenli.github.io` 一并不可达。
 - 第一步决策（已执行）：删除仓库 `CNAME` 文件并清空 Pages 自定义域名，站点恢复为 `https://beenli.github.io/`。放弃 `beenli.cn`（不续费/不恢复）。
-- **更新（2026-06-17，超越上条）**：用户新购 `leeberty.uk`（托管在 Cloudflare），决定接为整站 apex 自定义域名。见 [Track C](../roadmap.md)。最终站点 = `https://leeberty.uk/`，ShareCal = `https://leeberty.uk/sharecal/`。
+- **更新（2026-06-17，超越上条）**：用户新购 `leeberty.uk`（托管在 Cloudflare），决定接为整站 apex 自定义域名。见 Track C。最终站点 = `https://leeberty.uk/`，ShareCal = `https://leeberty.uk/sharecal/`。
   - 加速预期：Cloudflare 免费版无中国大陆节点（需企业版 + ICP），`.uk` 不可备案 ⇒ 对国内仅边缘缓存/稳定性收益，非大幅提速；境外良好。
   - 关键配置：apex A→GitHub Pages 4 IP + AAAA + `www` CNAME→`beenli.github.io`；先灰云签发 GitHub 证书（已 approved，Enforce HTTPS on），后翻橙云代理；Cloudflare SSL=Full + Always Use HTTPS=on。
 

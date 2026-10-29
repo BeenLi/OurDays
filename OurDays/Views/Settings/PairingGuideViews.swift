@@ -40,6 +40,17 @@ struct PairingProgressGuide: View {
 
             progressLine(strings: strings)
                 .accessibilityHidden(true)
+
+            if state.isConfirmingAccept {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(strings.pairingGuideConfirmingAccept)
+                        .font(.footnote)
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("pairing-guide-confirming")
+            }
         }
         .accessibilityIdentifier("pairing-guide")
     }
@@ -438,8 +449,9 @@ struct AcceptInviteLinkSheet: View {
     /// The OurDays nickname for an inviter this device already knows, else nil ("TA").
     /// Never the Apple ID name in the share metadata: partners appear by nickname only.
     let knownName: (_ ownerID: String) -> String?
-    /// Whether the inviter has already accepted my letter, so this one completes pairing.
-    let completesPairing: (_ ownerID: String) async -> Bool
+    /// Who has joined my share, asked of CloudKit rather than the last sync. Runs alongside
+    /// `lookUp`: neither needs the other, and in a row they cost two waits instead of one.
+    let outgoingParticipantIDs: () async -> [String]
     let onAccept: (CKShare.Metadata) -> Void
 
     @State private var text = ""
@@ -603,13 +615,17 @@ struct AcceptInviteLinkSheet: View {
     private func look(up url: URL) async {
         isLookingUp = true
         defer { isLookingUp = false }
+        async let participantIDs = outgoingParticipantIDs()
         switch await lookUp(url) {
         case .success(let metadata):
             let ownerID = metadata.share.recordID.zoneID.ownerName
             invite = FoundInvite(
                 metadata: metadata,
                 ownerName: knownName(ownerID),
-                completesPairing: await completesPairing(ownerID)
+                completesPairing: PairingGuidePolicy.inviteCompletesPairing(
+                    inviterID: ownerID,
+                    outgoingParticipantIDs: await participantIDs
+                )
             )
         case .failure(let failure):
             self.failure = failure

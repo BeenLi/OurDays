@@ -119,6 +119,14 @@ final class CloudKitCoupleSpaceService {
     var privateDatabase: CKDatabase { container.privateCloudDatabase }
     var sharedDatabase: CKDatabase { container.sharedCloudDatabase }
 
+    func accountStatus() async -> CKAccountStatus {
+        await withCheckedContinuation { continuation in
+            container.accountStatus { status, _ in
+                continuation.resume(returning: status)
+            }
+        }
+    }
+
     func accountDiagnostic() async -> CloudKitAccountDiagnostic {
         let (status, accountError) = await withCheckedContinuation { continuation in
             container.accountStatus { status, error in
@@ -244,7 +252,7 @@ final class CloudKitCoupleSpaceService {
     }
 
     /// Resolves a share invitation URL to its metadata, bypassing the system
-    /// acceptance prompt (used by the scripted two-device smoke test).
+    /// acceptance prompt (used for pasted invite links and the scripted two-device smoke test).
     func fetchShareMetadata(from url: URL) async throws -> CKShare.Metadata {
         try await withCheckedThrowingContinuation { continuation in
             container.fetchShareMetadata(with: url) { metadata, error in

@@ -33,8 +33,11 @@ enum CloudKitExpectedConfigurationPolicy {
 
 enum CloudKitSharePermissionPolicy {
     static let linkInvitationPublicPermission: CKShare.ParticipantPermission = .readWrite
+    /// Link-only on purpose: offering `.allowPrivate` lets the inviter flip Apple's sheet to
+    /// "Only invited people", which makes the link open only for the iCloud account behind
+    /// the chosen phone/email (the recipient is told to sign in to iCloud), and on a live
+    /// share closes the link, which removes the partner who joined through it.
     static let controllerAvailablePermissions: UICloudSharingController.PermissionOptions = [
-        .allowPrivate,
         .allowPublic,
         .allowReadWrite
     ]
@@ -346,5 +349,84 @@ enum CloudKitExPartnerCleanupPolicy {
             MemberIDPolicy.normalized(record[CommentRecordMapper.Key.authorMemberID] as? String) != me
         }
         return (foreignComments + invitationRecords).map(\.recordID)
+    }
+}
+
+/// Whether this device can use iCloud for OurDays, in terms the user can act on.
+/// `.noAccount` covers both "not signed in" and "signed in, but iCloud is switched off
+/// for this app" (Settings → iCloud → Saved to iCloud → OurDays). The second case is the
+/// surprising one: system apps like Notes keep working on their own switches, while
+/// tapping an OurDays invite link asks to sign in to iCloud.
+enum ICloudAvailabilityPolicy {
+    enum Problem: Equatable {
+        case unavailableForApp
+        case restricted
+        case needsReauthentication
+    }
+
+    static func problem(for status: CKAccountStatus) -> Problem? {
+        switch status {
+        case .noAccount:
+            .unavailableForApp
+        case .restricted:
+            .restricted
+        case .temporarilyUnavailable:
+            .needsReauthentication
+        default:
+            nil
+        }
+    }
+}
+
+/// Accepting an invite link pasted into the app. A link tapped inside WeChat (or any
+/// in-app browser) never reaches iOS's share handling: it opens the icloud.com web page,
+/// which can only ask for an Apple ID sign-in. Pasting hands the same URL to
+/// `CKContainer.fetchShareMetadata` directly, using the device's own iCloud session.
+enum ShareInvitationLinkPolicy {
+    enum Failure: Equatable {
+        case noLinkFound
+        case ownLink
+        case iCloudUnavailable
+        case linkNoLongerValid
+        case inviteOnly
+        case other(String)
+    }
+
+    /// The first `icloud.com/share/…` URL in the pasted text (chat apps often wrap the
+    /// link in a sentence).
+    static func shareURL(from text: String) -> URL? {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return nil
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return detector.matches(in: text, range: range)
+            .compactMap(\.url)
+            .first(where: isShareURL)
+    }
+
+    static func isShareURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              host == "icloud.com" || host.hasSuffix(".icloud.com") else {
+            return false
+        }
+        return url.path.hasPrefix("/share/")
+    }
+
+    static func failure(for error: Error) -> Failure {
+        let nsError = error as NSError
+        guard nsError.domain == CKError.errorDomain else {
+            return .other(error.localizedDescription)
+        }
+        switch CKError.Code(rawValue: nsError.code) {
+        case .notAuthenticated:
+            return .iCloudUnavailable
+        case .unknownItem:
+            return .linkNoLongerValid
+        case .participantMayNeedVerification:
+            return .inviteOnly
+        default:
+            return .other(error.localizedDescription)
+        }
     }
 }

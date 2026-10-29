@@ -996,7 +996,11 @@ struct SettingsTabView: View {
             return
         }
         // The card moves to the next step at once, marked "confirming with iCloud" until
-        // CloudKit has accepted. A failure steps back, and RootView shows the error.
+        // CloudKit has accepted. A failure steps back, and RootView shows the error. Set
+        // here as well as on the handler's signal, which lands a hop later: otherwise step 1
+        // flashes "joining…" while the paste sheet closes.
+        settings.shareAcceptanceFailureMessage = nil
+        settings.acceptingShareOwnerID = MemberIDPolicy.normalized(incomingOwnerID)
         isAcceptingInviteLink = true
         Task {
             defer { isAcceptingInviteLink = false }

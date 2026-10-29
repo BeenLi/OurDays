@@ -224,10 +224,6 @@ enum PairingSafetyEducationPolicy {
         guard hasPromptedPartnerNoteForCurrentPairing else { return false }
         return !hasShownPairingSafetyNoticeForCurrentPairing
     }
-
-    static func shouldShowPersistentWarning(pairingStatus: PairingStatus) -> Bool {
-        pairingStatus != .notPaired
-    }
 }
 
 enum SharedPeoplePresentationPolicy {

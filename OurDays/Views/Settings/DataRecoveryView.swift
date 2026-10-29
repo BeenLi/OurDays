@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// 我们 › 数据与恢复: the rows needed only when reinstalling, troubleshooting a pairing or
-/// starting over. They used to sit on the 我们 tab itself, between the everyday settings.
+/// 我们 › 数据与恢复: the rows needed only when troubleshooting a pairing or starting
+/// over, moved off the 我们 tab so they don't sit between the everyday settings.
+/// Reinstalling needs nothing here: the first launch asks whether to keep the
+/// existing iCloud data.
 struct DataRecoveryView: View {
     @Environment(SettingsStore.self) private var settings
-    let showsReinstallNote: Bool
     let isPreparingShare: Bool
     let canOpenSharedPeople: Bool
     let isDeletingICloudData: Bool
@@ -18,21 +19,6 @@ struct DataRecoveryView: View {
         let strings = settings.strings
 
         List {
-            if showsReinstallNote {
-                Section(strings.reinstallSection) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(strings.pairingSafetyPersistentWarningTitle)
-                            .font(.subheadline.weight(.semibold))
-                        Text(strings.pairingSafetyPersistentWarningMessage)
-                            .font(.subheadline)
-                            .foregroundStyle(OurDaysTheme.secondaryInk)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.vertical, 4)
-                }
-                .listRowBackground(OurDaysTheme.surface)
-            }
-
             Section {
                 SettingsNavigationRow(
                     title: strings.sharedPeopleRowTitle,

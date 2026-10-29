@@ -282,16 +282,6 @@ struct ShareCalStrings {
         )
     }
     var unpairSucceeded: String { text("Unpaired.", "已解除配对。") }
-    var pairingSafetySection: String { text("If You Reinstall", "重装提醒") }
-    var pairingSafetyPersistentWarningTitle: String {
-        text("Deleting the app does not delete your shared data.", "删除 App 不会丢失共享数据。")
-    }
-    var pairingSafetyPersistentWarningMessage: String {
-        text(
-            "Your pairing, comments and invitations live in your own iCloud. After a reinstall, choose “Keep Existing iCloud Data” on first launch to get them back. Removing OurDays iCloud data will not delete your original calendars or events in the system Calendar app.",
-            "配对、评论和邀请都保存在你自己的 iCloud 里。重装后首次启动时选择「继续使用现有 iCloud 数据」即可找回。删除 OurDays 的 iCloud 数据不会删除系统日历中的原始日历或事件。"
-        )
-    }
     var pairingConflictTitle: String { text("Pairing Conflict", "配对冲突") }
     var pairingConflictMismatchMessage: String {
         text(
@@ -659,8 +649,7 @@ struct ShareCalStrings {
         text("Requested \(rangeText) · \(statusText)", "已申请 \(rangeText) · \(statusText)")
     }
     var dataRecoveryTitle: String { text("Data & Recovery", "数据与恢复") }
-    var dataRecoveryRowValue: String { text("Reinstall, iCloud", "重装、iCloud") }
-    var reinstallSection: String { text("Reinstalling the App", "重装 App") }
+    var dataRecoveryRowValue: String { text("Troubleshoot, reset", "排查、重置") }
     var troubleshootingSection: String { text("Troubleshooting", "排查") }
     var startOverSection: String { text("Start Over", "从头开始") }
     var sharedPeopleFootnote: String {

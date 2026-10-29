@@ -568,12 +568,6 @@ final class PairingSafetyEducationPolicyTests: XCTestCase {
             )
         )
     }
-
-    func testShowsPersistentWarningOnlyWhenPairingIsActive() {
-        XCTAssertFalse(PairingSafetyEducationPolicy.shouldShowPersistentWarning(pairingStatus: .notPaired))
-        XCTAssertTrue(PairingSafetyEducationPolicy.shouldShowPersistentWarning(pairingStatus: .waitingForPartner))
-        XCTAssertTrue(PairingSafetyEducationPolicy.shouldShowPersistentWarning(pairingStatus: .paired))
-    }
 }
 
 final class SharedPeoplePresentationPolicyTests: XCTestCase {

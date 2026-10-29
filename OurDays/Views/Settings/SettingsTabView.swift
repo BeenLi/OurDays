@@ -173,7 +173,6 @@ struct SettingsTabView: View {
 
     private var dataRecoveryView: some View {
         DataRecoveryView(
-            showsReinstallNote: PairingSafetyEducationPolicy.shouldShowPersistentWarning(pairingStatus: pairingStatus),
             isPreparingShare: isPreparingShare,
             canOpenSharedPeople: SharedPeoplePresentationPolicy.canOpenOfficialSharing(
                 isCloudKitEnabled: services.isCloudKitEnabled,

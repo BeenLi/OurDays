@@ -331,17 +331,12 @@ log "Owner sees BOTH comments ✓ (joint comment thread is symmetric)"
 # devices), so the owner can start the thread before the mirror has synced; the mirror lands
 # on the following sync and the partner finds the comment under the imported event. The
 # partner's reply goes into the owner's shared zone, and the owner reads it back.
-OWN_EVENT_TITLE="Own Comment Event"
+# A title of its own per run: the comment diags pick the first event (and cloud mirror)
+# with this title, and mirrors from earlier runs outside the sync window are never
+# tombstoned, so a shared title can resolve to an old run's event.
+OWN_EVENT_TITLE="Own Comment Event $RANDOM"
 OWN_COMMENT="own-first-$RANDOM"
 OWN_REPLY="partner-on-own-$RANDOM"
-
-# Earlier runs (or an interrupted one) leave events with this title behind; the comment
-# diag picks the first match, which can predate the pairing day and fall outside the
-# sharing window. Start from none.
-log "Owner: removing leftover '$OWN_EVENT_TITLE' events from earlier runs..."
-launch_app "$OWNER_UDID" "owner-own-cleanup" -ShareCalDeleteCalendarEventTitled "$OWN_EVENT_TITLE"
-wait_for_console "$CONSOLE_LOG" "ShareCalDiag deleteCalendarEvent succeeded title=.* count=[0-9]" $DIAG_TIMEOUT \
-  "owner removes leftover own-comment events" >/dev/null
 
 log "Owner: creating a fresh own event and commenting on it right away ('$OWN_COMMENT')..."
 launch_app "$OWNER_UDID" "owner-own-comment" \
@@ -372,6 +367,11 @@ echo "$OWNER_OWN_PROBE2" | grep -q "$OWN_COMMENT" \
 echo "$OWNER_OWN_PROBE2" | grep -q "$OWN_REPLY" \
   || fail "owner did NOT see the partner's reply ('$OWN_REPLY') on its own event. Probe: $OWNER_OWN_PROBE2"
 log "Owner sees BOTH comments on its own event ✓ (own-event thread is symmetric)"
+# Delete it while it is still inside the sync window, so its mirror is tombstoned
+# instead of piling up in the owner's zone run after run.
+launch_app "$OWNER_UDID" "owner-own-cleanup" -ShareCalDeleteCalendarEventTitled "$OWN_EVENT_TITLE"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag deleteCalendarEvent succeeded title=.* count=[1-9]" $DIAG_TIMEOUT \
+  "owner deletes its own-comment event" >/dev/null
 
 # ---------- 10. Joint event UI: tapping the green block opens the comment thread ----------
 # Steps 8-9 prove the comment DATA pipeline; this proves the partner can actually REACH it

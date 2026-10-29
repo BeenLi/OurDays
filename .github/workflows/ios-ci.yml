@@ -34,11 +34,15 @@ jobs:
     timeout-minutes: 30
 
     env:
-      # PRs run only the unit tests (~20 s). The three CI-runnable UI tests cost
-      # ~3 min of runner install + automation-session setup, so they run after
-      # merge on main (and on manual dispatch), where nobody is waiting.
-      # The other three UI tests always XCTSkip outside Scripts/dev-pairing-smoke.sh.
-      ONLY_TESTING: ${{ github.event_name == 'pull_request' && '-only-testing:OurDaysTests' || '' }}
+      # PRs build and run only the unit tests, through the OurDaysTests scheme.
+      # That scheme contains just the hostless test bundle (it compiles the
+      # non-UI sources itself), so a PR never compiles the SwiftUI views, the
+      # asset catalog or the UI test runner. -only-testing alone didn't do that:
+      # build-for-testing still built every target in the OurDays scheme.
+      # The three CI-runnable UI tests run after merge on main (and on manual
+      # dispatch), where nobody is waiting. The other three UI tests always
+      # XCTSkip outside Scripts/dev-pairing-smoke.sh.
+      SCHEME: ${{ github.event_name == 'pull_request' && 'OurDaysTests' || 'OurDays' }}
 
     steps:
       - name: Check out repository
@@ -53,47 +57,79 @@ jobs:
       - name: Skip Apple developer services lookup
         run: sudo sh -c 'echo "127.0.0.1 developerservices2.apple.com" >> /etc/hosts'
 
-      # Start the simulator booting but don't wait: the cold boot (~70 s) now
-      # overlaps the build instead of preceding it.
-      - name: Create and start booting iOS simulator
-        id: simulator
+      # Create the simulator in the background. Creating it took 30 s to 3 min,
+      # and nothing in the build needs it: the build targets the generic
+      # simulator platform (arm64 only, like the device it later runs on).
+      # Booting waits until after the build: a boot running alongside the
+      # compile made the compile itself take minutes longer on the 3-core runner.
+      - name: Start creating the iOS simulator
         run: |
-          set -euo pipefail
+          (
+            set -euo pipefail
 
-          DEVICE_TYPE=$(
-            xcrun simctl list devicetypes \
-              | awk -F '[()]' '/iPhone 16 Pro/ { print $2; exit } /iPhone 16/ { print $2; exit } /iPhone 15/ { print $2; exit } /iPhone/ { print $2; exit }'
-          )
+            # Use the runtime that matches the selected Xcode's simulator SDK. The
+            # image also ships newer runtimes (iOS 26.x next to Xcode 16.4), and
+            # building against a mismatched one made xcodebuild spend minutes
+            # resolving the destination and asking actool for device traits.
+            SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
+            RUNTIME_ID=$(
+              xcrun simctl list runtimes \
+                | awk -F ' - ' -v v="iOS ${SDK_VERSION} " 'index($0, v) == 1 && !/unavailable/ { runtime=$NF } END { print runtime }'
+            )
+            if [[ -z "${RUNTIME_ID}" ]]; then
+              RUNTIME_ID=$(
+                xcrun simctl list runtimes \
+                  | awk -F ' - ' '/iOS/ && !/unavailable/ { runtime=$NF } END { print runtime }'
+              )
+            fi
 
-          RUNTIME_ID=$(
-            xcrun simctl list runtimes \
-              | awk -F ' - ' '/iOS/ && !/unavailable/ { runtime=$NF } END { print runtime }'
-          )
+            # Pick an iPhone the chosen runtime supports (iOS 18 can't run an iPhone 17).
+            DEVICE_TYPE=$(
+              xcrun simctl list runtimes -j | python3 -c '
+          import json, sys
+          rid = sys.argv[1]
+          rt = next((r for r in json.load(sys.stdin)["runtimes"] if r["identifier"] == rid), None)
+          phones = [d for d in (rt or {}).get("supportedDeviceTypes", []) if d.get("productFamily") == "iPhone"]
+          pick = next((d for d in phones if d["name"] == "iPhone 16 Pro"), phones[-1] if phones else None)
+          print(pick["identifier"] if pick else "")
+          ' "${RUNTIME_ID}"
+            )
+            echo "Simulator SDK ${SDK_VERSION}, runtime ${RUNTIME_ID}, device ${DEVICE_TYPE}"
 
-          if [[ -z "${DEVICE_TYPE}" || -z "${RUNTIME_ID}" ]]; then
-            echo "No available iOS simulator device type or runtime found." >&2
-            xcrun simctl list runtimes >&2
-            exit 1
-          fi
+            if [[ -z "${DEVICE_TYPE}" || -z "${RUNTIME_ID}" ]]; then
+              echo "No available iOS simulator device type or runtime found." >&2
+              xcrun simctl list runtimes >&2
+              exit 1
+            fi
 
-          SIMULATOR_UDID=$(xcrun simctl create "OurDays CI iPhone" "${DEVICE_TYPE}" "${RUNTIME_ID}")
-          xcrun simctl boot "${SIMULATOR_UDID}" || true
-
-          echo "udid=${SIMULATOR_UDID}" >> "${GITHUB_OUTPUT}"
+            SIMULATOR_UDID=$(xcrun simctl create "OurDays CI iPhone" "${DEVICE_TYPE}" "${RUNTIME_ID}")
+            echo "${SIMULATOR_UDID}" > "${RUNNER_TEMP}/simulator-udid"
+          ) > "${RUNNER_TEMP}/simulator.log" 2>&1 &
 
       - name: Build for testing
         run: |
           set -euo pipefail
           xcodebuild build-for-testing \
             -project OurDays.xcodeproj \
-            -scheme OurDays \
-            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -scheme "${SCHEME}" \
+            -destination "generic/platform=iOS Simulator" \
             -derivedDataPath "${RUNNER_TEMP}/OurDaysDerivedData" \
-            ${ONLY_TESTING} \
+            ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Wait for simulator boot
-        run: xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
+      - name: Boot the simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 300); do
+            [[ -s "${RUNNER_TEMP}/simulator-udid" ]] && break
+            sleep 1
+          done
+          cat "${RUNNER_TEMP}/simulator.log"
+          SIMULATOR_UDID=$(cat "${RUNNER_TEMP}/simulator-udid")
+          xcrun simctl boot "${SIMULATOR_UDID}"
+          xcrun simctl bootstatus "${SIMULATOR_UDID}" -b
+          echo "udid=${SIMULATOR_UDID}" >> "${GITHUB_OUTPUT}"
 
       - name: Run tests
         run: |
@@ -109,10 +145,9 @@ jobs:
           # on makes xcodebuild clone the simulator first, which costs more than it saves.
           xcodebuild test-without-building \
             -project OurDays.xcodeproj \
-            -scheme OurDays \
+            -scheme "${SCHEME}" \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
             -derivedDataPath "${RUNNER_TEMP}/OurDaysDerivedData" \
-            ${ONLY_TESTING} \
             -parallel-testing-enabled NO \
             -retry-tests-on-failure \
             -test-iterations 3

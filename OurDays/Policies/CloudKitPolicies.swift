@@ -16,6 +16,24 @@ enum CloudKitRootLookupPolicy {
     }
 }
 
+/// Whether a failure says my private CoupleSpace zone is gone (deleted from another
+/// device, or another Apple ID signed in), so the zone has to be created again.
+enum CloudKitZoneReadinessPolicy {
+    static func meansZoneMissing(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == CKError.errorDomain else { return false }
+        switch CKError.Code(rawValue: nsError.code) {
+        case .zoneNotFound, .userDeletedZone:
+            return true
+        case .partialFailure:
+            let partialErrors = nsError.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error] ?? [:]
+            return partialErrors.values.contains { meansZoneMissing($0) }
+        default:
+            return false
+        }
+    }
+}
+
 enum CloudKitShareRootState {
     case existing
     case created

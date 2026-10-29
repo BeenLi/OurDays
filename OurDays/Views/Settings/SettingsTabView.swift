@@ -595,7 +595,7 @@ struct SettingsTabView: View {
                 AcceptInviteLinkSheet(
                     lookUp: { url in await lookUpInvite(url) },
                     knownName: { ownerID in knownInviterName(ownerID) },
-                    completesPairing: { ownerID in await inviteCompletesPairing(ownerID) },
+                    outgoingParticipantIDs: { await fetchOutgoingParticipantIDs() },
                     onAccept: { metadata in acceptInvite(metadata) }
                 )
             case .partnerAvatar:
@@ -964,13 +964,12 @@ struct SettingsTabView: View {
 
     /// Asks CloudKit who has joined my share rather than trusting the last sync: the
     /// inviter may have accepted my letter since, and then this one completes pairing.
-    private func inviteCompletesPairing(_ ownerID: String) async -> Bool {
-        var participantIDs = settings.outgoingShareParticipantIDs
+    private func fetchOutgoingParticipantIDs() async -> [String] {
         if let cloudKit = services.cloudKitIfAvailable,
            let fetched = try? await cloudKit.fetchOutgoingShareParticipantIDs(ownerMemberID: settings.currentMemberID) {
-            participantIDs = fetched
+            return fetched
         }
-        return PairingGuidePolicy.inviteCompletesPairing(inviterID: ownerID, outgoingParticipantIDs: participantIDs)
+        return settings.outgoingShareParticipantIDs
     }
 
     /// A nickname only for someone already on one half of this pairing; a stranger's

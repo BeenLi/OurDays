@@ -991,6 +991,16 @@ struct SettingsTabView: View {
         } catch {
             cleanupError = error
         }
+        // Pairing is two shares. Deleting mine only takes back my half; also leave the
+        // partner's share, or they still see me on theirs and sit at "waiting for your
+        // partner to share" instead of going back to not paired.
+        do {
+            try await cloudKit.deleteAcceptedSharedZones(
+                ownerIDs: [settings.partnerShareOwnerID].compactMap { MemberIDPolicy.normalized($0) }
+            )
+        } catch {
+            cleanupError = cleanupError ?? error
+        }
         clearLocalPairingAfterSharingStopped()
         if let cleanupError {
             errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: cleanupError)

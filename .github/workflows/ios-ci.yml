@@ -57,32 +57,34 @@ jobs:
       - name: Skip Apple developer services lookup
         run: sudo sh -c 'echo "127.0.0.1 developerservices2.apple.com" >> /etc/hosts'
 
-      # Start the simulator booting but don't wait: the cold boot (~70 s) now
-      # overlaps the build instead of preceding it.
-      - name: Create and start booting iOS simulator
-        id: simulator
+      # Create and boot the simulator in the background. Creating it alone took
+      # 30 s to 3 min, and nothing in the build needs it: the build targets the
+      # generic simulator platform (arm64 only, like the device it later runs
+      # on), so the whole simulator setup overlaps the build.
+      - name: Start creating and booting the iOS simulator
         run: |
-          set -euo pipefail
+          (
+            set -euo pipefail
 
-          # Use the runtime that matches the selected Xcode's simulator SDK. The
-          # image also ships newer runtimes (iOS 26.x next to Xcode 16.4), and
-          # building against a mismatched one made xcodebuild spend minutes
-          # resolving the destination and asking actool for device traits.
-          SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
-          RUNTIME_ID=$(
-            xcrun simctl list runtimes \
-              | awk -F ' - ' -v v="iOS ${SDK_VERSION} " 'index($0, v) == 1 && !/unavailable/ { runtime=$NF } END { print runtime }'
-          )
-          if [[ -z "${RUNTIME_ID}" ]]; then
+            # Use the runtime that matches the selected Xcode's simulator SDK. The
+            # image also ships newer runtimes (iOS 26.x next to Xcode 16.4), and
+            # building against a mismatched one made xcodebuild spend minutes
+            # resolving the destination and asking actool for device traits.
+            SDK_VERSION=$(xcrun --sdk iphonesimulator --show-sdk-version)
             RUNTIME_ID=$(
               xcrun simctl list runtimes \
-                | awk -F ' - ' '/iOS/ && !/unavailable/ { runtime=$NF } END { print runtime }'
+                | awk -F ' - ' -v v="iOS ${SDK_VERSION} " 'index($0, v) == 1 && !/unavailable/ { runtime=$NF } END { print runtime }'
             )
-          fi
+            if [[ -z "${RUNTIME_ID}" ]]; then
+              RUNTIME_ID=$(
+                xcrun simctl list runtimes \
+                  | awk -F ' - ' '/iOS/ && !/unavailable/ { runtime=$NF } END { print runtime }'
+              )
+            fi
 
-          # Pick an iPhone the chosen runtime supports (iOS 18 can't run an iPhone 17).
-          DEVICE_TYPE=$(
-            xcrun simctl list runtimes -j | python3 -c '
+            # Pick an iPhone the chosen runtime supports (iOS 18 can't run an iPhone 17).
+            DEVICE_TYPE=$(
+              xcrun simctl list runtimes -j | python3 -c '
           import json, sys
           rid = sys.argv[1]
           rt = next((r for r in json.load(sys.stdin)["runtimes"] if r["identifier"] == rid), None)
@@ -90,19 +92,19 @@ jobs:
           pick = next((d for d in phones if d["name"] == "iPhone 16 Pro"), phones[-1] if phones else None)
           print(pick["identifier"] if pick else "")
           ' "${RUNTIME_ID}"
-          )
-          echo "Simulator SDK ${SDK_VERSION}, runtime ${RUNTIME_ID}, device ${DEVICE_TYPE}"
+            )
+            echo "Simulator SDK ${SDK_VERSION}, runtime ${RUNTIME_ID}, device ${DEVICE_TYPE}"
 
-          if [[ -z "${DEVICE_TYPE}" || -z "${RUNTIME_ID}" ]]; then
-            echo "No available iOS simulator device type or runtime found." >&2
-            xcrun simctl list runtimes >&2
-            exit 1
-          fi
+            if [[ -z "${DEVICE_TYPE}" || -z "${RUNTIME_ID}" ]]; then
+              echo "No available iOS simulator device type or runtime found." >&2
+              xcrun simctl list runtimes >&2
+              exit 1
+            fi
 
-          SIMULATOR_UDID=$(xcrun simctl create "OurDays CI iPhone" "${DEVICE_TYPE}" "${RUNTIME_ID}")
-          xcrun simctl boot "${SIMULATOR_UDID}" || true
-
-          echo "udid=${SIMULATOR_UDID}" >> "${GITHUB_OUTPUT}"
+            SIMULATOR_UDID=$(xcrun simctl create "OurDays CI iPhone" "${DEVICE_TYPE}" "${RUNTIME_ID}")
+            xcrun simctl boot "${SIMULATOR_UDID}" || true
+            echo "${SIMULATOR_UDID}" > "${RUNNER_TEMP}/simulator-udid"
+          ) > "${RUNNER_TEMP}/simulator.log" 2>&1 &
 
       - name: Build for testing
         run: |
@@ -110,12 +112,23 @@ jobs:
           xcodebuild build-for-testing \
             -project OurDays.xcodeproj \
             -scheme "${SCHEME}" \
-            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -destination "generic/platform=iOS Simulator" \
             -derivedDataPath "${RUNNER_TEMP}/OurDaysDerivedData" \
+            ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Wait for simulator boot
-        run: xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
+        id: simulator
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 300); do
+            [[ -s "${RUNNER_TEMP}/simulator-udid" ]] && break
+            sleep 1
+          done
+          cat "${RUNNER_TEMP}/simulator.log"
+          SIMULATOR_UDID=$(cat "${RUNNER_TEMP}/simulator-udid")
+          xcrun simctl bootstatus "${SIMULATOR_UDID}" -b
+          echo "udid=${SIMULATOR_UDID}" >> "${GITHUB_OUTPUT}"
 
       - name: Run tests
         run: |

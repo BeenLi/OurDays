@@ -85,7 +85,7 @@ planning 总入口（registry）。这里只放**持久的方向、决策、进�
 | #44 | 2026-10-29 | 「粘贴邀请链接」入口在发出邀请后也保留（第 2、3 步），回寄的链接也能粘贴；粘贴识别中国区 icloud.com.cn 链接；解除配对时不再被正在进行的同步写回「邀请已寄出」；粘贴改为输入框 + 确认；收下后立刻进第 3 步；入口改成按钮样式；「我们」「动态」页下拉刷新 | [pairing-sync-integrity](plans/pairing-sync-integrity/roadmap.md) |
 | #45 | 2026-10-29 | 日视图：日程块高度跟随真实时长（短日程两行压紧，不到 30 分钟单行），当前时间线不再穿过已结束的日程 | [ui-redesign](plans/ui-redesign/) |
 | #46 | 本 PR | 「我们」页从 11 段收成 5 段：我们俩 / 语言 / 要共享的日历前置；日历权限只在缺失时出现；删掉重复的「上次同步」；配对前历史合成一行；去掉常驻的重装提醒；共享人与邀请链接、删除 iCloud 数据（文案改直白）移进「数据与恢复」子页 | [ui-redesign](plans/ui-redesign/roadmap.md) |
-| #49 | 本 PR | CI 提速：PR 改用只含单元测试包的 OurDaysTests scheme，不再编译 App、UI 测试和资源目录；模拟器选与 Xcode SDK 匹配的 iOS 运行时 | [code-structure](plans/code-structure/roadmap.md) |
+| #49 | 本 PR | CI 提速：PR 改用只含单元测试包的 OurDaysTests scheme，不再编译 App、UI 测试和资源目录；模拟器选与 Xcode SDK 匹配的 iOS 运行时，并在后台创建、与编译并行 | [code-structure](plans/code-structure/roadmap.md) |
 
 ## Ideas
 - [ideas/inbox.md](ideas/inbox.md) — 待澄清/提升的想法

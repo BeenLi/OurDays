@@ -5,7 +5,7 @@
 - **范围**: req2
 
 ## 背景
-日历里「我的事件」是 transient display mirror（`id="display:..."`），`canComment` 排除 display 前缀，导致点开我的事件恒只有「邀请对方」、看不到对方写入我 private zone 的评论。见 [topic req2](../topics/req2-own-event-comments.md)。
+日历里「我的事件」是 transient display mirror（`id="display:..."`），`canComment` 排除 display 前缀，导致点开我的事件恒只有「邀请对方」、看不到对方写入我 private zone 的评论。见 topic req2。
 
 ## 决策
 1. `EventDetailView` 内部把（可能是 display 的）传入事件按 `mirrorKey` **解析为持久化孪生**，用真实 mirror 建评论锚（拿到真实 `id` + `cloudKitRecordName` 供写入路由）。

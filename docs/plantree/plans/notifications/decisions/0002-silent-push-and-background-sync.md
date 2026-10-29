@@ -1,7 +1,7 @@
 # Decision 0002 — 改静默推送（抑制纯事件推送）+ 后台同步
 
 - **日期**：2026-06-16
-- **状态**：Accepted + **Code landed（2026-06-16）** —— 220 单测全过；剩两真机端到端验证（见 [roadmap](../roadmap.md)「Needs manual verification」）。
+- **状态**：Accepted + **Code landed（2026-06-16）** —— 220 单测全过；剩两真机端到端验证（见 roadmap「Needs manual verification」）。
 - **关系**：**部分推翻** [0001](0001-triggers-and-delivery.md) 的「交付可靠性修订（改为可见 alert 推送）」。触发范围（0001 的 4 类）不变。
 
 ## 背景（来自上线后用户反馈，2 条）

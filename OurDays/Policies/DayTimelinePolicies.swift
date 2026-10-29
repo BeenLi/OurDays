@@ -184,8 +184,34 @@ enum DayTimelineScrollTargetPolicy {
     }
 }
 
+/// How much an event block shows. A block is as tall as its event lasts, so a
+/// short event has no room for the two-line title + time layout.
+enum DayTimelineBlockStyle: Equatable {
+    /// Title on top, time range below.
+    case regular
+    /// Title and start time on one line, for events too short for two lines.
+    case compact
+}
+
 enum DayTimelineLayoutPolicy {
     static let hoursPerDay = 24
+    /// Shortest block drawn, just enough for one line of text. Only events
+    /// shorter than this many minutes (at 60 pt/hour) are drawn longer than
+    /// they are.
+    static let minimumBlockHeight: CGFloat = 20
+    /// From this height up a block has room for the two-line layout.
+    static let regularBlockHeight: CGFloat = 44
+
+    /// The drawn height of a timed block. It follows the event's real
+    /// duration, so the block ends where the event ends and the now line
+    /// never crosses an event that is already over.
+    static func blockHeight(frameHeight: CGFloat, availableHeight: CGFloat) -> CGFloat {
+        min(max(frameHeight, minimumBlockHeight), availableHeight)
+    }
+
+    static func blockStyle(height: CGFloat) -> DayTimelineBlockStyle {
+        height >= regularBlockHeight ? .regular : .compact
+    }
 
     static func dayHeight(hourHeight: CGFloat) -> CGFloat {
         CGFloat(hoursPerDay) * hourHeight

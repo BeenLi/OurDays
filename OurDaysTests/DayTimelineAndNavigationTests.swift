@@ -47,6 +47,36 @@ final class DayTimelineLayoutPolicyTests: XCTestCase {
     }
 }
 
+final class DayTimelineBlockHeightTests: XCTestCase {
+    func testShortEventBlockEndsWhereTheEventEnds() throws {
+        // 14:55–15:26 at 60 pt/hour: the block must end before a 15:27 now line.
+        let calendar = Calendar(identifier: .gregorian)
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 29)))
+        let start = try XCTUnwrap(calendar.date(bySettingHour: 14, minute: 55, second: 0, of: dayStart))
+        let end = try XCTUnwrap(calendar.date(bySettingHour: 15, minute: 26, second: 0, of: dayStart))
+        let now = try XCTUnwrap(calendar.date(bySettingHour: 15, minute: 27, second: 0, of: dayStart))
+
+        let frame = DayTimelineLayoutPolicy.eventFrame(startDate: start, endDate: end, dayStart: dayStart, hourHeight: 60, calendar: calendar)
+        let height = DayTimelineLayoutPolicy.blockHeight(frameHeight: frame.height, availableHeight: 24 * 60)
+        let nowY = try XCTUnwrap(DayTimelineNowIndicatorPolicy.indicator(now: now, dayStart: dayStart, hourHeight: 60, calendar: calendar)).y
+
+        XCTAssertEqual(height, 31, accuracy: 0.001)
+        XCTAssertLessThan(frame.y + height, nowY)
+        XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: height), .compact)
+    }
+
+    func testVeryShortEventKeepsOneLineOfHeight() {
+        XCTAssertEqual(DayTimelineLayoutPolicy.blockHeight(frameHeight: 15, availableHeight: 1440), DayTimelineLayoutPolicy.minimumBlockHeight)
+        XCTAssertEqual(DayTimelineLayoutPolicy.blockHeight(frameHeight: 15, availableHeight: 10), 10)
+    }
+
+    func testEventsOfFortyFourMinutesOrMoreUseTheTwoLineLayout() {
+        XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: 44), .regular)
+        XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: 90), .regular)
+        XCTAssertEqual(DayTimelineLayoutPolicy.blockStyle(height: 43), .compact)
+    }
+}
+
 final class DayTimelineNowIndicatorPolicyTests: XCTestCase {
     private let calendar = Calendar(identifier: .gregorian)
 

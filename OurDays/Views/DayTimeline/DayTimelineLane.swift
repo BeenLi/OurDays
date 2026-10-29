@@ -36,7 +36,7 @@ struct DayTimelineLane: View {
 
             ForEach(events) { event in
                 let frame = frame(for: event)
-                let eventHeight = min(max(frame.height, 44), dayHeight)
+                let eventHeight = DayTimelineLayoutPolicy.blockHeight(frameHeight: frame.height, availableHeight: dayHeight)
                 let eventY = min(frame.y, max(0, dayHeight - eventHeight))
                 let isNarrowed = narrowedEventIDs.contains(event.id)
 
@@ -46,6 +46,7 @@ struct DayTimelineLane: View {
                     DayTimelineEventBlock(
                         event: event,
                         identity: identity,
+                        style: DayTimelineLayoutPolicy.blockStyle(height: eventHeight),
                         hasComments: EventCommentIndicatorPolicy.hasComments(
                             mirror: event,
                             commentedKeys: commentedAnchorKeys,
@@ -101,9 +102,52 @@ struct DayTimelineEventBlock: View {
     @Environment(SettingsStore.self) private var settings
     let event: EventMirror
     let identity: OurDaysIdentity
+    var style: DayTimelineBlockStyle = .regular
     var hasComments: Bool = false
 
     var body: some View {
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(identity.tint, in: RoundedRectangle(cornerRadius: style == .compact ? 8 : 12, style: .continuous))
+            .clipped()
+            .overlay(alignment: .topTrailing) {
+                CommentIndicatorDot(isVisible: hasComments, ringColor: identity.tint)
+                    .padding(style == .compact ? 4 : 6)
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch style {
+        case .regular:
+            regularContent
+        case .compact:
+            compactContent
+        }
+    }
+
+    /// One line, title first, then the start time: a short event's block is
+    /// only as tall as the event lasts.
+    private var compactContent: some View {
+        HStack(spacing: 4) {
+            Text(event.title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(OurDaysTheme.ink)
+                .lineLimit(1)
+                .layoutPriority(1)
+            if !event.isAllDay {
+                Text(event.startDate.formatted(date: .omitted, time: .shortened))
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(identity.onTint)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+    }
+
+    private var regularContent: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(event.title)
                 .font(.caption.weight(.bold))
@@ -129,11 +173,6 @@ struct DayTimelineEventBlock: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(identity.tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(alignment: .topTrailing) {
-            CommentIndicatorDot(isVisible: hasComments, ringColor: identity.tint).padding(6)
-        }
     }
 
     var timeText: String {
@@ -148,16 +187,71 @@ struct DayTimelineJointEventBlock: View {
     @Environment(SettingsStore.self) private var settings
     let event: JointScheduleEvent
     let isFocused: Bool
+    var style: DayTimelineBlockStyle = .regular
     var hasComments: Bool = false
 
+    private var cornerRadius: CGFloat { style == .compact ? 8 : 14 }
+
     var body: some View {
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(OurDaysTheme.joint, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .clipped()
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(OurDaysIdentity.me.color, lineWidth: isFocused ? 2 : 0)
+            )
+            .shadow(color: OurDaysTheme.joint.opacity(isFocused ? 0.35 : 0.12), radius: isFocused ? 8 : 3, x: 0, y: 2)
+            .overlay(alignment: .topTrailing) {
+                CommentIndicatorDot(isVisible: hasComments, color: OurDaysTheme.onJoint, ringColor: OurDaysTheme.joint)
+                    .padding(style == .compact ? 4 : 7)
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch style {
+        case .regular:
+            regularContent
+        case .compact:
+            compactContent
+        }
+    }
+
+    private var identityDots: some View {
+        HStack(spacing: -3) {
+            Circle().fill(OurDaysIdentity.me.color).frame(width: 8, height: 8)
+            Circle().fill(OurDaysIdentity.partner.color).frame(width: 8, height: 8)
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// One line for a short joint event: the two dots stand in for the
+    /// "joint" label, then the title and start time.
+    private var compactContent: some View {
+        HStack(spacing: 6) {
+            identityDots
+            Text(event.title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(OurDaysTheme.onJoint)
+                .lineLimit(1)
+                .layoutPriority(1)
+            if !event.isAllDay {
+                Text(event.startDate.formatted(date: .omitted, time: .shortened))
+                    .font(.caption2)
+                    .foregroundStyle(OurDaysTheme.onJointSecondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 2)
+    }
+
+    private var regularContent: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                HStack(spacing: -3) {
-                    Circle().fill(OurDaysIdentity.me.color).frame(width: 8, height: 8)
-                    Circle().fill(OurDaysIdentity.partner.color).frame(width: 8, height: 8)
-                }
-                .accessibilityHidden(true)
+                identityDots
                 Text(settings.strings.jointScheduleLabel)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(OurDaysTheme.onJointSecondary)
@@ -178,16 +272,6 @@ struct DayTimelineJointEventBlock: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(OurDaysTheme.joint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(OurDaysIdentity.me.color, lineWidth: isFocused ? 2 : 0)
-        )
-        .shadow(color: OurDaysTheme.joint.opacity(isFocused ? 0.35 : 0.12), radius: isFocused ? 8 : 3, x: 0, y: 2)
-        .overlay(alignment: .topTrailing) {
-            CommentIndicatorDot(isVisible: hasComments, color: OurDaysTheme.onJoint, ringColor: OurDaysTheme.joint).padding(7)
-        }
     }
 
     private var detailText: String {

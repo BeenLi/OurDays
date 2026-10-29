@@ -135,6 +135,7 @@ struct DayTimelineEventBlock: View {
                 .foregroundStyle(OurDaysTheme.ink)
                 .lineLimit(1)
                 .layoutPriority(1)
+            calendarDot
             if !event.isAllDay {
                 Text(event.startDate.formatted(date: .omitted, time: .shortened))
                     .font(.caption2.weight(.medium))
@@ -156,14 +157,7 @@ struct DayTimelineEventBlock: View {
                 .multilineTextAlignment(.leading)
 
             HStack(spacing: 4) {
-                // The source calendar's own color survives as a small dot, so people
-                // who share several calendars can still tell them apart.
-                if let calendarColor = Color(hex: event.calendarColorHex) {
-                    Circle()
-                        .fill(calendarColor)
-                        .frame(width: 6, height: 6)
-                        .accessibilityHidden(true)
-                }
+                calendarDot
                 Text(timeText)
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(identity.onTint)
@@ -173,6 +167,18 @@ struct DayTimelineEventBlock: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
+    }
+
+    // The source calendar's own color survives as a small dot, so people
+    // who share several calendars can still tell them apart.
+    @ViewBuilder
+    private var calendarDot: some View {
+        if let calendarColor = Color(hex: event.calendarColorHex) {
+            Circle()
+                .fill(calendarColor)
+                .frame(width: 6, height: 6)
+                .accessibilityHidden(true)
+        }
     }
 
     var timeText: String {

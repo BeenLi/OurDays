@@ -61,8 +61,15 @@ jobs:
             -scheme OurDaysTests \
             -destination "platform=macOS,variant=Mac Catalyst,arch=arm64" \
             -derivedDataPath "${RUNNER_TEMP}/OurDaysDerivedData" \
+            -resultBundlePath "${RUNNER_TEMP}/UnitTests.xcresult" \
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO
+
+      # The job log can lose the tail of xcodebuild's output, so print the
+      # counts from the result bundle as the record of what ran.
+      - name: Summarize unit test results
+        if: github.event_name == 'pull_request' && !cancelled()
+        run: xcrun xcresulttool get test-results summary --path "${RUNNER_TEMP}/UnitTests.xcresult" --compact
 
       # main and manual dispatch run unit and UI tests on one iOS simulator. The
       # three CI-runnable UI tests live here, after merge, where nobody is

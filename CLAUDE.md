@@ -9,9 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xcodebuild -project OurDays.xcodeproj -scheme OurDays \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
-# Run unit tests
-xcodebuild -project OurDays.xcodeproj -scheme OurDays \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:OurDaysTests
+# Run unit tests (the OurDaysTests scheme builds only the test bundle, not the app)
+xcodebuild -project OurDays.xcodeproj -scheme OurDaysTests \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 
 # Run a single test class / method
 ... -only-testing:OurDaysTests/TwoPersonPairingPolicyTests
@@ -21,7 +21,7 @@ xcodebuild -project OurDays.xcodeproj -scheme OurDays \
 Scripts/import-cloudkit-schema.sh development
 ```
 
-There is one scheme (`OurDays`). Unit tests live in `OurDaysTests/`, one file per area (`PairingTests.swift`, `CloudKitTests.swift`, `InvitationAndAccessRequestTests.swift`, `CalendarMirrorTests.swift`, `DayTimelineAndNavigationTests.swift`, `CommentTests.swift`, `SyncTests.swift`, `ActivityAndNotificationTests.swift`, `SettingsAndStringsTests.swift`); `-only-testing:OurDaysTests/<ClassName>` works regardless of file.
+There are two schemes: `OurDays` (app, unit and UI tests) and `OurDaysTests` (unit tests only, what PR CI runs). Unit tests live in `OurDaysTests/`, one file per area (`PairingTests.swift`, `CloudKitTests.swift`, `InvitationAndAccessRequestTests.swift`, `CalendarMirrorTests.swift`, `DayTimelineAndNavigationTests.swift`, `CommentTests.swift`, `SyncTests.swift`, `ActivityAndNotificationTests.swift`, `SettingsAndStringsTests.swift`); `-only-testing:OurDaysTests/<ClassName>` works regardless of file.
 
 ## What this app is
 

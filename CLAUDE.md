@@ -12,6 +12,9 @@ xcodebuild -project OurDays.xcodeproj -scheme OurDays \
 # Run unit tests (the OurDaysTests scheme builds only the test bundle, not the app)
 xcodebuild -project OurDays.xcodeproj -scheme OurDaysTests \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+# …or as Mac Catalyst, with no simulator (what PR CI does)
+xcodebuild -project OurDays.xcodeproj -scheme OurDaysTests \
+  -destination 'platform=macOS,variant=Mac Catalyst' test
 
 # Run a single test class / method
 ... -only-testing:OurDaysTests/TwoPersonPairingPolicyTests
@@ -21,7 +24,7 @@ xcodebuild -project OurDays.xcodeproj -scheme OurDaysTests \
 Scripts/import-cloudkit-schema.sh development
 ```
 
-There are two schemes: `OurDays` (app, unit and UI tests) and `OurDaysTests` (unit tests only, what PR CI runs). Unit tests live in `OurDaysTests/`, one file per area (`PairingTests.swift`, `CloudKitTests.swift`, `InvitationAndAccessRequestTests.swift`, `CalendarMirrorTests.swift`, `DayTimelineAndNavigationTests.swift`, `CommentTests.swift`, `SyncTests.swift`, `ActivityAndNotificationTests.swift`, `SettingsAndStringsTests.swift`); `-only-testing:OurDaysTests/<ClassName>` works regardless of file.
+There are two schemes: `OurDays` (app, unit and UI tests) and `OurDaysTests` (unit tests only; PR CI runs it as Mac Catalyst, so test sources must also build for Catalyst). Unit tests live in `OurDaysTests/`, one file per area (`PairingTests.swift`, `CloudKitTests.swift`, `InvitationAndAccessRequestTests.swift`, `CalendarMirrorTests.swift`, `DayTimelineAndNavigationTests.swift`, `CommentTests.swift`, `SyncTests.swift`, `ActivityAndNotificationTests.swift`, `SettingsAndStringsTests.swift`); `-only-testing:OurDaysTests/<ClassName>` works regardless of file.
 
 ## What this app is
 

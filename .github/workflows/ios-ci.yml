@@ -33,17 +33,6 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
 
-    env:
-      # PRs build and run only the unit tests, through the OurDaysTests scheme.
-      # That scheme contains just the hostless test bundle (it compiles the
-      # non-UI sources itself), so a PR never compiles the SwiftUI views, the
-      # asset catalog or the UI test runner. -only-testing alone didn't do that:
-      # build-for-testing still built every target in the OurDays scheme.
-      # The three CI-runnable UI tests run after merge on main (and on manual
-      # dispatch), where nobody is waiting. The other three UI tests always
-      # XCTSkip outside Scripts/dev-pairing-smoke.sh.
-      SCHEME: ${{ github.event_name == 'pull_request' && 'OurDaysTests' || 'OurDays' }}
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -57,12 +46,35 @@ jobs:
       - name: Skip Apple developer services lookup
         run: sudo sh -c 'echo "127.0.0.1 developerservices2.apple.com" >> /etc/hosts'
 
+      # PRs run only the unit tests, and run them as a Mac Catalyst bundle right
+      # on the runner's macOS. An iOS simulator is a whole iOS userland: creating,
+      # booting and letting it settle cost ~2.5 min for a few seconds of tests.
+      # The OurDaysTests scheme holds just the hostless test bundle (it compiles
+      # the non-UI sources itself), so no app, asset catalog or UI test runner is
+      # built either.
+      - name: Run unit tests on Mac Catalyst
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project OurDays.xcodeproj \
+            -scheme OurDaysTests \
+            -destination "platform=macOS,variant=Mac Catalyst,arch=arm64" \
+            -derivedDataPath "${RUNNER_TEMP}/OurDaysDerivedData" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      # main and manual dispatch run unit and UI tests on one iOS simulator. The
+      # three CI-runnable UI tests live here, after merge, where nobody is
+      # waiting; the other three always XCTSkip outside Scripts/dev-pairing-smoke.sh.
+
       # Create the simulator in the background. Creating it took 30 s to 3 min,
       # and nothing in the build needs it: the build targets the generic
       # simulator platform (arm64 only, like the device it later runs on).
       # Booting waits until after the build: a boot running alongside the
       # compile made the compile itself take minutes longer on the 3-core runner.
       - name: Start creating the iOS simulator
+        if: github.event_name != 'pull_request'
         run: |
           (
             set -euo pipefail
@@ -107,17 +119,19 @@ jobs:
           ) > "${RUNNER_TEMP}/simulator.log" 2>&1 &
 
       - name: Build for testing
+        if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           xcodebuild build-for-testing \
             -project OurDays.xcodeproj \
-            -scheme "${SCHEME}" \
+            -scheme OurDays \
             -destination "generic/platform=iOS Simulator" \
             -derivedDataPath "${RUNNER_TEMP}/OurDaysDerivedData" \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Boot the simulator
+        if: github.event_name != 'pull_request'
         id: simulator
         run: |
           set -euo pipefail
@@ -132,6 +146,7 @@ jobs:
           echo "udid=${SIMULATOR_UDID}" >> "${GITHUB_OUTPUT}"
 
       - name: Run tests
+        if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
 
@@ -145,7 +160,7 @@ jobs:
           # on makes xcodebuild clone the simulator first, which costs more than it saves.
           xcodebuild test-without-building \
             -project OurDays.xcodeproj \
-            -scheme "${SCHEME}" \
+            -scheme OurDays \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
             -derivedDataPath "${RUNNER_TEMP}/OurDaysDerivedData" \
             -parallel-testing-enabled NO \

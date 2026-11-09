@@ -91,6 +91,14 @@ final class SettingsStore {
     var lastNotifiedAt: Date? {
         didSet { defaults.set(lastNotifiedAt, forKey: Key.lastNotifiedAt) }
     }
+    /// App Store rating moments already used on this install (`ReviewPromptPolicy`).
+    /// Kept across unpair/re-pair: each moment asks once per install.
+    var reviewPromptedMoments: Set<ReviewPromptMoment> {
+        didSet { defaults.set(reviewPromptedMoments.map(\.rawValue).sorted(), forKey: Key.reviewPromptedMoments) }
+    }
+    var lastReviewPromptAt: Date? {
+        didSet { saveOptionalDate(lastReviewPromptAt, forKey: Key.lastReviewPromptAt) }
+    }
     var lastSyncError: String?
     var syncPhase: SyncPhase = .idle
     /// The partner whose share CloudKit is accepting right now. Not saved: it only lets
@@ -154,6 +162,8 @@ final class SettingsStore {
         lastSyncAt = defaults.object(forKey: Key.lastSyncAt) as? Date
         lastSeenActivityAt = defaults.object(forKey: Key.lastSeenActivityAt) as? Date
         lastNotifiedAt = defaults.object(forKey: Key.lastNotifiedAt) as? Date
+        reviewPromptedMoments = Set((defaults.stringArray(forKey: Key.reviewPromptedMoments) ?? []).compactMap(ReviewPromptMoment.init(rawValue:)))
+        lastReviewPromptAt = defaults.object(forKey: Key.lastReviewPromptAt) as? Date
     }
 
     var hasSyncedMemberID: Bool {
@@ -263,6 +273,11 @@ final class SettingsStore {
         pairingDate = PairingDatePolicy.normalizedPairingDate(date, calendar: calendar)
     }
 
+    func markReviewPrompted(_ moment: ReviewPromptMoment, at date: Date = .now) {
+        reviewPromptedMoments.insert(moment)
+        lastReviewPromptAt = date
+    }
+
     func clearPairingDate() {
         pairingDate = nil
     }
@@ -309,6 +324,8 @@ final class SettingsStore {
         static let lastSyncAt = "lastSyncAt"
         static let lastSeenActivityAt = "lastSeenActivityAt"
         static let lastNotifiedAt = "lastNotifiedAt"
+        static let reviewPromptedMoments = "reviewPromptedMoments"
+        static let lastReviewPromptAt = "lastReviewPromptAt"
     }
 
     private enum LegacyKey {

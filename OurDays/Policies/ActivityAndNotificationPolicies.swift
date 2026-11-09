@@ -321,3 +321,76 @@ enum LocalNotificationContentPolicy {
         }
     }
 }
+
+/// The happy moments at which the system App Store rating prompt may be shown.
+/// Raw values are persisted in `SettingsStore.reviewPromptedMoments`; don't rename.
+enum ReviewPromptMoment: String, CaseIterable, Codable {
+    /// The 7th day of being paired ("配对第 7 天").
+    case pairingDay7
+    /// The first time the partner's comment shows up on this device.
+    case firstPartnerComment
+}
+
+/// When to ask for an App Store rating. Each moment fires at most once per install,
+/// and two prompts are kept apart so one launch never shows two. The system decides
+/// whether the dialog actually appears (at most three times a year per user).
+enum ReviewPromptPolicy {
+    static let pairingDayThreshold = 7
+    /// A partner comment counts as "just received" for this long; older ones (for
+    /// example, years of history on the first launch after an update) don't fire.
+    static let freshPartnerCommentWindow: TimeInterval = 3 * 24 * 60 * 60
+    static let minimumIntervalBetweenPrompts: TimeInterval = 3 * 24 * 60 * 60
+
+    static func moment(
+        isPaired: Bool,
+        pairingDate: Date?,
+        currentMemberID: String,
+        partnerShareOwnerID: String?,
+        comments: [EventComment],
+        promptedMoments: Set<ReviewPromptMoment>,
+        lastPromptAt: Date?,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> ReviewPromptMoment? {
+        guard isPaired else { return nil }
+        if let lastPromptAt, now.timeIntervalSince(lastPromptAt) < minimumIntervalBetweenPrompts {
+            return nil
+        }
+        if !promptedMoments.contains(.firstPartnerComment),
+           hasFreshPartnerComment(
+               comments: comments,
+               currentMemberID: currentMemberID,
+               partnerShareOwnerID: partnerShareOwnerID,
+               now: now
+           ) {
+            return .firstPartnerComment
+        }
+        if !promptedMoments.contains(.pairingDay7),
+           let pairingDate,
+           PairingDatePolicy.ordinalDayNumber(since: pairingDate, now: now, calendar: calendar) >= pairingDayThreshold {
+            return .pairingDay7
+        }
+        return nil
+    }
+
+    static func hasFreshPartnerComment(
+        comments: [EventComment],
+        currentMemberID: String,
+        partnerShareOwnerID: String?,
+        now: Date
+    ) -> Bool {
+        guard let partnerID = MemberIDPolicy.normalized(partnerShareOwnerID),
+              partnerID != currentMemberID else { return false }
+        return comments.contains { comment in
+            comment.deletedAt == nil
+                && comment.authorMemberID == partnerID
+                && now.timeIntervalSince(comment.createdAt) <= freshPartnerCommentWindow
+        }
+    }
+
+    /// Never prompt during automation: UI tests and the smoke script launch with
+    /// `-ShareCal…` / `--sharecal-…` arguments, and a rating dialog would cover the UI.
+    static func isAllowed(launchArguments: [String]) -> Bool {
+        !launchArguments.contains { $0.hasPrefix("-ShareCal") || $0.hasPrefix("--sharecal") }
+    }
+}

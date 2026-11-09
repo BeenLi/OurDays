@@ -1,4 +1,5 @@
 import CloudKit
+import StoreKit
 import SwiftData
 import SwiftUI
 import UserNotifications
@@ -45,6 +46,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(SettingsStore.self) private var settings
     @Environment(AppServices.self) private var services
+    @Environment(\.requestReview) private var requestReview
     @State private var isRunningForegroundSync = false
     @State private var selectedTab: ShareCalTab = .calendar
     @State private var calendarFocusRequest: CalendarFocusRequest?
@@ -95,7 +97,25 @@ struct RootView: View {
         UNUserNotificationCenter.current().setBadgeCount(count)
     }
 
+    // The rating-prompt triggers sit outside `rootContent`: that modifier chain is
+    // already at the limit of what the type-checker solves in reasonable time.
     var body: some View {
+        rootContent
+            .task { await requestReviewAtHappyMomentIfNeeded() }
+            .onChange(of: comments.count) { _, _ in
+                Task { await requestReviewAtHappyMomentIfNeeded() }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .active else { return }
+                Task { await requestReviewAtHappyMomentIfNeeded() }
+            }
+            .onChange(of: activeRootSheet) { _, newSheet in
+                guard newSheet == nil else { return }
+                Task { await requestReviewAtHappyMomentIfNeeded() }
+            }
+    }
+
+    private var rootContent: some View {
         TabView(selection: $selectedTab) {
             NavigationStack {
                 CalendarTabView(
@@ -334,6 +354,30 @@ struct RootView: View {
             return settings.partnerDisplayName
         }
         return String(candidateID.suffix(8))
+    }
+
+    /// The App Store rating prompt, at most once per happy moment (`ReviewPromptPolicy`):
+    /// day 7 of the pairing, or the partner's first comment. Waits a moment so the
+    /// comment or the calendar is on screen first, and never covers a sheet or alert.
+    @MainActor
+    private func requestReviewAtHappyMomentIfNeeded() async {
+        guard ReviewPromptPolicy.isAllowed(launchArguments: ProcessInfo.processInfo.arguments) else { return }
+        try? await Task.sleep(for: .seconds(2))
+        guard scenePhase == .active,
+              activeRootSheet == nil,
+              pendingReplacementOwnerID == nil,
+              !showPairingConflictAlert,
+              let moment = ReviewPromptPolicy.moment(
+                  isPaired: pairingStatus == .paired,
+                  pairingDate: settings.pairingDate,
+                  currentMemberID: settings.currentMemberID,
+                  partnerShareOwnerID: settings.partnerShareOwnerID,
+                  comments: comments,
+                  promptedMoments: settings.reviewPromptedMoments,
+                  lastPromptAt: settings.lastReviewPromptAt
+              ) else { return }
+        settings.markReviewPrompted(moment)
+        requestReview()
     }
 
     @MainActor

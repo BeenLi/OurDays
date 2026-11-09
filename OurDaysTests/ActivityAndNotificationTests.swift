@@ -493,3 +493,117 @@ final class AppIconBadgePolicyTests: XCTestCase {
         )
     }
 }
+
+final class ReviewPromptPolicyTests: XCTestCase {
+    private let me = "_me"
+    private let partner = "_partner"
+    private let day: TimeInterval = 24 * 60 * 60
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        return calendar
+    }
+
+    private func pairingDate(daysBefore now: Date, _ days: Int) -> Date {
+        calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: now))!
+    }
+
+    private func moment(
+        isPaired: Bool = true,
+        pairedDaysAgo: Int? = 0,
+        comments: [EventComment] = [],
+        prompted: Set<ReviewPromptMoment> = [],
+        lastPromptAt: Date? = nil,
+        now: Date
+    ) -> ReviewPromptMoment? {
+        ReviewPromptPolicy.moment(
+            isPaired: isPaired,
+            pairingDate: pairedDaysAgo.map { pairingDate(daysBefore: now, $0) },
+            currentMemberID: me,
+            partnerShareOwnerID: partner,
+            comments: comments,
+            promptedMoments: prompted,
+            lastPromptAt: lastPromptAt,
+            now: now,
+            calendar: calendar
+        )
+    }
+
+    private func comment(author: String, at date: Date, deleted: Bool = false) -> EventComment {
+        EventComment(
+            eventMirrorID: "E",
+            authorMemberID: author,
+            body: "hi",
+            createdAt: date,
+            deletedAt: deleted ? date : nil
+        )
+    }
+
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    func testPairingDaySevenFiresOnTheSeventhDayNotTheSixth() {
+        // Pairing day is day 1, so day 7 is six calendar days later.
+        XCTAssertNil(moment(pairedDaysAgo: 5, now: now))
+        XCTAssertEqual(moment(pairedDaysAgo: 6, now: now), .pairingDay7)
+        XCTAssertEqual(moment(pairedDaysAgo: 40, now: now), .pairingDay7)
+    }
+
+    func testNothingFiresWhenNotPaired() {
+        XCTAssertNil(moment(isPaired: false, pairedDaysAgo: 30, comments: [comment(author: partner, at: now)], now: now))
+    }
+
+    func testFreshPartnerCommentFires() {
+        XCTAssertEqual(moment(comments: [comment(author: partner, at: now - 60)], now: now), .firstPartnerComment)
+    }
+
+    func testOwnOldOrDeletedCommentsDoNotFire() {
+        let comments = [
+            comment(author: me, at: now - 60),
+            comment(author: partner, at: now - 4 * day),
+            comment(author: partner, at: now - 60, deleted: true),
+            comment(author: "_exPartner", at: now - 60),
+        ]
+        XCTAssertNil(moment(comments: comments, now: now))
+    }
+
+    func testEachMomentFiresOnlyOnce() {
+        XCTAssertNil(moment(comments: [comment(author: partner, at: now)], prompted: [.firstPartnerComment], now: now))
+        XCTAssertNil(moment(pairedDaysAgo: 10, prompted: [.pairingDay7], now: now))
+        XCTAssertEqual(
+            moment(pairedDaysAgo: 10, comments: [comment(author: partner, at: now)], prompted: [.firstPartnerComment], now: now),
+            .pairingDay7
+        )
+    }
+
+    func testPromptsAreKeptApart() {
+        let comments = [comment(author: partner, at: now)]
+        XCTAssertNil(moment(pairedDaysAgo: 10, comments: comments, prompted: [.pairingDay7], lastPromptAt: now - day, now: now))
+        XCTAssertEqual(
+            moment(pairedDaysAgo: 10, comments: comments, prompted: [.pairingDay7], lastPromptAt: now - 4 * day, now: now),
+            .firstPartnerComment
+        )
+    }
+
+    func testAutomationLaunchesNeverPrompt() {
+        XCTAssertTrue(ReviewPromptPolicy.isAllowed(launchArguments: ["/path/OurDays"]))
+        XCTAssertFalse(ReviewPromptPolicy.isAllowed(launchArguments: ["/path/OurDays", "-ShareCalForceSync"]))
+        XCTAssertFalse(ReviewPromptPolicy.isAllowed(launchArguments: ["/path/OurDays", "--sharecal-reset-user-defaults"]))
+    }
+
+    func testPromptedMomentsPersistAcrossLaunches() throws {
+        let suiteName = "ReviewPromptPolicyTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = SettingsStore(defaults: defaults)
+        XCTAssertTrue(settings.reviewPromptedMoments.isEmpty)
+        settings.markReviewPrompted(.pairingDay7, at: now)
+
+        let relaunched = SettingsStore(defaults: defaults)
+        XCTAssertEqual(relaunched.reviewPromptedMoments, [.pairingDay7])
+        XCTAssertEqual(relaunched.lastReviewPromptAt, now)
+
+        relaunched.clearPairingState()
+        XCTAssertEqual(SettingsStore(defaults: defaults).reviewPromptedMoments, [.pairingDay7])
+    }
+}

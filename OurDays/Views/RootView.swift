@@ -1,4 +1,5 @@
 import CloudKit
+import StoreKit
 import SwiftData
 import SwiftUI
 import UserNotifications
@@ -45,6 +46,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(SettingsStore.self) private var settings
     @Environment(AppServices.self) private var services
+    @Environment(\.requestReview) private var requestReview
     @State private var isRunningForegroundSync = false
     @State private var selectedTab: ShareCalTab = .calendar
     @State private var calendarFocusRequest: CalendarFocusRequest?
@@ -145,6 +147,7 @@ struct RootView: View {
         .task {
             await Task.yield()
             await reevaluateRootSheetFlow()
+            await requestReviewAtHappyMomentIfNeeded()
         }
         .task {
             // Clear any badge orphaned by a pre-silent-push build and seed the live count.
@@ -152,6 +155,9 @@ struct RootView: View {
         }
         .onChange(of: unreadActivityCount) { _, _ in syncAppIconBadge() }
         .onChange(of: pendingInviteBadgeCount) { _, _ in syncAppIconBadge() }
+        .onChange(of: comments.count) { _, _ in
+            Task { await requestReviewAtHappyMomentIfNeeded() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: ShareCalShareAcceptanceProgressSignal.startedNotificationName)) { notification in
             showAcceptanceStarted(ownerID: ShareCalShareAcceptanceProgressSignal.ownerID(in: notification))
         }
@@ -186,6 +192,7 @@ struct RootView: View {
             syncAppIconBadge()
             Task {
                 await syncAfterSceneBecameActiveIfNeeded()
+                await requestReviewAtHappyMomentIfNeeded()
             }
         }
         .onChange(of: selectedTab) { _, newTab in
@@ -225,6 +232,7 @@ struct RootView: View {
             guard newSheet == nil else { return }
             Task {
                 await reevaluateRootSheetFlow()
+                await requestReviewAtHappyMomentIfNeeded()
             }
         }
         .sheet(item: $activeRootSheet) { sheet in
@@ -334,6 +342,30 @@ struct RootView: View {
             return settings.partnerDisplayName
         }
         return String(candidateID.suffix(8))
+    }
+
+    /// The App Store rating prompt, at most once per happy moment (`ReviewPromptPolicy`):
+    /// day 7 of the pairing, or the partner's first comment. Waits a moment so the
+    /// comment or the calendar is on screen first, and never covers a sheet or alert.
+    @MainActor
+    private func requestReviewAtHappyMomentIfNeeded() async {
+        guard ReviewPromptPolicy.isAllowed(launchArguments: ProcessInfo.processInfo.arguments) else { return }
+        try? await Task.sleep(for: .seconds(2))
+        guard scenePhase == .active,
+              activeRootSheet == nil,
+              pendingReplacementOwnerID == nil,
+              !showPairingConflictAlert,
+              let moment = ReviewPromptPolicy.moment(
+                  isPaired: pairingStatus == .paired,
+                  pairingDate: settings.pairingDate,
+                  currentMemberID: settings.currentMemberID,
+                  partnerShareOwnerID: settings.partnerShareOwnerID,
+                  comments: comments,
+                  promptedMoments: settings.reviewPromptedMoments,
+                  lastPromptAt: settings.lastReviewPromptAt
+              ) else { return }
+        settings.markReviewPrompted(moment)
+        requestReview()
     }
 
     @MainActor

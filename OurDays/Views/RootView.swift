@@ -97,7 +97,25 @@ struct RootView: View {
         UNUserNotificationCenter.current().setBadgeCount(count)
     }
 
+    // The rating-prompt triggers sit outside `rootContent`: that modifier chain is
+    // already at the limit of what the type-checker solves in reasonable time.
     var body: some View {
+        rootContent
+            .task { await requestReviewAtHappyMomentIfNeeded() }
+            .onChange(of: comments.count) { _, _ in
+                Task { await requestReviewAtHappyMomentIfNeeded() }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .active else { return }
+                Task { await requestReviewAtHappyMomentIfNeeded() }
+            }
+            .onChange(of: activeRootSheet) { _, newSheet in
+                guard newSheet == nil else { return }
+                Task { await requestReviewAtHappyMomentIfNeeded() }
+            }
+    }
+
+    private var rootContent: some View {
         TabView(selection: $selectedTab) {
             NavigationStack {
                 CalendarTabView(
@@ -147,7 +165,6 @@ struct RootView: View {
         .task {
             await Task.yield()
             await reevaluateRootSheetFlow()
-            await requestReviewAtHappyMomentIfNeeded()
         }
         .task {
             // Clear any badge orphaned by a pre-silent-push build and seed the live count.
@@ -155,9 +172,6 @@ struct RootView: View {
         }
         .onChange(of: unreadActivityCount) { _, _ in syncAppIconBadge() }
         .onChange(of: pendingInviteBadgeCount) { _, _ in syncAppIconBadge() }
-        .onChange(of: comments.count) { _, _ in
-            Task { await requestReviewAtHappyMomentIfNeeded() }
-        }
         .onReceive(NotificationCenter.default.publisher(for: ShareCalShareAcceptanceProgressSignal.startedNotificationName)) { notification in
             showAcceptanceStarted(ownerID: ShareCalShareAcceptanceProgressSignal.ownerID(in: notification))
         }
@@ -192,7 +206,6 @@ struct RootView: View {
             syncAppIconBadge()
             Task {
                 await syncAfterSceneBecameActiveIfNeeded()
-                await requestReviewAtHappyMomentIfNeeded()
             }
         }
         .onChange(of: selectedTab) { _, newTab in
@@ -232,7 +245,6 @@ struct RootView: View {
             guard newSheet == nil else { return }
             Task {
                 await reevaluateRootSheetFlow()
-                await requestReviewAtHappyMomentIfNeeded()
             }
         }
         .sheet(item: $activeRootSheet) { sheet in

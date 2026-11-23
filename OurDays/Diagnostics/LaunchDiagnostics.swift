@@ -60,7 +60,8 @@ enum ShareCalLaunchDiagnostics {
                 let preparedShare = try await services.cloudKit.prepareShare(ownerMemberID: settings.currentMemberID)
                 try await services.cloudKit.saveMemberProfileForSync(
                     ownerMemberID: settings.currentMemberID,
-                    displayName: settings.currentDisplayName
+                    displayName: settings.currentDisplayName,
+                    localUpdatedAt: settings.currentProfileUpdatedAt
                 )
                 settings.iCloudSharingEnabled = true
                 settings.hasStartedPairing = true

@@ -814,7 +814,8 @@ struct SettingsTabView: View {
             try? await cloudKit.saveMemberProfileForSync(
                 ownerMemberID: settings.currentMemberID,
                 displayName: displayName,
-                avatar: settings.currentAvatar
+                avatar: settings.currentAvatar,
+                localUpdatedAt: settings.currentProfileUpdatedAt
             )
         } catch {
             guard activeSharePreparationID == preparationID else { return }

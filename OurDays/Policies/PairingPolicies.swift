@@ -113,6 +113,37 @@ enum PairingSettingsPolicy {
     }
 }
 
+/// One Apple ID can run the app on two devices (iPhone + iPad today, a Mac later).
+/// Both write the same `MemberProfile` record from their own UserDefaults copy, and the
+/// regular sync only imports the partner's zone, so before this policy a device holding
+/// an old nickname/avatar wrote it back over the newer one on every sync, and the two
+/// devices' database pushes kept re-triggering each other (pairing-sync-integrity 0009).
+/// The newer edit wins: `localUpdatedAt` is when this device last changed its own copy.
+enum OwnMemberProfileMergePolicy {
+    enum Decision: Equatable {
+        case upload
+        case adoptCloud(CloudKitMemberProfile)
+        case unchanged
+    }
+
+    static func decide(
+        localDisplayName: String,
+        localAvatar: MemberAvatar?,
+        localUpdatedAt: Date?,
+        cloud: CloudKitMemberProfile?
+    ) -> Decision {
+        guard let cloud else { return .upload }
+        let sameName = PairingSettingsPolicy.normalizedDisplayName(localDisplayName)
+            == PairingSettingsPolicy.normalizedDisplayName(cloud.displayName)
+        let sameAvatar = MemberAvatarPolicy.normalized(localAvatar) == MemberAvatarPolicy.normalized(cloud.avatar)
+        if sameName && sameAvatar { return .unchanged }
+        // An install that predates the edit timestamp can't tell whether its copy is the
+        // newer one; the cloud record is what the partner already sees, so it wins.
+        guard let localUpdatedAt else { return .adoptCloud(cloud) }
+        return cloud.updatedAt > localUpdatedAt ? .adoptCloud(cloud) : .upload
+    }
+}
+
 struct ExistingICloudDataSnapshot: Equatable {
     let hasPrivateZoneData: Bool
     let hasOutgoingShare: Bool

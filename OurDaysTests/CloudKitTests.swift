@@ -959,9 +959,21 @@ final class CloudKitSharingFailureMessageTests: XCTestCase {
         let error = NSError(domain: CKError.errorDomain, code: CKError.Code.serverRejectedRequest.rawValue)
 
         XCTAssertEqual(
-            CloudKitSharingFailureMessage.userFacingMessage(for: error),
+            CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Development", language: .english),
             "CloudKit rejected private database writes for this container. For Development builds, sign in on this simulator with an Apple Account that belongs to the Apple Developer team, or deploy the CloudKit schema and test a Production/TestFlight build."
         )
+    }
+
+    func testProductionServerRejectedRequestDoesNotMentionDevelopmentSetup() {
+        let error = NSError(domain: CKError.errorDomain, code: CKError.Code.serverRejectedRequest.rawValue)
+
+        let chinese = CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .chinese)
+        let english = CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .english)
+
+        XCTAssertTrue(chinese.contains("iCloud"))
+        XCTAssertFalse(chinese.contains("Development"))
+        XCTAssertFalse(english.contains("Development"))
+        XCTAssertFalse(english.contains("simulator"))
     }
 
     func testUsesLocalizedDescriptionForOtherErrors() {

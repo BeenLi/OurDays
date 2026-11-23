@@ -331,7 +331,16 @@ enum SyncCancellationPolicy {
 }
 
 enum CloudKitSharingFailureMessage {
-    static func userFacingMessage(for error: Error) -> String {
+    /// `serverRejectedRequest` means two different things. In a Development build it is
+    /// almost always the setup (an Apple Account outside the developer team, or schema
+    /// not imported), so the message says how to fix that. In a Production build the
+    /// user can do nothing about the setup, and telling them about simulators and
+    /// TestFlight is wrong; they get a plain retry message in their own language.
+    static func userFacingMessage(
+        for error: Error,
+        environment: String = CloudKitExpectedConfigurationPolicy.containerEnvironment,
+        language: AppLanguage = AppLanguagePreference.read(from: .standard)
+    ) -> String {
         let nsError = error as NSError
         if nsError.domain == CKError.errorDomain,
            CKError.Code(rawValue: nsError.code) == .invalidArguments,
@@ -344,7 +353,15 @@ enum CloudKitSharingFailureMessage {
 
         if nsError.domain == CKError.errorDomain,
            CKError.Code(rawValue: nsError.code) == .serverRejectedRequest {
-            return "CloudKit rejected private database writes for this container. For Development builds, sign in on this simulator with an Apple Account that belongs to the Apple Developer team, or deploy the CloudKit schema and test a Production/TestFlight build."
+            guard environment == "Production" else {
+                return "CloudKit rejected private database writes for this container. For Development builds, sign in on this simulator with an Apple Account that belongs to the Apple Developer team, or deploy the CloudKit schema and test a Production/TestFlight build."
+            }
+            switch language {
+            case .english:
+                return "iCloud didn't accept this change right now. Pull down to sync again in a moment. If it keeps happening, check that iCloud is signed in and has free storage."
+            case .chinese:
+                return "iCloud 暂时没有接受这次保存。稍后下拉重新同步；如果一直出现，请检查 iCloud 是否已登录、存储空间是否已满。"
+            }
         }
 
         return error.localizedDescription

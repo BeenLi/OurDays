@@ -126,6 +126,26 @@ final class CalendarAccessService {
         return matches.count
     }
 
+    /// Test-harness only (`-ShareCalMoveCalendarEventTitled`): moves every event with this
+    /// title in the ShareCal calendar within ±30 days one hour later, keeping its length, so a
+    /// smoke run can reschedule an already-synced event. Returns how many it moved.
+    @discardableResult
+    func moveShareCalEventsOneHourLater(titled title: String, now: Date = .now) throws -> Int {
+        let calendar = try ensureShareCalEKCalendar()
+        let predicate = eventStore.predicateForEvents(
+            withStart: now.addingTimeInterval(-30 * 24 * 60 * 60),
+            end: now.addingTimeInterval(30 * 24 * 60 * 60),
+            calendars: [calendar]
+        )
+        let matches = eventStore.events(matching: predicate).filter { $0.title == title }
+        for event in matches {
+            event.startDate = event.startDate.addingTimeInterval(60 * 60)
+            event.endDate = event.endDate.addingTimeInterval(60 * 60)
+            try eventStore.save(event, span: .thisEvent, commit: true)
+        }
+        return matches.count
+    }
+
     func events(from startDate: Date, to endDate: Date, selectedCalendarIDs: Set<String>) -> [CalendarSourceEvent] {
         let calendars = eventStore.calendars(for: .event)
             .filter { selectedCalendarIDs.contains($0.calendarIdentifier) }

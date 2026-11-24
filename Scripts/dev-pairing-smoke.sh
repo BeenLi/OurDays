@@ -367,6 +367,27 @@ echo "$OWNER_OWN_PROBE2" | grep -q "$OWN_COMMENT" \
 echo "$OWNER_OWN_PROBE2" | grep -q "$OWN_REPLY" \
   || fail "owner did NOT see the partner's reply ('$OWN_REPLY') on its own event. Probe: $OWNER_OWN_PROBE2"
 log "Owner sees BOTH comments on its own event ✓ (own-event thread is symmetric)"
+
+# ---------- 9c. Reschedule: the owner moves the commented event one hour later ----------
+# The record is named after the event's start time; a moved one-off event keeps its first
+# name (EventMirrorKeyPolicy.keptKeysForRescheduledEvents), so both comments stay on it.
+log "Owner: moving '$OWN_EVENT_TITLE' one hour later (the next probe syncs it)..."
+launch_app "$OWNER_UDID" "owner-own-move" -ShareCalMoveCalendarEventTitled "$OWN_EVENT_TITLE"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag moveCalendarEvent succeeded title=.* count=1" $DIAG_TIMEOUT \
+  "owner moves its commented event" >/dev/null
+
+log "Owner: probing '$OWN_EVENT_TITLE' comments after the move (must still see BOTH)..."
+launch_app "$OWNER_UDID" "owner-own-probe3" -ShareCalProbeEventComments -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+OWNER_OWN_PROBE3=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "owner probes after the move")
+echo "$OWNER_OWN_PROBE3" | grep -q "$OWN_COMMENT" && echo "$OWNER_OWN_PROBE3" | grep -q "$OWN_REPLY" \
+  || fail "owner lost comments after moving its event. Probe: $OWNER_OWN_PROBE3"
+
+log "Partner: probing '$OWN_EVENT_TITLE' comments after the move (must still see BOTH)..."
+launch_app "$PARTNER_UDID" "partner-own-probe3" -ShareCalProbeEventComments -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+PARTNER_OWN_PROBE3=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "partner probes after the move")
+echo "$PARTNER_OWN_PROBE3" | grep -q "$OWN_COMMENT" && echo "$PARTNER_OWN_PROBE3" | grep -q "$OWN_REPLY" \
+  || fail "partner lost comments after the owner moved the event. Probe: $PARTNER_OWN_PROBE3"
+log "Both sides keep BOTH comments after the move ✓"
 # Delete it while it is still inside the sync window, so its mirror is tombstoned
 # instead of piling up in the owner's zone run after run.
 launch_app "$OWNER_UDID" "owner-own-cleanup" -ShareCalDeleteCalendarEventTitled "$OWN_EVENT_TITLE"

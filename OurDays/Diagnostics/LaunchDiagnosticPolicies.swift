@@ -51,6 +51,9 @@ enum ShareCalLaunchDiagnosticPolicy {
     /// WITHOUT syncing (the automatic launch sync is throttled right after a sync), so the
     /// next install has to discover the deletion from its own cloud mirrors.
     static let deleteCalendarEventTitledArgument = "-ShareCalDeleteCalendarEventTitled"
+    /// Reschedule smoke: move the ShareCal events with this title one hour later WITHOUT
+    /// syncing, so the next sync has to update the already-uploaded record in place.
+    static let moveCalendarEventTitledArgument = "-ShareCalMoveCalendarEventTitled"
     /// Reinstall smoke: on a fresh install, run the 「继续使用现有 iCloud 数据」 path
     /// (restore identity from the private zone + forced sync) and log what came back.
     static let recoverExistingICloudDataArgument = "-ShareCalRecoverExistingICloudData"
@@ -127,6 +130,10 @@ enum ShareCalLaunchDiagnosticPolicy {
 
     static func deleteCalendarEventTitle(arguments: [String]) -> String? {
         value(after: deleteCalendarEventTitledArgument, arguments: arguments)
+    }
+
+    static func moveCalendarEventTitle(arguments: [String]) -> String? {
+        value(after: moveCalendarEventTitledArgument, arguments: arguments)
     }
 
     static func shouldRecoverExistingICloudData(arguments: [String]) -> Bool {

@@ -224,7 +224,17 @@ struct SyncCoordinator {
                 "foregroundSync mirror upload candidates total=\(mirrorsForSync.count) changed=\(mirrorsNeedingCloudUpload.count) hardDeletes=\(hardDeletedMirrors.count)"
             )
 
-            try upsert(mirrors: mirrorsForSync, modelContext: modelContext)
+            // On a Mac the own events stay local; the iPhone uploads them
+            // (OwnEventUploadPolicy). Its mirror keys are device-local, so
+            // uploading here too would show the partner every event twice. The
+            // Mac's persisted own mirrors are the iPhone's cloud copies instead
+            // (imported below), so comments and red dots line up with the partner's.
+            let uploadsOwnEvents = OwnEventUploadPolicy.uploadsOwnEvents(
+                isRunningOnMac: ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
+            )
+            if uploadsOwnEvents {
+                try upsert(mirrors: mirrorsForSync, modelContext: modelContext)
+            }
             try upsert(shadows: activeShadows + deletedShadows, modelContext: modelContext)
             timing.mark("localMirrorsUpserted mirrors=\(mirrorsForSync.count) shadows=\(activeShadows.count + deletedShadows.count)")
             let localInvitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
@@ -335,12 +345,6 @@ struct SyncCoordinator {
                 // while the app was gone would stay live in the cloud for the partner.
                 // Use our own cloud mirrors as that previous state instead.
                 var reconciledTombstones: [EventMirror] = []
-                // On a Mac the own events stay local; the iPhone uploads them
-                // (OwnEventUploadPolicy). Its mirror keys are device-local, so
-                // uploading here too would show the partner every event twice.
-                let uploadsOwnEvents = OwnEventUploadPolicy.uploadsOwnEvents(
-                    isRunningOnMac: ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
-                )
                 let cloudHardDeletedMirrors = uploadsOwnEvents ? hardDeletedMirrors : []
                 if uploadsOwnEvents,
                    OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(existingShadows: existingShadows) {
@@ -421,6 +425,11 @@ struct SyncCoordinator {
                 async let commentsTask = cloudKit.fetchEventComments(sharedZoneIDs: activeSharedZoneIDs)
                 async let invitationsTask = cloudKit.fetchEventInvitations(sharedZoneIDs: activeSharedZoneIDs)
                 async let memberProfilesTask = cloudKit.fetchMemberProfiles(sharedZoneIDs: activeSharedZoneIDs)
+                if !uploadsOwnEvents {
+                    let cloudOwnMirrors = try await cloudKit.fetchOwnEventMirrors(currentMemberID: settings.currentMemberID)
+                    try replaceOwnMirrors(with: cloudOwnMirrors, modelContext: modelContext, ownerMemberID: settings.currentMemberID)
+                    timing.mark("cloudOwnMirrorsImported count=\(cloudOwnMirrors.count)")
+                }
 
                 // Import only what belongs to this pairing: a record whose other party is
                 // neither me nor the resolved partner is an ex-partner's leftover.
@@ -628,6 +637,21 @@ struct SyncCoordinator {
             // older copy back (which would also re-push both devices).
             settings.adoptOwnProfile(newer)
         }
+    }
+
+    /// A device that doesn't upload its own events (a Mac) keeps exactly the uploader's
+    /// cloud copies as its persisted own mirrors.
+    private func replaceOwnMirrors(
+        with cloudMirrors: [EventMirror],
+        modelContext: ModelContext,
+        ownerMemberID: String
+    ) throws {
+        let cloudKeys = Set(cloudMirrors.map(\.mirrorKey))
+        for local in try localMirrors(ownerMemberID: ownerMemberID, modelContext: modelContext)
+        where !cloudKeys.contains(local.mirrorKey) {
+            modelContext.delete(local)
+        }
+        try upsert(mirrors: cloudMirrors, modelContext: modelContext)
     }
 
     private func upsert(mirrors: [EventMirror], modelContext: ModelContext) throws {

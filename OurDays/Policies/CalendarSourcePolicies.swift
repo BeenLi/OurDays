@@ -67,6 +67,10 @@ struct CalendarSourceEvent: Hashable {
     /// Part of a repeating series: its occurrences share `eventIdentifier`, so only
     /// the occurrence date tells them apart.
     var isRecurring: Bool = false
+
+    var occurrenceEpoch: Int {
+        Int(occurrenceStartDate.timeIntervalSince1970.rounded())
+    }
 }
 
 struct LocalCalendarEventDraft: Equatable {
@@ -115,8 +119,7 @@ enum EventMirrorKeyPolicy {
         fingerprint: String
     ) -> String {
         let stableEventID = eventIdentifier.isEmpty ? fingerprint : eventIdentifier
-        let occurrenceEpoch = Int(occurrenceStartDate.timeIntervalSince1970.rounded())
-        return "\(eventPrefix(calendarIdentifier: calendarIdentifier, eventIdentifier: stableEventID))\(occurrenceEpoch)"
+        return "\(eventPrefix(calendarIdentifier: calendarIdentifier, eventIdentifier: stableEventID))\(epoch(occurrenceStartDate))"
     }
 
     static func makeMirrorKey(for event: CalendarSourceEvent) -> String {
@@ -129,49 +132,275 @@ enum EventMirrorKeyPolicy {
     }
 
     /// The key every event gets: its own key, or the key it was first uploaded under
-    /// when it has since moved (`keptKeysForRescheduledEvents`).
+    /// when its occurrence date has since moved (`keptKeysForRescheduledEvents`).
     static func mirrorKey(for event: CalendarSourceEvent, keptKeys: [String: String]) -> String {
         let key = makeMirrorKey(for: event)
         return keptKeys[key] ?? key
     }
 
-    /// A one-off event's occurrence date is its start date, so moving it would give it a
-    /// new key: a new record for the partner, and the comments on the old one (they hang
-    /// on the record name) would vanish with it. A moved event keeps the key it already
-    /// has instead, and its record is updated in place.
+    /// The record name is an occurrence's identity: comments hang on it. It is derived
+    /// from EventKit only the first time. Afterwards the local shadows (and own mirrors)
+    /// are the name book: each remembers its record name and which occurrence it stands
+    /// for now. Whatever moves the occurrence date would otherwise mint a new name (a new
+    /// record for the partner, the comments left behind on the old one):
     ///
-    /// Returns `[key the event would get now: key it keeps]`, only for events that moved.
-    /// An event keeps a key when it is not repeating (a series' occurrences share the
-    /// event identifier), its own key is unknown, and exactly one live shadow or own
-    /// mirror carries its calendar and event identifier under a key no other current
-    /// event has. Anything ambiguous gets its own key, as before.
+    /// - a one-off event moved to another time (its occurrence date is its start date);
+    /// - a whole repeating series moved (every occurrence date shifts);
+    /// - "all future events" moved, which EventKit turns into a new series with a new
+    ///   event identifier for the later half.
+    ///
+    /// Returns `[key the event would get now: key it keeps]`, only for events whose name
+    /// differs from the derived one. Three steps, each only for events whose derived key
+    /// is not live already:
+    ///
+    /// 1. Name book: a live entry recorded for exactly this calendar, event and
+    ///    occurrence date keeps its name.
+    /// 2. Moved: within one event identifier, occurrences that appeared pair with the
+    ///    entries that disappeared. A one-off pairs with its single entry at any distance;
+    ///    a series pairs nearest to nearest, closer than the series' own spacing, so a
+    ///    deleted occurrence is never mistaken for a moved one.
+    /// 3. Split (`matchesMovedSeries` only): a series seen for the first time pairs the
+    ///    same way with the disappeared entries of one other series in its calendar that
+    ///    has the same title, location, notes and URL.
+    ///
+    /// A kept key is never one a current event derives for itself, and never shared, so
+    /// keys stay unique. Anything ambiguous gets its own key, as before.
+    ///
+    /// `matchesMovedSeries` is off where only a slice of the calendar is known (the
+    /// calendar tab's visible week): entries outside the slice would look disappeared.
     static func keptKeysForRescheduledEvents(
         _ events: [CalendarSourceEvent],
         existingShadows: [LocalEventShadow],
-        existingMirrors: [EventMirror]
+        existingMirrors: [EventMirror],
+        matchesMovedSeries: Bool = true
     ) -> [String: String] {
-        let currentKeys = events.map { makeMirrorKey(for: $0) }
-        let currentKeySet = Set(currentKeys)
+        let derivedKeys = events.map { makeMirrorKey(for: $0) }
+        let derivedKeySet = Set(derivedKeys)
+        let entries = nameBook(existingShadows: existingShadows, existingMirrors: existingMirrors)
         var liveKeys = Set(existingShadows.filter { !$0.isTombstone }.map(\.id))
         liveKeys.formUnion(existingMirrors.filter { $0.deletedAt == nil }.map(\.mirrorKey))
-        let eventCountByPrefix = Dictionary(
-            events.map { (eventPrefix(calendarIdentifier: $0.calendarIdentifier, eventIdentifier: $0.eventIdentifier), 1) },
-            uniquingKeysWith: +
-        )
+        let currentOccurrences = Set(events.map { OccurrenceID(event: $0) })
+        let eventIndexesBySeries = Dictionary(grouping: events.indices, by: { SeriesID(event: events[$0]) })
 
+        // Entries a moved event may take: not the derived key of any current event.
+        var freeEntries = entries.filter { !derivedKeySet.contains($0.key) }
         var kept: [String: String] = [:]
-        for (event, key) in zip(events, currentKeys) {
-            guard !event.isRecurring, !event.eventIdentifier.isEmpty, !liveKeys.contains(key) else { continue }
-            let prefix = eventPrefix(calendarIdentifier: event.calendarIdentifier, eventIdentifier: event.eventIdentifier)
-            guard eventCountByPrefix[prefix] == 1 else { continue }
-            let candidates = liveKeys.filter { candidate in
-                guard candidate.hasPrefix(prefix), !currentKeySet.contains(candidate) else { return false }
-                return Int(candidate.dropFirst(prefix.count)) != nil
+        var pending: [Int] = []
+
+        // 1. Name book.
+        let entriesByOccurrence = Dictionary(grouping: freeEntries, by: \.occurrence)
+        var claimedKeys = Set<String>()
+        for index in events.indices {
+            let event = events[index]
+            guard !event.eventIdentifier.isEmpty, !liveKeys.contains(derivedKeys[index]) else { continue }
+            if let matches = entriesByOccurrence[OccurrenceID(event: event)] {
+                if matches.count == 1 {
+                    kept[derivedKeys[index]] = matches[0].key
+                    claimedKeys.insert(matches[0].key)
+                }
+                continue
             }
-            guard candidates.count == 1, let keptKey = candidates.first else { continue }
-            kept[key] = keptKey
+            pending.append(index)
+        }
+        // What is left disappeared: no current event stands where the entry was recorded.
+        freeEntries.removeAll { claimedKeys.contains($0.key) || currentOccurrences.contains($0.occurrence) }
+
+        // 2. Moved within the same event identifier.
+        let pendingBySeries = Dictionary(grouping: pending, by: { SeriesID(event: events[$0]) })
+        var unmatched: [Int] = []
+        for series in pendingBySeries.keys.sorted() {
+            let indexes = pendingBySeries[series] ?? []
+            let seriesIndexes = eventIndexesBySeries[series] ?? []
+            let candidates = freeEntries.filter { $0.occurrence.series == series }
+            let isSeries = seriesIndexes.count > 1 || seriesIndexes.contains { events[$0].isRecurring }
+            guard isSeries else {
+                if candidates.count == 1, let index = indexes.first {
+                    kept[derivedKeys[index]] = candidates[0].key
+                    claimedKeys.insert(candidates[0].key)
+                }
+                continue
+            }
+            guard matchesMovedSeries else { continue }
+            let pairs = nearestPairs(
+                indexes.map { events[$0] },
+                candidates,
+                closerThan: spacing(of: seriesIndexes.map { events[$0].occurrenceEpoch }, or: candidates.map(\.occurrence.epoch))
+            )
+            var matchedEpochs = Set<Int>()
+            for (event, entry) in pairs {
+                kept[makeMirrorKey(for: event)] = entry.key
+                claimedKeys.insert(entry.key)
+                matchedEpochs.insert(event.occurrenceEpoch)
+            }
+            unmatched.append(contentsOf: indexes.filter { !matchedEpochs.contains(events[$0].occurrenceEpoch) })
+        }
+        guard matchesMovedSeries, !unmatched.isEmpty else { return kept }
+        freeEntries.removeAll { claimedKeys.contains($0.key) }
+
+        // 3. Split: a series nothing in the name book knows yet.
+        let knownSeries = Set(entries.map(\.occurrence.series))
+        let unmatchedBySeries = Dictionary(grouping: unmatched, by: { SeriesID(event: events[$0]) })
+        for series in unmatchedBySeries.keys.sorted() where !knownSeries.contains(series) {
+            let seriesIndexes = eventIndexesBySeries[series] ?? []
+            let indexesByContent = Dictionary(grouping: unmatchedBySeries[series] ?? [], by: { content(for: events[$0]) })
+            for sharedContent in indexesByContent.keys.sorted() {
+                let candidates = freeEntries.filter { entry in
+                    entry.content == sharedContent
+                        && entry.occurrence.series.calendarIdentifier == series.calendarIdentifier
+                        && entry.occurrence.series != series
+                }
+                // Two old series with this content: no way to tell which one this continues.
+                guard Set(candidates.map(\.occurrence.series)).count == 1 else { continue }
+                let pairs = nearestPairs(
+                    (indexesByContent[sharedContent] ?? []).map { events[$0] },
+                    candidates,
+                    closerThan: spacing(of: seriesIndexes.map { events[$0].occurrenceEpoch }, or: candidates.map(\.occurrence.epoch))
+                )
+                for (event, entry) in pairs {
+                    kept[makeMirrorKey(for: event)] = entry.key
+                    claimedKeys.insert(entry.key)
+                }
+                freeEntries.removeAll { claimedKeys.contains($0.key) }
+            }
         }
         return kept
+    }
+
+    // MARK: Name book
+
+    private struct SeriesID: Hashable, Comparable {
+        let calendarIdentifier: String
+        let eventIdentifier: String
+
+        init(calendarIdentifier: String, eventIdentifier: String) {
+            self.calendarIdentifier = calendarIdentifier
+            self.eventIdentifier = eventIdentifier
+        }
+
+        init(event: CalendarSourceEvent) {
+            self.init(calendarIdentifier: event.calendarIdentifier, eventIdentifier: event.eventIdentifier)
+        }
+
+        static func < (lhs: SeriesID, rhs: SeriesID) -> Bool {
+            (lhs.calendarIdentifier, lhs.eventIdentifier) < (rhs.calendarIdentifier, rhs.eventIdentifier)
+        }
+    }
+
+    private struct OccurrenceID: Hashable {
+        let series: SeriesID
+        let epoch: Int
+
+        init(series: SeriesID, epoch: Int) {
+            self.series = series
+            self.epoch = epoch
+        }
+
+        init(event: CalendarSourceEvent) {
+            self.init(series: SeriesID(event: event), epoch: event.occurrenceEpoch)
+        }
+    }
+
+    /// One live record this device knows: its name, the occurrence it stands for now, and
+    /// (from a shadow) the content it was last uploaded with.
+    private struct NameBookEntry {
+        let key: String
+        let occurrence: OccurrenceID
+        let content: String?
+    }
+
+    /// Live shadows first: they record the event identifier the occurrence has now. An own
+    /// mirror without a shadow only has the identifier its key was first derived from.
+    private static func nameBook(existingShadows: [LocalEventShadow], existingMirrors: [EventMirror]) -> [NameBookEntry] {
+        var entryByKey: [String: NameBookEntry] = [:]
+        for shadow in existingShadows where !shadow.isTombstone && !shadow.localEventIdentifier.isEmpty {
+            entryByKey[shadow.id] = NameBookEntry(
+                key: shadow.id,
+                occurrence: OccurrenceID(
+                    series: SeriesID(
+                        calendarIdentifier: shadow.calendarIdentifier,
+                        eventIdentifier: shadow.localEventIdentifier
+                    ),
+                    epoch: epoch(shadow.occurrenceStartDate)
+                ),
+                content: content(
+                    ofFingerprint: shadow.fingerprint,
+                    eventIdentifier: shadow.localEventIdentifier,
+                    calendarIdentifier: shadow.calendarIdentifier
+                )
+            )
+        }
+        for mirror in existingMirrors where mirror.deletedAt == nil && entryByKey[mirror.mirrorKey] == nil {
+            let key = mirror.mirrorKey
+            let head = "\(mirror.sourceCalendarID):"
+            guard key.hasPrefix(head),
+                  let separator = key.lastIndex(of: ":"),
+                  Int(key[key.index(after: separator)...]) != nil else { continue }
+            let eventIdentifier = String(key.dropFirst(head.count).dropLast(key.distance(from: separator, to: key.endIndex)))
+            guard !eventIdentifier.isEmpty else { continue }
+            entryByKey[key] = NameBookEntry(
+                key: key,
+                occurrence: OccurrenceID(
+                    series: SeriesID(calendarIdentifier: mirror.sourceCalendarID, eventIdentifier: eventIdentifier),
+                    epoch: epoch(mirror.occurrenceStartDate)
+                ),
+                content: nil
+            )
+        }
+        return entryByKey.keys.sorted().compactMap { entryByKey[$0] }
+    }
+
+    /// The smallest gap between a series' occurrences: a move is recognised below it.
+    /// With a single current occurrence, the gap of the disappeared ones; else a day.
+    private static func spacing(of epochs: [Int], or fallbackEpochs: [Int]) -> Int {
+        smallestGap(epochs) ?? smallestGap(fallbackEpochs) ?? 24 * 60 * 60
+    }
+
+    private static func smallestGap(_ epochs: [Int]) -> Int? {
+        let sorted = Set(epochs).sorted()
+        return zip(sorted.dropFirst(), sorted).map { $0 - $1 }.min()
+    }
+
+    /// Pairs each appeared occurrence with the disappeared entry nearest in time, when the
+    /// entry's nearest occurrence is that one too and they are less than `limit` apart.
+    private static func nearestPairs(
+        _ events: [CalendarSourceEvent],
+        _ entries: [NameBookEntry],
+        closerThan limit: Int
+    ) -> [(CalendarSourceEvent, NameBookEntry)] {
+        let eventByEpoch = Dictionary(events.map { ($0.occurrenceEpoch, $0) }, uniquingKeysWith: { first, _ in first })
+        // Two entries recorded at one date: no way to tell which is the occurrence's.
+        let entryByEpoch = Dictionary(grouping: entries, by: \.occurrence.epoch)
+            .compactMapValues { $0.count == 1 ? $0[0] : nil }
+        let eventEpochs = eventByEpoch.keys.sorted()
+        let entryEpochs = entryByEpoch.keys.sorted()
+        var pairs: [(CalendarSourceEvent, NameBookEntry)] = []
+        for eventEpoch in eventEpochs {
+            guard let entryEpoch = nearest(to: eventEpoch, in: entryEpochs),
+                  nearest(to: entryEpoch, in: eventEpochs) == eventEpoch,
+                  abs(entryEpoch - eventEpoch) < limit,
+                  let event = eventByEpoch[eventEpoch],
+                  let entry = entryByEpoch[entryEpoch] else { continue }
+            pairs.append((event, entry))
+        }
+        return pairs
+    }
+
+    /// The value of the sorted `values` closest to `target`; the earlier one on a tie.
+    private static func nearest(to target: Int, in values: [Int]) -> Int? {
+        guard !values.isEmpty else { return nil }
+        var low = 0
+        var high = values.count
+        while low < high {
+            let middle = (low + high) / 2
+            if values[middle] < target { low = middle + 1 } else { high = middle }
+        }
+        if low == 0 { return values[0] }
+        if low == values.count { return values[values.count - 1] }
+        return target - values[low - 1] <= values[low] - target ? values[low - 1] : values[low]
+    }
+
+    private static func epoch(_ date: Date) -> Int {
+        Int(date.timeIntervalSince1970.rounded())
     }
 
     private static func eventPrefix(calendarIdentifier: String, eventIdentifier: String) -> String {
@@ -184,10 +413,28 @@ enum EventMirrorKeyPolicy {
             event.calendarIdentifier,
             "\(Int(event.startDate.timeIntervalSince1970.rounded()))",
             "\(Int(event.endDate.timeIntervalSince1970.rounded()))",
+            content(for: event)
+        ].joined(separator: "|")
+    }
+
+    /// What the event says, apart from when and which event it is: the tail of its
+    /// fingerprint.
+    static func content(for event: CalendarSourceEvent) -> String {
+        [
             event.title,
             event.location ?? "",
             event.notes ?? "",
             event.url?.absoluteString ?? ""
         ].joined(separator: "|")
+    }
+
+    /// The content part of a stored fingerprint (`content(for:)` of the event it was made
+    /// from); nil when the fingerprint is not in that form.
+    static func content(ofFingerprint fingerprint: String, eventIdentifier: String, calendarIdentifier: String) -> String? {
+        let head = "\(eventIdentifier)|\(calendarIdentifier)|"
+        guard fingerprint.hasPrefix(head) else { return nil }
+        let parts = fingerprint.dropFirst(head.count).split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3, Int(parts[0]) != nil, Int(parts[1]) != nil else { return nil }
+        return String(parts[2])
     }
 }

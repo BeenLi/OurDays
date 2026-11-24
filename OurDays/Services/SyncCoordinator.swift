@@ -173,12 +173,19 @@ struct SyncCoordinator {
             timing.mark(
                 "localStateLoaded accessRequests=\(localAccessRequests.count) shadows=\(existingShadows.count) mirrors=\(existingLocalMirrors.count)"
             )
-            // A one-off event moved to another time keeps its record, so the
-            // comments on it stay with it.
+            let hardDeletedMirrors = eventMirrorService.mirrorsOutsideSharingWindows(
+                existingLocalMirrors,
+                sharingWindows: sharingWindows
+            )
+            let hardDeletedMirrorKeys = Set(hardDeletedMirrors.map(\.mirrorKey))
+            let retainedLocalMirrors = existingLocalMirrors.filter { !hardDeletedMirrorKeys.contains($0.mirrorKey) }
+            let retainedShadows = existingShadows.filter { !hardDeletedMirrorKeys.contains($0.mirrorKey) }
+            // An event or a whole series moved to another time keeps its records, so
+            // the comments on them stay. Records about to be purged are not reused.
             let keptKeys = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
                 sourceEvents,
-                existingShadows: existingShadows,
-                existingMirrors: existingLocalMirrors
+                existingShadows: retainedShadows,
+                existingMirrors: retainedLocalMirrors
             )
             if !keptKeys.isEmpty {
                 syncInfo("foregroundSync rescheduled events keep their keys count=\(keptKeys.count)")
@@ -202,13 +209,6 @@ struct SyncCoordinator {
                 keptKeys: keptKeys
             )
             let currentMirrorKeys = Set(mirrors.map(\.mirrorKey))
-            let hardDeletedMirrors = eventMirrorService.mirrorsOutsideSharingWindows(
-                existingLocalMirrors,
-                sharingWindows: sharingWindows
-            )
-            let hardDeletedMirrorKeys = Set(hardDeletedMirrors.map(\.mirrorKey))
-            let retainedLocalMirrors = existingLocalMirrors.filter { !hardDeletedMirrorKeys.contains($0.mirrorKey) }
-            let retainedShadows = existingShadows.filter { !hardDeletedMirrorKeys.contains($0.mirrorKey) }
             let deletedShadows = eventMirrorService.deletedShadows(
                 existingEventKeys: currentMirrorKeys,
                 shadows: retainedShadows,

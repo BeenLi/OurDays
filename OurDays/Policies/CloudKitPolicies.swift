@@ -351,6 +351,17 @@ enum CloudKitSharingFailureMessage {
             return "CloudKit Production schema is missing ShareCal record types. Run Scripts/import-cloudkit-schema.sh development, deploy schema changes to Production in CloudKit Console, then retry Start Pairing."
         }
 
+        if isQuotaExceeded(nsError) {
+            // The user's iCloud storage is full; CloudKit's own text for this is an
+            // English "Quota Exceeded" that tells them nothing.
+            switch language {
+            case .english:
+                return "Your iCloud storage is full, so OurDays can't save changes. Free up space or upgrade iCloud+ in Settings → your name → iCloud, then pull down to sync again."
+            case .chinese:
+                return "你的 iCloud 储存空间已满，OurDays 无法保存。请在「设置」→ 你的名字 →「iCloud」里清理空间或升级 iCloud+，然后下拉重新同步。"
+            }
+        }
+
         if nsError.domain == CKError.errorDomain,
            CKError.Code(rawValue: nsError.code) == .serverRejectedRequest {
             guard environment == "Production" else {
@@ -370,6 +381,20 @@ enum CloudKitSharingFailureMessage {
         }
 
         return error.localizedDescription
+    }
+
+    /// Quota errors arrive on their own or per record inside a `partialFailure`.
+    static func isQuotaExceeded(_ error: NSError) -> Bool {
+        guard error.domain == CKError.errorDomain else { return false }
+        switch CKError.Code(rawValue: error.code) {
+        case .quotaExceeded:
+            return true
+        case .partialFailure:
+            let itemErrors = (error.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error])?.values
+            return itemErrors?.contains { isQuotaExceeded($0 as NSError) } ?? false
+        default:
+            return false
+        }
     }
 
     /// "CKError 15 · <server message> · <request id>", from what CloudKit attached to the

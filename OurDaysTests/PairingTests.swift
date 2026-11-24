@@ -378,6 +378,32 @@ final class ShareAcceptanceGuardPolicyTests: XCTestCase {
     }
 }
 
+final class InitialProfileCloudLookupPolicyTests: XCTestCase {
+    func testLooksUpWhenNoLocalNicknameAndCloudKitAvailable() {
+        XCTAssertTrue(InitialProfileCloudLookupPolicy.shouldLookUp(
+            localDisplayName: "", isCloudKitAvailable: true, hasAlreadyLookedUp: false
+        ))
+        XCTAssertTrue(InitialProfileCloudLookupPolicy.shouldLookUp(
+            localDisplayName: "   ", isCloudKitAvailable: true, hasAlreadyLookedUp: false
+        ))
+    }
+
+    func testSkipsWhenLocalNicknameExists() {
+        XCTAssertFalse(InitialProfileCloudLookupPolicy.shouldLookUp(
+            localDisplayName: "MacLee", isCloudKitAvailable: true, hasAlreadyLookedUp: false
+        ))
+    }
+
+    func testSkipsWithoutCloudKitOrAfterTheOneLookup() {
+        XCTAssertFalse(InitialProfileCloudLookupPolicy.shouldLookUp(
+            localDisplayName: nil, isCloudKitAvailable: false, hasAlreadyLookedUp: false
+        ))
+        XCTAssertFalse(InitialProfileCloudLookupPolicy.shouldLookUp(
+            localDisplayName: nil, isCloudKitAvailable: true, hasAlreadyLookedUp: true
+        ))
+    }
+}
+
 final class ExistingICloudDataRecoveryPolicyTests: XCTestCase {
     func testPromptsWhenFreshLocalStateFindsExistingCloudDataAfterProfileSetup() {
         XCTAssertTrue(

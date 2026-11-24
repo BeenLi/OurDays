@@ -843,6 +843,30 @@ enum ExistingICloudDataIdentityRecovery {
             settings.hasCompletedInitialProfilePrompt = true
         }
     }
+
+    /// Adopts the nickname/avatar this Apple ID already has in the cloud, so a second
+    /// device (or a reinstall) skips the first-run nickname prompt instead of writing a
+    /// new, newer name over it. Returns whether a profile was adopted.
+    @discardableResult
+    static func restoreOwnProfile(cloudKit: CloudKitCoupleSpaceService, settings: SettingsStore) async -> Bool {
+        if !settings.hasSyncedMemberID {
+            guard let memberID = try? await cloudKit.fetchCurrentUserRecordID() else { return false }
+            settings.currentMemberID = memberID
+        }
+        let identity = await cloudKit.fetchExistingICloudIdentity(ownerMemberID: settings.currentMemberID)
+        let recovered = ExistingICloudDataRecoveryPolicy.recoveredState(
+            shareRootCreatedAt: nil,
+            ownProfile: identity.ownProfile
+        )
+        // The user may have typed a name while the lookup ran; theirs wins.
+        guard let displayName = recovered.displayName,
+              PairingSettingsPolicy.normalizedDisplayName(settings.currentDisplayName) == nil else { return false }
+        settings.currentDisplayName = displayName
+        settings.currentAvatar = recovered.avatar
+        settings.currentProfileUpdatedAt = identity.ownProfile?.updatedAt
+        settings.hasCompletedInitialProfilePrompt = true
+        return true
+    }
 }
 
 /// Runs the sync pipeline from background entry points (silent CloudKit push,

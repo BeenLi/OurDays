@@ -356,15 +356,40 @@ enum CloudKitSharingFailureMessage {
             guard environment == "Production" else {
                 return "CloudKit rejected private database writes for this container. For Development builds, sign in on this simulator with an Apple Account that belongs to the Apple Developer team, or deploy the CloudKit schema and test a Production/TestFlight build."
             }
+            let message: String
             switch language {
             case .english:
-                return "iCloud didn't accept this change right now. Pull down to sync again in a moment. If it keeps happening, check that iCloud is signed in and has free storage."
+                message = "iCloud didn't accept this change right now. Pull down to sync again in a moment. If it keeps happening, check that iCloud is signed in and has free storage."
             case .chinese:
-                return "iCloud 暂时没有接受这次保存。稍后下拉重新同步；如果一直出现，请检查 iCloud 是否已登录、存储空间是否已满。"
+                message = "iCloud 暂时没有接受这次保存。稍后下拉重新同步；如果一直出现，请检查 iCloud 是否已登录、存储空间是否已满。"
             }
+            // "Server Rejected Request" says nothing about why. CloudKit's own reason and
+            // the request id ride along so a user's screenshot is enough to look the
+            // request up in CloudKit Console's logs.
+            return message + "\n" + serverDetail(for: nsError)
         }
 
         return error.localizedDescription
+    }
+
+    /// "CKError 15 · <server message> · <request id>", from what CloudKit attached to the
+    /// error. Pieces CloudKit didn't send are left out.
+    static func serverDetail(for error: NSError) -> String {
+        let description = error.description
+        let serverMessage = (error.userInfo["ServerErrorDescription"] as? String)
+            ?? firstMatch(#"server message = "([^"]*)""#, in: description)
+        let requestID = firstMatch(#"uuid = ([0-9A-Fa-f-]{8,})"#, in: description)
+        return (["CKError \(error.code)", serverMessage, requestID].compactMap { $0 })
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    private static func firstMatch(_ pattern: String, in text: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        return String(text[range])
     }
 }
 

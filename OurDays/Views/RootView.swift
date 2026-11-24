@@ -248,6 +248,7 @@ struct RootView: View {
             }
         }
         .sheet(item: $activeRootSheet) { sheet in
+            Group {
             switch sheet {
             case .initialProfilePrompt:
                 InitialProfilePromptSheet(
@@ -302,6 +303,9 @@ struct RootView: View {
                     }
                 )
             }
+            }
+            .environment(settings)
+            .environment(services)
         }
         .alert(
             settings.strings.pairingReplacementTitle,

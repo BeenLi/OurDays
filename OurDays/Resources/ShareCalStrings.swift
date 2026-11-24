@@ -70,6 +70,7 @@ struct ShareCalStrings {
     var calendarTab: String { text("Calendar", "日历") }
     var activityTab: String { text("Activity", "动态") }
     var invitesTab: String { text("Invites", "邀请") }
+    var invitesSubtitle: String { text("Plans you make together", "一起定下的安排") }
     var activityTitle: String { text("Activity", "动态") }
     var activityEmptyTitle: String { text("No activity yet", "还没有动态") }
     var activityEmptyMessage: String {

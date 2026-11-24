@@ -274,13 +274,16 @@ struct SettingsTabView: View {
         ScrollViewReader { proxy in
             List {
                 Section {
+                    // Zero side insets: the inset-grouped list already sets the section margin,
+                    // so the title lines up with the other tabs' titles and the card's edges
+                    // line up with the section cards below it.
                     OurDaysPageHeader(title: strings.usTitle, subtitle: strings.usSubtitle)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 0, trailing: 20))
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 0, trailing: 0))
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
 
                     pairingStatusCard
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
 
@@ -288,7 +291,7 @@ struct SettingsTabView: View {
                         Text(errorMessage)
                             .font(.footnote)
                             .foregroundStyle(OurDaysTheme.destructive)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 24, bottom: 4, trailing: 24))
+                            .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 4, trailing: 8))
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                     }
@@ -454,6 +457,7 @@ struct SettingsTabView: View {
         }
         .listSectionSpacing(20)
         .ourDaysListBackground()
+        .ourDaysReadableWidth()
         .ourDaysStatusBarCover()
         .refreshable {
             await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)

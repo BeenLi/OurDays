@@ -97,6 +97,36 @@ extension View {
             .background(OurDaysTheme.paper)
     }
 
+    /// Caps a tab's list at `ReadableContentWidthPolicy.maxContentWidth`, centered, while
+    /// the paper background still fills the screen. Apply after `ourDaysListBackground()`.
+    /// A no-op on phone widths.
+    func ourDaysReadableWidth() -> some View {
+        modifier(OurDaysReadableWidthModifier())
+    }
+}
+
+private struct OurDaysReadableWidthModifier: ViewModifier {
+    @State private var containerWidth: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        // Widening the horizontal safe area (rather than framing the List) keeps the List
+        // full-width, so it still scrolls from the screen edges and the background reaches
+        // them; the rows and an inset-grouped list's own margins sit inside the inset.
+        content
+            .safeAreaPadding(
+                .horizontal,
+                ReadableContentWidthPolicy.extraHorizontalInset(containerWidth: containerWidth)
+            )
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                containerWidth = width
+            }
+    }
+}
+
+extension View {
+
     /// Paper behind the status bar on a tab whose navigation bar is hidden, so rows
     /// scrolled up slide under it instead of running into the clock.
     func ourDaysStatusBarCover() -> some View {

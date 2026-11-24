@@ -519,3 +519,23 @@ final class DateFormatterCacheTests: XCTestCase {
         XCTAssertEqual(fixed.string(from: Date(timeIntervalSince1970: 0)), "1970年1月1日")
     }
 }
+
+final class ReadableContentWidthPolicyTests: XCTestCase {
+    func testPhoneWidthsGetNoExtraInset() {
+        // iPhone 17, Pro Max, the iPhone Duo's cover and its inner screen in portrait.
+        for width in [402.0, 440.0, 466.0, 640.0] {
+            XCTAssertEqual(ReadableContentWidthPolicy.extraHorizontalInset(containerWidth: width), 0, "width \(width)")
+        }
+    }
+
+    func testWideContainerCentersContentAtMaxWidth() {
+        // The unfolded iPhone Duo in landscape: 951pt wide.
+        let inset = ReadableContentWidthPolicy.extraHorizontalInset(containerWidth: 951)
+        XCTAssertEqual(inset, 155.5)
+        XCTAssertEqual(951 - 2 * inset, ReadableContentWidthPolicy.maxContentWidth)
+    }
+
+    func testUnmeasuredContainerGetsNoInset() {
+        XCTAssertEqual(ReadableContentWidthPolicy.extraHorizontalInset(containerWidth: 0), 0)
+    }
+}

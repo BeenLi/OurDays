@@ -976,6 +976,36 @@ final class CloudKitSharingFailureMessageTests: XCTestCase {
         XCTAssertFalse(english.contains("simulator"))
     }
 
+    func testProductionServerRejectedRequestCarriesServerReasonAndRequestID() {
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.serverRejectedRequest.rawValue,
+            userInfo: [
+                "ServerErrorDescription": "Invalid share permission",
+                NSLocalizedDescriptionKey: "Server Rejected Request"
+            ]
+        )
+
+        let message = CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .chinese)
+
+        XCTAssertTrue(message.hasPrefix("iCloud 暂时没有接受这次保存。"))
+        XCTAssertTrue(message.hasSuffix("\nCKError 15 · Invalid share permission"))
+    }
+
+    func testServerDetailParsesMessageAndRequestIDFromDescription() {
+        final class DescribedError: NSError {
+            override var description: String {
+                #"<CKError 0x1: "Server Rejected Request" (15/2000); server message = "Internal server error"; op = 1A2B; uuid = 0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0; container ID = "iCloud.x">"#
+            }
+        }
+        let error = DescribedError(domain: CKError.errorDomain, code: 15)
+
+        XCTAssertEqual(
+            CloudKitSharingFailureMessage.serverDetail(for: error),
+            "CKError 15 · Internal server error · 0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0"
+        )
+    }
+
     func testUsesLocalizedDescriptionForOtherErrors() {
         let error = NSError(domain: NSCocoaErrorDomain, code: 4, userInfo: [NSLocalizedDescriptionKey: "Missing file"])
 

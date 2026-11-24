@@ -553,3 +553,106 @@ final class OwnEventCloudOnlyMirrorTests: XCTestCase {
         XCTAssertEqual(result.map(\.mirrorKey), ["phone-only"])
     }
 }
+
+final class PairingDateRelayTests: XCTestCase {
+    private var suiteNames: [String] = []
+    private var calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        return calendar
+    }()
+
+    override func tearDown() {
+        for name in suiteNames { UserDefaults().removePersistentDomain(forName: name) }
+        super.tearDown()
+    }
+
+    private func makeStore() -> SettingsStore {
+        let name = "PairingDateRelayTests-\(UUID().uuidString)"
+        suiteNames.append(name)
+        return SettingsStore(defaults: UserDefaults(suiteName: name)!)
+    }
+
+    private func day(_ value: Int) -> Date {
+        calendar.date(from: DateComponents(year: 2026, month: 11, day: value))!
+    }
+
+    func testSamePartnerKeepsTheEarliestDay() {
+        let phone = OwnRelayedSettings.Pairing(partnerID: "_partner", date: day(1))
+        let mac = OwnRelayedSettings.Pairing(partnerID: "_partner", date: day(24))
+        XCTAssertEqual(PairingDateRelayPolicy.merge(mac, phone, clearedAt: nil, calendar: calendar), phone)
+        XCTAssertEqual(PairingDateRelayPolicy.merge(phone, mac, clearedAt: nil, calendar: calendar), phone)
+    }
+
+    func testNewPartnerReplacesTheOldPairing() {
+        let old = OwnRelayedSettings.Pairing(partnerID: "_old", date: day(1))
+        let new = OwnRelayedSettings.Pairing(partnerID: "_new", date: day(20))
+        XCTAssertEqual(PairingDateRelayPolicy.merge(new, old, clearedAt: nil, calendar: calendar), new)
+    }
+
+    func testPairingFromBeforeUnpairIsDropped() {
+        let old = OwnRelayedSettings.Pairing(partnerID: "_partner", date: day(1))
+        let again = OwnRelayedSettings.Pairing(partnerID: "_partner", date: day(20))
+        let clearedAt = day(20).addingTimeInterval(3_600)
+        XCTAssertEqual(PairingDateRelayPolicy.merge(again, old, clearedAt: clearedAt, calendar: calendar), again)
+        XCTAssertNil(PairingDateRelayPolicy.merge(nil, old, clearedAt: clearedAt, calendar: calendar))
+    }
+
+    func testNewDeviceTakesTheIPhoneDayOverItsOwnFirstSync() {
+        let phone = makeStore()
+        phone.partnerShareOwnerID = "_partner"
+        phone.pairingDate = day(1)
+        let uploaded = phone.relayedSettingsSnapshot(calendars: nil)
+        XCTAssertEqual(uploaded.pairing, .init(partnerID: "_partner", date: day(1)))
+
+        let mac = makeStore()
+        mac.adoptRelayedSettings(uploaded, calendars: nil)
+        XCTAssertNil(mac.pairingDate, "the partner isn't known yet")
+
+        mac.partnerShareOwnerID = "_partner"
+        mac.markPairingDateIfNeeded(at: day(24), calendar: calendar)
+        mac.adoptRelayedSettings(uploaded, calendars: nil)
+        XCTAssertEqual(mac.pairingDate, day(1))
+
+        let merged = OwnSettingsRelayMergePolicy.merge(
+            local: mac.relayedSettingsSnapshot(calendars: nil),
+            cloud: uploaded,
+            calendar: calendar
+        )
+        XCTAssertFalse(OwnSettingsRelayMergePolicy.needsUpload(merged: merged, cloud: uploaded))
+    }
+
+    func testRecoveredDayIsReplacedAndNeverRelayed() {
+        let mac = makeStore()
+        mac.partnerShareOwnerID = "_partner"
+        // The share root was made when the invitation went out, before the partner accepted.
+        mac.setRecoveredPairingDate(day(1))
+        XCTAssertNil(mac.relayedSettingsSnapshot(calendars: nil).pairing)
+
+        var relayed = OwnRelayedSettings()
+        relayed.pairing = .init(partnerID: "_partner", date: day(3))
+        mac.adoptRelayedSettings(relayed, calendars: nil)
+        XCTAssertEqual(mac.pairingDate, day(3))
+        XCTAssertFalse(mac.pairingDateIsRecovered)
+    }
+
+    func testOtherPartnersDayIsNotAdopted() {
+        let mac = makeStore()
+        mac.partnerShareOwnerID = "_new"
+        mac.pairingDate = day(20)
+        var relayed = OwnRelayedSettings()
+        relayed.pairing = .init(partnerID: "_old", date: day(1))
+        mac.adoptRelayedSettings(relayed, calendars: nil)
+        XCTAssertEqual(mac.pairingDate, day(20))
+    }
+
+    func testUnpairStampsTheClearTime() {
+        let phone = makeStore()
+        phone.partnerShareOwnerID = "_partner"
+        phone.pairingDate = day(1)
+        phone.clearPairingState()
+        XCTAssertNil(phone.pairingDate)
+        XCTAssertNotNil(phone.pairingClearedAt)
+        XCTAssertNil(phone.relayedSettingsSnapshot(calendars: nil).pairing)
+    }
+}

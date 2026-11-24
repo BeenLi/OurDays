@@ -16,7 +16,10 @@ final class SettingsStore {
         didSet { defaults.set(currentICloudEmailAddress, forKey: Key.currentICloudEmailAddress) }
     }
     var partnerNoteName: String {
-        didSet { defaults.set(partnerNoteName, forKey: Key.partnerNoteName) }
+        didSet {
+            defaults.set(partnerNoteName, forKey: Key.partnerNoteName)
+            markRelayedEdit(\.partnerNoteUpdatedAt)
+        }
     }
     var partnerShareOwnerID: String? {
         didSet { saveOptionalString(partnerShareOwnerID, forKey: Key.partnerShareOwnerID) }
@@ -44,7 +47,10 @@ final class SettingsStore {
     /// A local-only avatar I picked for the partner; wins over `partnerSyncedAvatar`,
     /// like `partnerNoteName` wins over `partnerSyncedDisplayName`.
     var partnerAvatarOverride: MemberAvatar? {
-        didSet { saveAvatar(partnerAvatarOverride, forKey: Key.partnerAvatarOverride) }
+        didSet {
+            saveAvatar(partnerAvatarOverride, forKey: Key.partnerAvatarOverride)
+            markRelayedEdit(\.partnerNoteUpdatedAt)
+        }
     }
     var hasCompletedInitialProfilePrompt: Bool {
         didSet { defaults.set(hasCompletedInitialProfilePrompt, forKey: Key.hasCompletedInitialProfilePrompt) }
@@ -85,11 +91,39 @@ final class SettingsStore {
         didSet { saveSelectedCalendarIDs() }
     }
     var defaultVisibility: EventVisibility {
-        didSet { defaults.set(defaultVisibility.rawValue, forKey: Key.defaultVisibility) }
+        didSet {
+            defaults.set(defaultVisibility.rawValue, forKey: Key.defaultVisibility)
+            markRelayedEdit(\.defaultVisibilityUpdatedAt)
+        }
     }
     var appLanguage: AppLanguage {
-        didSet { AppLanguagePreference.write(appLanguage, to: defaults) }
+        didSet {
+            AppLanguagePreference.write(appLanguage, to: defaults)
+            markRelayedEdit(\.appLanguageUpdatedAt)
+        }
     }
+    /// When a person last changed each setting that follows them to their other devices
+    /// (`OwnRelayedSettings`), or the edit time of the copy adopted from another device.
+    var partnerNoteUpdatedAt: Date? {
+        didSet { saveOptionalDate(partnerNoteUpdatedAt, forKey: Key.partnerNoteUpdatedAt) }
+    }
+    var calendarSelectionUpdatedAt: Date? {
+        didSet { saveOptionalDate(calendarSelectionUpdatedAt, forKey: Key.calendarSelectionUpdatedAt) }
+    }
+    var defaultVisibilityUpdatedAt: Date? {
+        didSet { saveOptionalDate(defaultVisibilityUpdatedAt, forKey: Key.defaultVisibilityUpdatedAt) }
+    }
+    var appLanguageUpdatedAt: Date? {
+        didSet { saveOptionalDate(appLanguageUpdatedAt, forKey: Key.appLanguageUpdatedAt) }
+    }
+    /// The calendar selection of all my devices, by account and title. Holds the
+    /// calendars this device doesn't have, so its own edits don't drop them.
+    var relayedCalendarReferences: Set<CalendarReference> {
+        didSet { saveCalendarReferences() }
+    }
+    /// True while a copy from another device is being applied: those writes are not
+    /// this device's edits and must not get a new edit time.
+    @ObservationIgnored private var isAdoptingRelayedSettings = false
     var lastSyncAt: Date? {
         didSet { defaults.set(lastSyncAt, forKey: Key.lastSyncAt) }
     }
@@ -181,6 +215,15 @@ final class SettingsStore {
         selectedCalendarIDs = Set(defaults.stringArray(forKey: Key.selectedCalendarIDs) ?? [])
         defaultVisibility = EventVisibility(rawValue: defaults.string(forKey: Key.defaultVisibility) ?? "") ?? .fullDetails
         appLanguage = AppLanguagePreference.read(from: defaults)
+        partnerNoteUpdatedAt = defaults.object(forKey: Key.partnerNoteUpdatedAt) as? Date
+        calendarSelectionUpdatedAt = defaults.object(forKey: Key.calendarSelectionUpdatedAt) as? Date
+        defaultVisibilityUpdatedAt = defaults.object(forKey: Key.defaultVisibilityUpdatedAt) as? Date
+        appLanguageUpdatedAt = defaults.object(forKey: Key.appLanguageUpdatedAt) as? Date
+        relayedCalendarReferences = Set(
+            (defaults.data(forKey: Key.relayedCalendarReferences)).flatMap {
+                try? JSONDecoder().decode([CalendarReference].self, from: $0)
+            } ?? []
+        )
         lastSyncAt = defaults.object(forKey: Key.lastSyncAt) as? Date
         lastSeenActivityAt = defaults.object(forKey: Key.lastSeenActivityAt) as? Date
         lastNotifiedAt = defaults.object(forKey: Key.lastNotifiedAt) as? Date
@@ -234,11 +277,130 @@ final class SettingsStore {
         defaults.stringArray(forKey: Key.outgoingShareParticipantIDs) ?? []
     }
 
+    /// A person's pick in Settings. The automatic ShareCal selection elsewhere is not an
+    /// edit, so it never wins over the selection made on another device.
     func toggleCalendarSelection(_ calendarID: String, isSelected: Bool) {
         if isSelected {
             selectedCalendarIDs.insert(calendarID)
         } else {
             selectedCalendarIDs.remove(calendarID)
+        }
+        markRelayedEdit(\.calendarSelectionUpdatedAt)
+    }
+
+    private func markRelayedEdit(_ stamp: ReferenceWritableKeyPath<SettingsStore, Date?>) {
+        guard !isAdoptingRelayedSettings else { return }
+        self[keyPath: stamp] = OwnSettingsRelayClock.stamp()
+    }
+
+    private func saveCalendarReferences() {
+        if let data = try? JSONEncoder().encode(relayedCalendarReferences.sorted()) {
+            defaults.set(data, forKey: Key.relayedCalendarReferences)
+        }
+    }
+
+    // MARK: Settings that follow me to my other devices (pairing-sync-integrity 0013)
+
+    /// Settings edited before edit times existed still travel, as the oldest possible
+    /// edit: they win over a device that never set them and lose to any real edit.
+    private var effectivePartnerNoteUpdatedAt: Date? {
+        guard hasPromptedPartnerNoteForCurrentPairing else { return partnerNoteUpdatedAt }
+        return partnerNoteUpdatedAt ?? .distantPast
+    }
+
+    private var effectiveCalendarSelectionUpdatedAt: Date? {
+        guard !selectedCalendarIDs.isEmpty || !relayedCalendarReferences.isEmpty else { return calendarSelectionUpdatedAt }
+        return calendarSelectionUpdatedAt ?? .distantPast
+    }
+
+    private var effectiveDefaultVisibilityUpdatedAt: Date? {
+        defaultVisibilityUpdatedAt ?? (defaultVisibility == .fullDetails ? nil : .distantPast)
+    }
+
+    private var effectiveAppLanguageUpdatedAt: Date? {
+        appLanguageUpdatedAt ?? (AppLanguagePreference.hasExplicitChoice(in: defaults) ? .distantPast : nil)
+    }
+
+    /// This device's copy of the relayed settings. `calendars` is nil without calendar
+    /// access; the selection then travels as last relayed.
+    func relayedSettingsSnapshot(calendars: [CalendarDescriptor]?) -> OwnRelayedSettings {
+        var snapshot = OwnRelayedSettings()
+        if hasPromptedPartnerNoteForCurrentPairing,
+           let partnerID = MemberIDPolicy.normalized(partnerShareOwnerID),
+           let updatedAt = effectivePartnerNoteUpdatedAt {
+            snapshot.partnerNote = OwnRelayedSettings.PartnerNote(
+                partnerID: partnerID,
+                noteName: partnerNoteName,
+                avatarOverride: MemberAvatarPolicy.normalized(partnerAvatarOverride),
+                updatedAt: updatedAt
+            )
+        }
+        let references = calendars.map {
+            CalendarSelectionRelayPolicy.references(
+                relayed: relayedCalendarReferences,
+                localSelection: selectedCalendarIDs,
+                calendars: $0
+            )
+        } ?? relayedCalendarReferences
+        if !references.isEmpty, let updatedAt = effectiveCalendarSelectionUpdatedAt {
+            snapshot.calendars = OwnRelayedSettings.Calendars(references: references.sorted(), updatedAt: updatedAt)
+        }
+        if let updatedAt = effectiveDefaultVisibilityUpdatedAt {
+            snapshot.defaultVisibility = OwnRelayedSettings.Value(rawValue: defaultVisibility.rawValue, updatedAt: updatedAt)
+        }
+        if let updatedAt = effectiveAppLanguageUpdatedAt {
+            snapshot.language = OwnRelayedSettings.Value(rawValue: appLanguage.rawValue, updatedAt: updatedAt)
+        }
+        snapshot.lastSeenActivityAt = lastSeenActivityAt
+        return snapshot
+    }
+
+    /// Takes each part of `relayed` that is newer than this device's own edit. Safe to
+    /// call again later in the same sync (after the partner is known); taken parts no
+    /// longer compare newer.
+    func adoptRelayedSettings(_ relayed: OwnRelayedSettings, calendars: [CalendarDescriptor]?) {
+        isAdoptingRelayedSettings = true
+        defer { isAdoptingRelayedSettings = false }
+
+        if let note = relayed.partnerNote,
+           OwnSettingsRelayAdoptionPolicy.adoptsPartnerNote(note, currentPartnerID: partnerShareOwnerID),
+           OwnSettingsRelayAdoptionPolicy.shouldAdopt(relayedAt: note.updatedAt, localAt: effectivePartnerNoteUpdatedAt) {
+            if partnerNoteName != note.noteName { partnerNoteName = note.noteName }
+            let avatar = MemberAvatarPolicy.normalized(note.avatarOverride)
+            if partnerAvatarOverride != avatar { partnerAvatarOverride = avatar }
+            partnerNoteUpdatedAt = note.updatedAt
+            // The note and pairing-safety prompts were answered on that device.
+            if !hasPromptedPartnerNoteForCurrentPairing { hasPromptedPartnerNoteForCurrentPairing = true }
+            if !hasShownPairingSafetyNoticeForCurrentPairing { hasShownPairingSafetyNoticeForCurrentPairing = true }
+        }
+        if let relayedCalendars = relayed.calendars,
+           let calendars,
+           OwnSettingsRelayAdoptionPolicy.shouldAdopt(
+               relayedAt: relayedCalendars.updatedAt,
+               localAt: effectiveCalendarSelectionUpdatedAt
+           ) {
+            if let ids = OwnSettingsRelayAdoptionPolicy.calendarSelection(relayed: relayedCalendars, calendars: calendars),
+               ids != selectedCalendarIDs {
+                selectedCalendarIDs = ids
+            }
+            let references = Set(relayedCalendars.references)
+            if relayedCalendarReferences != references { relayedCalendarReferences = references }
+            calendarSelectionUpdatedAt = relayedCalendars.updatedAt
+        }
+        if let visibility = relayed.defaultVisibility,
+           let value = EventVisibility(rawValue: visibility.rawValue),
+           OwnSettingsRelayAdoptionPolicy.shouldAdopt(relayedAt: visibility.updatedAt, localAt: effectiveDefaultVisibilityUpdatedAt) {
+            if defaultVisibility != value { defaultVisibility = value }
+            defaultVisibilityUpdatedAt = visibility.updatedAt
+        }
+        if let language = relayed.language,
+           let value = AppLanguage(rawValue: language.rawValue),
+           OwnSettingsRelayAdoptionPolicy.shouldAdopt(relayedAt: language.updatedAt, localAt: effectiveAppLanguageUpdatedAt) {
+            if appLanguage != value { appLanguage = value }
+            appLanguageUpdatedAt = language.updatedAt
+        }
+        if let seen = relayed.lastSeenActivityAt, seen > (lastSeenActivityAt ?? .distantPast) {
+            lastSeenActivityAt = seen
         }
     }
 
@@ -359,6 +521,11 @@ final class SettingsStore {
         static let reviewPromptedMoments = "reviewPromptedMoments"
         static let invitationIDsWithLocalEventSeen = "invitationIDsWithLocalEventSeen"
         static let lastReviewPromptAt = "lastReviewPromptAt"
+        static let partnerNoteUpdatedAt = "partnerNoteUpdatedAt"
+        static let calendarSelectionUpdatedAt = "calendarSelectionUpdatedAt"
+        static let defaultVisibilityUpdatedAt = "defaultVisibilityUpdatedAt"
+        static let appLanguageUpdatedAt = "appLanguageUpdatedAt"
+        static let relayedCalendarReferences = "relayedCalendarReferences"
     }
 
     private enum LegacyKey {

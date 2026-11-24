@@ -259,6 +259,29 @@ enum OwnEventTwinPolicy {
         return display
     }
 
+    /// On a device that doesn't upload its own events (a Mac), the own events shared from
+    /// calendars it doesn't have (an "On My iPhone" calendar, an account signed in only on
+    /// the iPhone): the live persisted copies no display mirror stands for, within
+    /// `interval`. They show read-only, like every event in OurDays, and take comments.
+    /// A copy from a calendar shown here by name is left out even unmatched: it is an
+    /// event edited on this device that the iPhone hasn't uploaded again yet.
+    static func cloudOnlyMirrors(
+        display: [EventMirror],
+        persistedOwn: [EventMirror],
+        localCalendarTitles: Set<String>,
+        in interval: DateInterval
+    ) -> [EventMirror] {
+        let shownKeys = Set(display.map(\.mirrorKey))
+        return persistedOwn.filter { mirror in
+            mirror.deletedAt == nil
+                && !mirror.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
+                && !shownKeys.contains(mirror.mirrorKey)
+                && !localCalendarTitles.contains(mirror.sourceCalendarTitle)
+                && mirror.startDate < interval.end
+                && max(mirror.endDate, mirror.startDate) >= interval.start
+        }
+    }
+
     static func matchKey(for mirror: EventMirror) -> String {
         [
             mirror.title,

@@ -133,6 +133,13 @@ struct SyncCoordinator {
                     timing.mark("memberIDFetchFailed")
                 }
             }
+            // Before the ShareCal fallback below: a new device takes the calendar
+            // selection (and the rest) my other devices already made.
+            var relayedSettings: (settings: OwnRelayedSettings, calendars: [CalendarDescriptor]?)?
+            if let cloudKit, settings.iCloudSharingEnabled, settings.hasSyncedMemberID {
+                relayedSettings = await relayOwnSettings(cloudKit: cloudKit, settings: settings)
+                timing.mark("ownSettingsRelayed ok=\(relayedSettings != nil)")
+            }
             if settings.selectedCalendarIDs.isEmpty {
                 let calendar = try calendarAccess.ensureShareCalCalendar()
                 settings.selectedCalendarIDs = ShareCalCalendarBootstrapPolicy.selectedCalendarIDs(
@@ -312,6 +319,12 @@ struct SyncCoordinator {
                 // status would pass through a half-pairing (an unpairing partner reads as
                 // "waiting for you to share" for a moment) and the UI would react to it.
                 settings.partnerShareOwnerID = resolution.partnerID
+                // The partner note travels per partner; a new device learns who the
+                // partner is only here. Same main-actor turn, so the note prompt never
+                // sees the partner without the note.
+                if let relayedSettings {
+                    settings.adoptRelayedSettings(relayedSettings.settings, calendars: relayedSettings.calendars)
+                }
 
                 if PartnerDeparturePolicy.partnerHasLeft(
                     previousPartnerID: previousPartnerShareOwnerID,
@@ -611,6 +624,33 @@ struct SyncCoordinator {
             )
         }
         settings.lastNotifiedAt = syncedAt
+    }
+
+    /// Brings the settings that follow me (note name, calendar selection, visibility,
+    /// language, 动态 read position) in line with my other devices
+    /// (pairing-sync-integrity 0013). Best-effort: offline, or a Production schema
+    /// without the record type, must never fail the sync. Returns the merged copy so it
+    /// can be applied again once the partner is known.
+    private func relayOwnSettings(
+        cloudKit: CloudKitCoupleSpaceService,
+        settings: SettingsStore
+    ) async -> (settings: OwnRelayedSettings, calendars: [CalendarDescriptor]?)? {
+        let calendars = calendarAccess.authorizationState().canReadEvents ? calendarAccess.calendars() : nil
+        do {
+            let cloud = try await cloudKit.fetchOwnSettings()
+            let merged = OwnSettingsRelayMergePolicy.merge(
+                local: settings.relayedSettingsSnapshot(calendars: calendars),
+                cloud: cloud
+            )
+            settings.adoptRelayedSettings(merged, calendars: calendars)
+            if OwnSettingsRelayMergePolicy.needsUpload(merged: merged, cloud: cloud) {
+                try await cloudKit.saveOwnSettings(merged)
+            }
+            return (merged, calendars)
+        } catch {
+            syncInfo("relayOwnSettings failed error=\(describeCloudKitFailure(error))")
+            return nil
+        }
     }
 
     private func localMirrors(ownerMemberID: String, modelContext: ModelContext) throws -> [EventMirror] {

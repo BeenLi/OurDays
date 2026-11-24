@@ -392,13 +392,31 @@ struct CalendarTabView: View {
             to: weekInterval.end
         )
         let selectedCalendarIDs = settings.selectedCalendarIDs
-        localDisplayMirrors = OwnEventTwinPolicy.adoptingPersistedKeys(
+        let persistedOwn = mirrors.filter { $0.ownerMemberID == settings.currentMemberID }
+        let display = OwnEventTwinPolicy.adoptingPersistedKeys(
             CalendarDisplayMirrorPolicy.displayMirrors(
                 from: sourceEvents.filter { selectedCalendarIDs.contains($0.calendarIdentifier) },
                 ownerMemberID: settings.currentMemberID
             ),
-            persistedOwn: mirrors.filter { $0.ownerMemberID == settings.currentMemberID }
+            persistedOwn: persistedOwn
         )
+        // On a Mac the persisted own mirrors are what the iPhone shares; the ones from
+        // calendars this Mac doesn't have are shown from the cloud copy.
+        let uploadsOwnEvents = OwnEventUploadPolicy.uploadsOwnEvents(
+            isRunningOnMac: ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
+        )
+        localDisplayMirrors = uploadsOwnEvents
+            ? display
+            : display + OwnEventTwinPolicy.cloudOnlyMirrors(
+                display: display,
+                persistedOwn: persistedOwn,
+                localCalendarTitles: Set(
+                    services.calendarAccess.calendars()
+                        .filter { selectedCalendarIDs.contains($0.id) }
+                        .map(\.title)
+                ),
+                in: weekInterval
+            )
     }
 }
 

@@ -250,7 +250,8 @@ final class CalendarAccessService {
             id: calendar.calendarIdentifier,
             title: calendar.title,
             colorHex: UIColor(cgColor: calendar.cgColor).hexString,
-            allowsContentModifications: calendar.allowsContentModifications
+            allowsContentModifications: calendar.allowsContentModifications,
+            sourceTitle: calendar.source?.title ?? ""
         )
     }
 }

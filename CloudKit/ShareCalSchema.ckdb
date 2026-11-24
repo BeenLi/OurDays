@@ -77,6 +77,12 @@ DEFINE SCHEMA
         isRead INT64
     );
 
+    RECORD TYPE OwnSettings (
+        "___recordID" REFERENCE QUERYABLE,
+        payload BYTES,
+        updatedAt TIMESTAMP
+    );
+
     RECORD TYPE "cloudkit.share" (
         "___recordID" REFERENCE,
         "cloudkit.thumbnailImageData" BYTES,

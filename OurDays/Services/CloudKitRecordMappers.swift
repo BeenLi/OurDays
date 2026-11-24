@@ -630,3 +630,34 @@ enum CommentRecordMapper {
         )
     }
 }
+
+/// My settings for my other devices (`OwnRelayedSettings`): one record in a private zone
+/// of its own. It is not under the share root, so the partner never sees it.
+enum OwnSettingsRecordMapper {
+    static let zoneName = "OwnDevices"
+    static let recordType = "OwnSettings"
+    static let recordName = "own-settings"
+
+    enum Key {
+        static let payload = "payload"
+        static let updatedAt = "updatedAt"
+    }
+
+    static func encode(_ settings: OwnRelayedSettings) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(settings)
+    }
+
+    static func settings(from record: CKRecord) throws -> OwnRelayedSettings {
+        guard let payload = record[Key.payload] as? Data else {
+            throw CloudKitRecordMappingError.missingField(Key.payload)
+        }
+        return try JSONDecoder().decode(OwnRelayedSettings.self, from: payload)
+    }
+
+    static func apply(_ settings: OwnRelayedSettings, to record: CKRecord, at date: Date = .now) throws {
+        record[Key.payload] = try encode(settings) as CKRecordValue
+        record[Key.updatedAt] = date as CKRecordValue
+    }
+}

@@ -84,7 +84,9 @@
 		11B2A1361D837BF44D9FC5BA /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B276FF0E19D22E500E7DAC /* SyncCoordinator.swift */; };
 		11BDC81D4E60B21BB1002ECC /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B276FF0E19D22E500E7DAC /* SyncCoordinator.swift */; };
 		11B8E3DF7D3EDB1C327072C7 /* AgendaPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B234E0B58F23EDF1395C86 /* AgendaPolicies.swift */; };
+		8738B81A82D8C0D201C8E7EE /* OwnSettingsRelayPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = D633CE453722FC327988B7D2 /* OwnSettingsRelayPolicies.swift */; };
 		11BF5D5B0460BCC31799D5F1 /* AgendaPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B234E0B58F23EDF1395C86 /* AgendaPolicies.swift */; };
+		1F8018F1C6A754A6D4C8409A /* OwnSettingsRelayPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = D633CE453722FC327988B7D2 /* OwnSettingsRelayPolicies.swift */; };
 		11BC3CC426E32618D0FCAD7E /* LaunchDiagnosticPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BF767E188FCE27310D2D8F /* LaunchDiagnosticPolicies.swift */; };
 		11B755414965A4AF0B5A08B1 /* LaunchDiagnosticPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BF767E188FCE27310D2D8F /* LaunchDiagnosticPolicies.swift */; };
 		11BBC1B26A10734A765C071A /* LaunchDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B540D5E5331C01BDC7310C /* LaunchDiagnostics.swift */; };
@@ -166,6 +168,7 @@
 		11B21571EFF6DB73CEAAB6D5 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		11B276FF0E19D22E500E7DAC /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
 		11B234E0B58F23EDF1395C86 /* AgendaPolicies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgendaPolicies.swift; sourceTree = "<group>"; };
+		D633CE453722FC327988B7D2 /* OwnSettingsRelayPolicies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnSettingsRelayPolicies.swift; sourceTree = "<group>"; };
 		11BF767E188FCE27310D2D8F /* LaunchDiagnosticPolicies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchDiagnosticPolicies.swift; sourceTree = "<group>"; };
 		11B540D5E5331C01BDC7310C /* LaunchDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchDiagnostics.swift; sourceTree = "<group>"; };
 		11BFB729526A91E9F55245D2 /* CloudKitDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitDiagnostics.swift; sourceTree = "<group>"; };
@@ -355,6 +358,7 @@
 			isa = PBXGroup;
 			children = (
 				11B234E0B58F23EDF1395C86 /* AgendaPolicies.swift */,
+				D633CE453722FC327988B7D2 /* OwnSettingsRelayPolicies.swift */,
 				11B79D609684453E26B2F62C /* CloudKitPolicies.swift */,
 				11BAA229790393A28A8DB3A4 /* SyncPolicies.swift */,
 				11B4E126BDD4A88C7B8DA4AE /* PairingPolicies.swift */,
@@ -513,6 +517,7 @@
 				11BBC1B26A10734A765C071A /* LaunchDiagnostics.swift in Sources */,
 				11BC3CC426E32618D0FCAD7E /* LaunchDiagnosticPolicies.swift in Sources */,
 				11B8E3DF7D3EDB1C327072C7 /* AgendaPolicies.swift in Sources */,
+				8738B81A82D8C0D201C8E7EE /* OwnSettingsRelayPolicies.swift in Sources */,
 				11B2A1361D837BF44D9FC5BA /* SyncCoordinator.swift in Sources */,
 				11B1C3DEC9A5F096BE6DD665 /* SettingsStore.swift in Sources */,
 				11BB740084CB539F183DB621 /* CloudSharingController.swift in Sources */,
@@ -566,6 +571,7 @@
 				11BDA7551046B3BAB240F2BF /* CloudKitDiagnostics.swift in Sources */,
 				11B755414965A4AF0B5A08B1 /* LaunchDiagnosticPolicies.swift in Sources */,
 				11BF5D5B0460BCC31799D5F1 /* AgendaPolicies.swift in Sources */,
+				1F8018F1C6A754A6D4C8409A /* OwnSettingsRelayPolicies.swift in Sources */,
 				11BDC81D4E60B21BB1002ECC /* SyncCoordinator.swift in Sources */,
 				11BC90359E3B587847206909 /* SettingsStore.swift in Sources */,
 				11B8EC6648A651EB1072445D /* ShareCalSceneDelegate.swift in Sources */,

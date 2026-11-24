@@ -391,7 +391,16 @@ struct SettingsTabView: View {
                 Text(strings.calendarsToShareSection)
             } footer: {
                 if !UsTabPolicy.showsCalendarPermissionRow(authorizationState) {
-                    Text(strings.calendarsToShareFootnote(partnerName: settings.partnerDisplayName))
+                    let elsewhere = CalendarSelectionRelayPolicy.unavailable(
+                        settings.relayedCalendarReferences,
+                        calendars: calendars
+                    )
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(strings.calendarsToShareFootnote(partnerName: settings.partnerDisplayName))
+                        if !elsewhere.isEmpty {
+                            Text(strings.calendarsOnOtherDeviceFootnote(elsewhere.map(\.title)))
+                        }
+                    }
                 }
             }
             .listRowBackground(OurDaysTheme.surface)

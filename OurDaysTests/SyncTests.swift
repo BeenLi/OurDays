@@ -299,3 +299,257 @@ final class OwnEventUploadPolicyTests: XCTestCase {
         XCTAssertFalse(OwnEventUploadPolicy.uploadsOwnEvents(isRunningOnMac: true))
     }
 }
+
+// MARK: - Settings that follow me to my other devices (pairing-sync-integrity 0013)
+
+final class OwnSettingsRelayMergePolicyTests: XCTestCase {
+    private let t1 = Date(timeIntervalSince1970: 1_000)
+    private let t2 = Date(timeIntervalSince1970: 2_000)
+
+    func testNewerPartWinsPartByPart() {
+        var local = OwnRelayedSettings()
+        local.defaultVisibility = .init(rawValue: EventVisibility.busyOnly.rawValue, updatedAt: t2)
+        local.language = .init(rawValue: AppLanguage.english.rawValue, updatedAt: t1)
+        var cloud = OwnRelayedSettings()
+        cloud.defaultVisibility = .init(rawValue: EventVisibility.fullDetails.rawValue, updatedAt: t1)
+        cloud.language = .init(rawValue: AppLanguage.chinese.rawValue, updatedAt: t2)
+
+        let merged = OwnSettingsRelayMergePolicy.merge(local: local, cloud: cloud)
+
+        XCTAssertEqual(merged.defaultVisibility?.rawValue, EventVisibility.busyOnly.rawValue)
+        XCTAssertEqual(merged.language?.rawValue, AppLanguage.chinese.rawValue)
+        XCTAssertTrue(OwnSettingsRelayMergePolicy.needsUpload(merged: merged, cloud: cloud))
+    }
+
+    func testTieKeepsCloudAndNeedsNoWrite() {
+        var local = OwnRelayedSettings()
+        local.language = .init(rawValue: AppLanguage.english.rawValue, updatedAt: t1)
+        var cloud = OwnRelayedSettings()
+        cloud.language = .init(rawValue: AppLanguage.chinese.rawValue, updatedAt: t1)
+
+        let merged = OwnSettingsRelayMergePolicy.merge(local: local, cloud: cloud)
+
+        XCTAssertEqual(merged, cloud)
+        XCTAssertFalse(OwnSettingsRelayMergePolicy.needsUpload(merged: merged, cloud: cloud))
+    }
+
+    func testMissingPartsAndReadPosition() {
+        var local = OwnRelayedSettings()
+        local.lastSeenActivityAt = t1
+        var cloud = OwnRelayedSettings()
+        cloud.lastSeenActivityAt = t2
+        cloud.language = .init(rawValue: AppLanguage.chinese.rawValue, updatedAt: t1)
+
+        let merged = OwnSettingsRelayMergePolicy.merge(local: local, cloud: cloud)
+
+        XCTAssertEqual(merged.lastSeenActivityAt, t2)
+        XCTAssertEqual(merged.language, cloud.language)
+        XCTAssertEqual(OwnSettingsRelayMergePolicy.merge(local: local, cloud: nil), local)
+        XCTAssertFalse(OwnSettingsRelayMergePolicy.needsUpload(merged: .empty, cloud: nil))
+    }
+
+    func testStampDropsFractionsOfASecond() {
+        XCTAssertEqual(
+            OwnSettingsRelayClock.stamp(Date(timeIntervalSince1970: 1_234.987)),
+            Date(timeIntervalSince1970: 1_234)
+        )
+    }
+}
+
+final class CalendarSelectionRelayPolicyTests: XCTestCase {
+    private func calendar(_ id: String, _ title: String, source: String) -> CalendarDescriptor {
+        CalendarDescriptor(id: id, title: title, colorHex: "#000000", allowsContentModifications: true, sourceTitle: source)
+    }
+
+    private func ref(_ source: String, _ title: String) -> CalendarReference {
+        CalendarReference(sourceTitle: source, title: title)
+    }
+
+    func testKeepsOtherDeviceCalendarsAndTakesThisDevicesChoiceForItsOwn() {
+        let macCalendars = [
+            calendar("mac-work", "Work", source: "iCloud"),
+            calendar("mac-home", "Home", source: "iCloud")
+        ]
+        let relayed: Set = [ref("iCloud", "Work"), ref("On My iPhone", "ShareCal")]
+
+        let result = CalendarSelectionRelayPolicy.references(
+            relayed: relayed,
+            localSelection: ["mac-home"],
+            calendars: macCalendars
+        )
+
+        XCTAssertEqual(result, [ref("On My iPhone", "ShareCal"), ref("iCloud", "Home")])
+    }
+
+    func testMatchesByAccountAndTitleAndSkipsDuplicates() {
+        let calendars = [
+            calendar("a", "Family", source: "iCloud"),
+            calendar("b", "Family", source: "someone@gmail.com"),
+            calendar("c", "Work", source: "iCloud"),
+            calendar("d", "Work", source: "iCloud")
+        ]
+        let relayed: Set = [ref("iCloud", "Family"), ref("iCloud", "Work"), ref("Exchange", "Team")]
+
+        XCTAssertEqual(CalendarSelectionRelayPolicy.localIDs(for: relayed, calendars: calendars), ["a"])
+        XCTAssertEqual(
+            CalendarSelectionRelayPolicy.unavailable(relayed, calendars: calendars),
+            [ref("Exchange", "Team"), ref("iCloud", "Work")]
+        )
+    }
+
+    func testNothingMatchingKeepsTheLocalSelection() {
+        let relayed = OwnRelayedSettings.Calendars(references: [ref("On My iPhone", "ShareCal")], updatedAt: .distantPast)
+        XCTAssertNil(
+            OwnSettingsRelayAdoptionPolicy.calendarSelection(
+                relayed: relayed,
+                calendars: [calendar("mac-sharecal", "ShareCal", source: "On My Mac")]
+            )
+        )
+    }
+}
+
+final class SettingsStoreRelayTests: XCTestCase {
+    private var suiteNames: [String] = []
+
+    override func tearDown() {
+        for name in suiteNames { UserDefaults().removePersistentDomain(forName: name) }
+        super.tearDown()
+    }
+
+    private func makeStore() -> SettingsStore {
+        let name = "SettingsStoreRelayTests-\(UUID().uuidString)"
+        suiteNames.append(name)
+        return SettingsStore(defaults: UserDefaults(suiteName: name)!)
+    }
+
+    private let iPhoneCalendars = [
+        CalendarDescriptor(id: "phone-work", title: "Work", colorHex: "#000000", allowsContentModifications: true, sourceTitle: "iCloud"),
+        CalendarDescriptor(id: "phone-sharecal", title: "ShareCal", colorHex: "#000000", allowsContentModifications: true, sourceTitle: "On My iPhone")
+    ]
+    private let macCalendars = [
+        CalendarDescriptor(id: "mac-work", title: "Work", colorHex: "#000000", allowsContentModifications: true, sourceTitle: "iCloud")
+    ]
+
+    func testSettingsMadeBeforeUpgradeReachANewDevice() {
+        let phone = makeStore()
+        phone.partnerShareOwnerID = "_partner"
+        phone.partnerNoteName = "宝"
+        phone.hasPromptedPartnerNoteForCurrentPairing = true
+        phone.selectedCalendarIDs = ["phone-work", "phone-sharecal"]
+        // Before this version nothing was stamped.
+        phone.partnerNoteUpdatedAt = nil
+
+        let uploaded = phone.relayedSettingsSnapshot(calendars: iPhoneCalendars)
+        XCTAssertEqual(uploaded.partnerNote?.noteName, "宝")
+        XCTAssertEqual(uploaded.partnerNote?.updatedAt, .distantPast)
+        XCTAssertEqual(uploaded.calendars?.references.count, 2)
+
+        let mac = makeStore()
+        mac.adoptRelayedSettings(uploaded, calendars: macCalendars)
+        XCTAssertEqual(mac.selectedCalendarIDs, ["mac-work"])
+        XCTAssertEqual(mac.partnerNoteName, "", "the Mac doesn't know the partner yet")
+
+        mac.partnerShareOwnerID = "_partner"
+        mac.adoptRelayedSettings(uploaded, calendars: macCalendars)
+        XCTAssertEqual(mac.partnerNoteName, "宝")
+        XCTAssertTrue(mac.hasPromptedPartnerNoteForCurrentPairing)
+        XCTAssertTrue(mac.hasShownPairingSafetyNoticeForCurrentPairing)
+    }
+
+    func testAdoptedCopyIsNotWrittenBack() {
+        let phone = makeStore()
+        phone.partnerShareOwnerID = "_partner"
+        phone.partnerNoteName = "宝"
+        phone.hasPromptedPartnerNoteForCurrentPairing = true
+        phone.toggleCalendarSelection("phone-work", isSelected: true)
+        phone.defaultVisibility = .busyOnly
+        let cloud = phone.relayedSettingsSnapshot(calendars: iPhoneCalendars)
+
+        let mac = makeStore()
+        mac.partnerShareOwnerID = "_partner"
+        mac.adoptRelayedSettings(cloud, calendars: macCalendars)
+        let merged = OwnSettingsRelayMergePolicy.merge(local: mac.relayedSettingsSnapshot(calendars: macCalendars), cloud: cloud)
+
+        XCTAssertEqual(mac.defaultVisibility, .busyOnly)
+        XCTAssertFalse(OwnSettingsRelayMergePolicy.needsUpload(merged: merged, cloud: cloud))
+    }
+
+    func testOwnNewerEditIsKeptAndOlderCopyIgnored() {
+        let mac = makeStore()
+        mac.defaultVisibility = .titleAndLocation
+        var older = OwnRelayedSettings()
+        older.defaultVisibility = .init(rawValue: EventVisibility.busyOnly.rawValue, updatedAt: Date(timeIntervalSince1970: 1))
+
+        mac.adoptRelayedSettings(older, calendars: nil)
+
+        XCTAssertEqual(mac.defaultVisibility, .titleAndLocation)
+        XCTAssertNotNil(mac.defaultVisibilityUpdatedAt)
+    }
+
+    func testAutomaticShareCalSelectionIsNotAnEdit() {
+        let mac = makeStore()
+        mac.selectedCalendarIDs = ["mac-work"]
+        XCTAssertNil(mac.calendarSelectionUpdatedAt)
+
+        mac.toggleCalendarSelection("mac-work", isSelected: false)
+        XCTAssertNotNil(mac.calendarSelectionUpdatedAt)
+    }
+
+    func testNoteForAnotherPartnerIsIgnored() {
+        let mac = makeStore()
+        mac.partnerShareOwnerID = "_new"
+        var relayed = OwnRelayedSettings()
+        relayed.partnerNote = .init(partnerID: "_old", noteName: "前任", avatarOverride: nil, updatedAt: Date(timeIntervalSince1970: 5))
+
+        mac.adoptRelayedSettings(relayed, calendars: nil)
+
+        XCTAssertEqual(mac.partnerNoteName, "")
+        XCTAssertFalse(mac.hasPromptedPartnerNoteForCurrentPairing)
+    }
+}
+
+final class OwnEventCloudOnlyMirrorTests: XCTestCase {
+    private func mirror(key: String, calendarTitle: String, start: TimeInterval, deleted: Bool = false) -> EventMirror {
+        EventMirror(
+            id: key,
+            ownerMemberID: "me",
+            mirrorKey: key,
+            sourceCalendarID: "phone-\(calendarTitle)",
+            sourceCalendarTitle: calendarTitle,
+            occurrenceStartDate: Date(timeIntervalSince1970: start),
+            startDate: Date(timeIntervalSince1970: start),
+            endDate: Date(timeIntervalSince1970: start + 60),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: key,
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#FF2D55",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: deleted ? Date(timeIntervalSince1970: 0) : nil,
+            cloudKitRecordName: key
+        )
+    }
+
+    func testShowsOnlyLiveCopiesFromCalendarsThisDeviceDoesntShow() {
+        let week = DateInterval(start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 10_000))
+        let shown = mirror(key: "shown", calendarTitle: "Work", start: 100)
+        let persisted = [
+            shown,
+            mirror(key: "phone-only", calendarTitle: "ShareCal", start: 200),
+            mirror(key: "edited-here", calendarTitle: "Work", start: 300),
+            mirror(key: "gone", calendarTitle: "ShareCal", start: 400, deleted: true),
+            mirror(key: "next-week", calendarTitle: "ShareCal", start: 20_000)
+        ]
+
+        let result = OwnEventTwinPolicy.cloudOnlyMirrors(
+            display: [shown],
+            persistedOwn: persisted,
+            localCalendarTitles: ["Work"],
+            in: week
+        )
+
+        XCTAssertEqual(result.map(\.mirrorKey), ["phone-only"])
+    }
+}

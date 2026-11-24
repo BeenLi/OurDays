@@ -45,6 +45,11 @@ enum AppLanguagePreference {
     static func write(_ language: AppLanguage, to defaults: UserDefaults) {
         defaults.set(language.rawValue, forKey: key)
     }
+
+    /// Whether a language was picked in Settings (rather than following the system).
+    static func hasExplicitChoice(in defaults: UserDefaults) -> Bool {
+        AppLanguage(rawValue: defaults.string(forKey: key) ?? "") != nil
+    }
 }
 
 enum AppLegalInfo {
@@ -644,6 +649,14 @@ struct ShareCalStrings {
     var partnerCanSeePicker: String { text("Partner sees", "对方能看到") }
     func calendarsToShareFootnote(partnerName: String) -> String {
         text("Calendars switched on are shared with \(partnerName).", "打开的日历会同步给\(partnerName)。")
+    }
+    /// Calendars chosen on my other device that this one doesn't have.
+    func calendarsOnOtherDeviceFootnote(_ titles: [String]) -> String {
+        let list = titles.joined(separator: text(", ", "、"))
+        return text(
+            "Also switched on on your other device: \(list). They aren't on this device, so change them there.",
+            "另一台设备上还打开了：\(list)。这些日历不在这台设备上，请在那台设备上更改。"
+        )
     }
     func historyRequestStatusLine(rangeText: String, statusText: String) -> String {
         text("Requested \(rangeText) · \(statusText)", "已申请 \(rangeText) · \(statusText)")

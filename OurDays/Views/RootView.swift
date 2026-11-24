@@ -631,6 +631,14 @@ struct RootView: View {
             outgoingShareParticipantIDs: settings.outgoingShareParticipantIDs,
             lastSyncAt: settings.lastSyncAt
         ) {
+            // My device in use already keeps its settings here: this is a second device
+            // (or a reinstall) of the same Apple ID, so carry on with the data instead of
+            // offering to delete what that device runs on (pairing-sync-integrity 0013).
+            let ownSettings = try? await cloudKit.fetchOwnSettings()
+            if ExistingICloudDataSecondDevicePolicy.continuesWithoutAsking(ownSettingsExist: ownSettings != nil),
+               (try? await continueUsingExistingICloudData()) != nil {
+                return
+            }
             activeRootSheet = .existingICloudDataRecovery
             return
         }

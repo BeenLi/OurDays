@@ -1583,3 +1583,30 @@ final class ShareInvitationLinkPolicyTests: XCTestCase {
         XCTAssertEqual(ShareInvitationLinkPolicy.failure(for: CKError(.participantMayNeedVerification)), .inviteOnly)
     }
 }
+
+final class OwnSettingsRecordMapperTests: XCTestCase {
+    func testRoundTripComparesEqualSoAnUnchangedCopyIsNeverRewritten() throws {
+        var settings = OwnRelayedSettings()
+        settings.partnerNote = .init(
+            partnerID: "_partner",
+            noteName: "宝",
+            avatarOverride: MemberAvatar(text: "宝", background: nil),
+            updatedAt: OwnSettingsRelayClock.stamp(Date(timeIntervalSince1970: 1_700_000_000.75))
+        )
+        settings.calendars = .init(
+            references: [CalendarReference(sourceTitle: "iCloud", title: "Work")],
+            updatedAt: .distantPast
+        )
+        settings.lastSeenActivityAt = Date(timeIntervalSince1970: 1_700_000_123.456)
+        let record = CKRecord(
+            recordType: OwnSettingsRecordMapper.recordType,
+            recordID: CKRecord.ID(recordName: OwnSettingsRecordMapper.recordName)
+        )
+
+        try OwnSettingsRecordMapper.apply(settings, to: record)
+        let decoded = try OwnSettingsRecordMapper.settings(from: record)
+
+        XCTAssertEqual(decoded, settings)
+        XCTAssertEqual(try OwnSettingsRecordMapper.encode(decoded), try OwnSettingsRecordMapper.encode(settings))
+    }
+}

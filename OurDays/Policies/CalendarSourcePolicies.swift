@@ -5,6 +5,9 @@ struct CalendarDescriptor: Identifiable, Hashable {
     let title: String
     let colorHex: String
     let allowsContentModifications: Bool
+    /// The account the calendar lives in (`EKSource.title`); with `title` it names the
+    /// calendar on every device of the user (`CalendarSelectionRelayPolicy`).
+    var sourceTitle: String = ""
 }
 
 enum ShareCalSmokeTestEventPolicy {

@@ -454,6 +454,7 @@ final class CloudKitCoupleSpaceService {
         // partner's zone resurfaces if sharing is ever re-enabled.
         let acceptedSharedZoneIDs = try await fetchSharedCoupleSpaceZoneIDs()
         try await deleteAcceptedSharedZones(ownerIDs: acceptedSharedZoneIDs.map(\.ownerName))
+        try await deleteOwnSettingsZone()
         cloudKitSharingInfo("deleteICloudData succeeded zone=\(Self.zoneName)")
     }
 
@@ -1789,6 +1790,68 @@ final class CloudKitCoupleSpaceService {
                 continuation.resume(with: result)
             }
             database.add(operation)
+        }
+    }
+}
+
+// MARK: - Settings that follow me to my other devices (pairing-sync-integrity 0013)
+
+extension CloudKitCoupleSpaceService {
+    var ownSettingsZoneID: CKRecordZone.ID {
+        CKRecordZone.ID(zoneName: OwnSettingsRecordMapper.zoneName)
+    }
+
+    private var ownSettingsRecordID: CKRecord.ID {
+        CKRecord.ID(recordName: OwnSettingsRecordMapper.recordName, zoneID: ownSettingsZoneID)
+    }
+
+    /// My settings as my other devices last saved them; nil when none has yet.
+    func fetchOwnSettings() async throws -> OwnRelayedSettings? {
+        guard let record = try await fetchOwnSettingsRecord() else { return nil }
+        return try OwnSettingsRecordMapper.settings(from: record)
+    }
+
+    /// Writes `settings` over the stored copy. A copy another device saved in between
+    /// makes this fail with `serverRecordChanged`; the next sync merges with it.
+    func saveOwnSettings(_ settings: OwnRelayedSettings) async throws {
+        let existing = try await fetchOwnSettingsRecord()
+        if existing == nil {
+            _ = try await privateDatabase.modifyRecordZones(saving: [CKRecordZone(zoneID: ownSettingsZoneID)], deleting: [])
+        }
+        let record = existing ?? CKRecord(recordType: OwnSettingsRecordMapper.recordType, recordID: ownSettingsRecordID)
+        try OwnSettingsRecordMapper.apply(settings, to: record)
+        let (saveResults, _) = try await privateDatabase.modifyRecords(
+            saving: [record],
+            deleting: [],
+            savePolicy: .ifServerRecordUnchanged,
+            atomically: true
+        )
+        _ = try saveResults[record.recordID]?.get()
+        cloudKitSharingInfo("saveOwnSettings succeeded")
+    }
+
+    private func fetchOwnSettingsRecord() async throws -> CKRecord? {
+        do {
+            return try await privateDatabase.record(for: ownSettingsRecordID)
+        } catch {
+            if CloudKitZoneReadinessPolicy.meansZoneMissing(error) { return nil }
+            let nsError = error as NSError
+            if nsError.domain == CKError.errorDomain, CKError.Code(rawValue: nsError.code) == .unknownItem {
+                return nil
+            }
+            throw error
+        }
+    }
+
+    func deleteOwnSettingsZone() async throws {
+        do {
+            _ = try await privateDatabase.modifyRecordZones(saving: [], deleting: [ownSettingsZoneID])
+        } catch where CloudKitZoneReadinessPolicy.meansZoneMissing(error) {
+            return
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain == CKError.errorDomain, CKError.Code(rawValue: nsError.code) == .unknownItem { return }
+            throw error
         }
     }
 }

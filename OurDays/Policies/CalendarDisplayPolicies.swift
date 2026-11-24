@@ -1,5 +1,18 @@
 import Foundation
 
+/// How wide a tab's scrolling content may grow. A phone-width container keeps its full
+/// width; a wide one (the unfolded iPhone Duo, landscape) caps the content at a readable
+/// width and centers it, so a row's label and value don't end up a screen apart.
+enum ReadableContentWidthPolicy {
+    static let maxContentWidth: Double = 640
+
+    /// Extra inset on each side, added on top of the page's own margins: zero until the
+    /// container is wider than `maxContentWidth`, so phone layouts don't move.
+    static func extraHorizontalInset(containerWidth: Double, maxContentWidth: Double = maxContentWidth) -> Double {
+        max(0, (containerWidth - maxContentWidth) / 2)
+    }
+}
+
 /// One line of "when" for an event detail header: "Jun 16, Tue · 19:30 – 21:30".
 enum EventDetailTimePolicy {
     static func text(

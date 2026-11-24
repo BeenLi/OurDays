@@ -29,7 +29,7 @@ struct InvitesTabView: View {
         List {
             OurDaysPageHeader(
                 title: strings.invitesTab,
-                subtitle: answerableCount > 0 ? strings.pendingInvitationsSubtitle(answerableCount) : nil
+                subtitle: answerableCount > 0 ? strings.pendingInvitationsSubtitle(answerableCount) : strings.invitesSubtitle
             )
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
@@ -106,12 +106,6 @@ struct InvitesTabView: View {
                 }
             }
 
-            if visibleInvitations.isEmpty && pendingIncomingAccessRequests.isEmpty {
-                ContentUnavailableView(strings.noInvitations, systemImage: "envelope.open")
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
-
             if let errorMessage {
                 Text(errorMessage)
                     .font(.footnote)
@@ -121,7 +115,14 @@ struct InvitesTabView: View {
             }
         }
         .listStyle(.plain)
+        .overlay {
+            // Centered on the page like the calendar's setup card, not pinned under the title.
+            if visibleInvitations.isEmpty && pendingIncomingAccessRequests.isEmpty {
+                ContentUnavailableView(strings.noInvitations, systemImage: "envelope.open")
+            }
+        }
         .ourDaysListBackground()
+        .ourDaysReadableWidth()
         .ourDaysStatusBarCover()
         .toolbar(.hidden, for: .navigationBar)
         .refreshable {

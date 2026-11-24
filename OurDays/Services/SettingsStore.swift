@@ -7,7 +7,10 @@ final class SettingsStore {
         didSet { defaults.set(currentMemberID, forKey: Key.currentMemberID) }
     }
     var currentDisplayName: String {
-        didSet { defaults.set(currentDisplayName, forKey: Key.currentDisplayName) }
+        didSet {
+            defaults.set(currentDisplayName, forKey: Key.currentDisplayName)
+            if currentDisplayName != oldValue { currentProfileUpdatedAt = .now }
+        }
     }
     var currentICloudEmailAddress: String {
         didSet { defaults.set(currentICloudEmailAddress, forKey: Key.currentICloudEmailAddress) }
@@ -23,7 +26,16 @@ final class SettingsStore {
     }
     /// My own avatar; synced to the partner inside my MemberProfile record.
     var currentAvatar: MemberAvatar? {
-        didSet { saveAvatar(currentAvatar, forKey: Key.currentAvatar) }
+        didSet {
+            saveAvatar(currentAvatar, forKey: Key.currentAvatar)
+            if currentAvatar != oldValue { currentProfileUpdatedAt = .now }
+        }
+    }
+    /// When this device last changed `currentDisplayName` / `currentAvatar`, or the cloud
+    /// time of the copy it adopted. Another device on the same Apple ID writes the same
+    /// MemberProfile record; `OwnMemberProfileMergePolicy` lets the newer edit win.
+    var currentProfileUpdatedAt: Date? {
+        didSet { saveOptionalDate(currentProfileUpdatedAt, forKey: Key.currentProfileUpdatedAt) }
     }
     /// The partner's avatar as they set it, imported from their MemberProfile record.
     var partnerSyncedAvatar: MemberAvatar? {
@@ -91,6 +103,23 @@ final class SettingsStore {
     var lastNotifiedAt: Date? {
         didSet { defaults.set(lastNotifiedAt, forKey: Key.lastNotifiedAt) }
     }
+    /// App Store rating moments already used on this install (`ReviewPromptPolicy`).
+    /// Kept across unpair/re-pair: each moment asks once per install.
+    /// Accepted invitations whose joint event this device has seen in its own system
+    /// calendar; only those may be auto-canceled when the event disappears
+    /// (`InvitationLocalEventSyncPolicy.reconcileAcceptedInvitations`).
+    var invitationIDsWithLocalEventSeen: Set<String> {
+        didSet {
+            guard invitationIDsWithLocalEventSeen != oldValue else { return }
+            defaults.set(invitationIDsWithLocalEventSeen.sorted(), forKey: Key.invitationIDsWithLocalEventSeen)
+        }
+    }
+    var reviewPromptedMoments: Set<ReviewPromptMoment> {
+        didSet { defaults.set(reviewPromptedMoments.map(\.rawValue).sorted(), forKey: Key.reviewPromptedMoments) }
+    }
+    var lastReviewPromptAt: Date? {
+        didSet { saveOptionalDate(lastReviewPromptAt, forKey: Key.lastReviewPromptAt) }
+    }
     var lastSyncError: String?
     var syncPhase: SyncPhase = .idle
     /// The partner whose share CloudKit is accepting right now. Not saved: it only lets
@@ -126,6 +155,7 @@ final class SettingsStore {
         partnerShareOwnerID = defaults.string(forKey: Key.partnerShareOwnerID)
         partnerSyncedDisplayName = MemberIDPolicy.normalized(defaults.string(forKey: Key.partnerSyncedDisplayName))
         currentAvatar = Self.storedAvatar(defaults: defaults, forKey: Key.currentAvatar)
+        currentProfileUpdatedAt = defaults.object(forKey: Key.currentProfileUpdatedAt) as? Date
         partnerSyncedAvatar = Self.storedAvatar(defaults: defaults, forKey: Key.partnerSyncedAvatar)
         partnerAvatarOverride = Self.storedAvatar(defaults: defaults, forKey: Key.partnerAvatarOverride)
         let storedHasCompletedInitialProfilePrompt = defaults.object(forKey: Key.hasCompletedInitialProfilePrompt) as? Bool ?? false
@@ -154,6 +184,9 @@ final class SettingsStore {
         lastSyncAt = defaults.object(forKey: Key.lastSyncAt) as? Date
         lastSeenActivityAt = defaults.object(forKey: Key.lastSeenActivityAt) as? Date
         lastNotifiedAt = defaults.object(forKey: Key.lastNotifiedAt) as? Date
+        invitationIDsWithLocalEventSeen = Set(defaults.stringArray(forKey: Key.invitationIDsWithLocalEventSeen) ?? [])
+        reviewPromptedMoments = Set((defaults.stringArray(forKey: Key.reviewPromptedMoments) ?? []).compactMap(ReviewPromptMoment.init(rawValue:)))
+        lastReviewPromptAt = defaults.object(forKey: Key.lastReviewPromptAt) as? Date
     }
 
     var hasSyncedMemberID: Bool {
@@ -263,6 +296,19 @@ final class SettingsStore {
         pairingDate = PairingDatePolicy.normalizedPairingDate(date, calendar: calendar)
     }
 
+    /// Takes the nickname/avatar another device of mine saved, keeping its edit time so
+    /// this device doesn't count the copy as a newer local edit.
+    func adoptOwnProfile(_ profile: CloudKitMemberProfile) {
+        currentDisplayName = profile.displayName
+        currentAvatar = MemberAvatarPolicy.normalized(profile.avatar)
+        currentProfileUpdatedAt = profile.updatedAt
+    }
+
+    func markReviewPrompted(_ moment: ReviewPromptMoment, at date: Date = .now) {
+        reviewPromptedMoments.insert(moment)
+        lastReviewPromptAt = date
+    }
+
     func clearPairingDate() {
         pairingDate = nil
     }
@@ -291,6 +337,7 @@ final class SettingsStore {
         static let partnerShareOwnerID = "partnerShareOwnerID"
         static let partnerSyncedDisplayName = "partnerSyncedDisplayName"
         static let currentAvatar = "currentAvatar"
+        static let currentProfileUpdatedAt = "currentProfileUpdatedAt"
         static let partnerSyncedAvatar = "partnerSyncedAvatar"
         static let partnerAvatarOverride = "partnerAvatarOverride"
         static let hasCompletedInitialProfilePrompt = "hasCompletedInitialProfilePrompt"
@@ -309,6 +356,9 @@ final class SettingsStore {
         static let lastSyncAt = "lastSyncAt"
         static let lastSeenActivityAt = "lastSeenActivityAt"
         static let lastNotifiedAt = "lastNotifiedAt"
+        static let reviewPromptedMoments = "reviewPromptedMoments"
+        static let invitationIDsWithLocalEventSeen = "invitationIDsWithLocalEventSeen"
+        static let lastReviewPromptAt = "lastReviewPromptAt"
     }
 
     private enum LegacyKey {

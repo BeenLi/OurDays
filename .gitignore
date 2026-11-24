@@ -9,3 +9,6 @@ xcuserdata/
 
 # Machine-local Claude Code skills (e.g. plan-tree) — not shared via git
 .claude/skills/
+
+# Local throwaway screenshots (simulator captures, smoke tests)
+.screenshots/

@@ -182,7 +182,9 @@ struct CalendarTabView: View {
     }
 
     var localDisplayRefreshKey: String {
-        "\(Int(weekInterval.start.timeIntervalSince1970)):\(Int(weekInterval.end.timeIntervalSince1970)):\(settings.currentMemberID)"
+        // lastSyncAt: a sync can bring the persisted own mirrors whose keys the
+        // display mirrors adopt (OwnEventTwinPolicy).
+        "\(Int(weekInterval.start.timeIntervalSince1970)):\(Int(weekInterval.end.timeIntervalSince1970)):\(settings.currentMemberID):\(Int(settings.lastSyncAt?.timeIntervalSince1970 ?? 0))"
     }
 
     var setupGuidanceStep: CalendarSetupGuidanceStep? {
@@ -390,9 +392,12 @@ struct CalendarTabView: View {
             to: weekInterval.end
         )
         let selectedCalendarIDs = settings.selectedCalendarIDs
-        localDisplayMirrors = CalendarDisplayMirrorPolicy.displayMirrors(
-            from: sourceEvents.filter { selectedCalendarIDs.contains($0.calendarIdentifier) },
-            ownerMemberID: settings.currentMemberID
+        localDisplayMirrors = OwnEventTwinPolicy.adoptingPersistedKeys(
+            CalendarDisplayMirrorPolicy.displayMirrors(
+                from: sourceEvents.filter { selectedCalendarIDs.contains($0.calendarIdentifier) },
+                ownerMemberID: settings.currentMemberID
+            ),
+            persistedOwn: mirrors.filter { $0.ownerMemberID == settings.currentMemberID }
         )
     }
 }

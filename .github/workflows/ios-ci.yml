@@ -173,3 +173,31 @@ jobs:
             -parallel-testing-enabled NO \
             -retry-tests-on-failure \
             -test-iterations 3
+
+  # The unit-test job above never compiles the SwiftUI views. This one builds the
+  # whole app for Mac Catalyst (unsigned), so iOS-only API slipping into a view
+  # fails here instead of on someone's Mac. It runs beside the test job.
+  mac-catalyst:
+    name: Build Mac Catalyst app
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Skip Apple developer services lookup
+        run: sudo sh -c 'echo "127.0.0.1 developerservices2.apple.com" >> /etc/hosts'
+
+      - name: Build for Mac Catalyst
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project OurDays.xcodeproj \
+            -scheme OurDays \
+            -configuration Release \
+            -destination "generic/platform=macOS,variant=Mac Catalyst" \
+            -derivedDataPath "${RUNNER_TEMP}/OurDaysCatalystDerivedData" \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO

@@ -1,5 +1,18 @@
 import Foundation
 
+/// How wide a tab's scrolling content may grow. A phone-width container keeps its full
+/// width; a wide one (the unfolded iPhone Duo, landscape) caps the content at a readable
+/// width and centers it, so a row's label and value don't end up a screen apart.
+enum ReadableContentWidthPolicy {
+    static let maxContentWidth: Double = 640
+
+    /// Extra inset on each side, added on top of the page's own margins: zero until the
+    /// container is wider than `maxContentWidth`, so phone layouts don't move.
+    static func extraHorizontalInset(containerWidth: Double, maxContentWidth: Double = maxContentWidth) -> Double {
+        max(0, (containerWidth - maxContentWidth) / 2)
+    }
+}
+
 /// One line of "when" for an event detail header: "Jun 16, Tue · 19:30 – 21:30".
 enum EventDetailTimePolicy {
     static func text(
@@ -221,6 +234,38 @@ enum CalendarDisplayMirrorPolicy {
                 cloudKitRecordName: nil
             )
         }
+    }
+}
+
+enum OwnEventTwinPolicy {
+    /// A display mirror is keyed from this device's EventKit IDs, which only match the
+    /// persisted (cloud) copy on the device that uploaded it. On another device of the
+    /// same Apple ID (a Mac, which doesn't upload: `OwnEventUploadPolicy`) the same event
+    /// gets a different key, so comments and red dots anchored to the uploaded copy
+    /// wouldn't find it. A display mirror with no key match takes the key of the one
+    /// persisted own mirror with the same title and times; with none, or more than one
+    /// (two identical events), it keeps its own.
+    static func adoptingPersistedKeys(_ display: [EventMirror], persistedOwn: [EventMirror]) -> [EventMirror] {
+        let live = persistedOwn.filter {
+            $0.deletedAt == nil && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
+        }
+        let knownKeys = Set(live.map(\.mirrorKey))
+        let byMatch = Dictionary(grouping: live, by: matchKey(for:))
+        for mirror in display where !knownKeys.contains(mirror.mirrorKey) {
+            guard let candidates = byMatch[matchKey(for: mirror)], candidates.count == 1 else { continue }
+            mirror.mirrorKey = candidates[0].mirrorKey
+            mirror.id = "\(CalendarDisplayMirrorPolicy.transientIDPrefix)\(candidates[0].mirrorKey)"
+        }
+        return display
+    }
+
+    static func matchKey(for mirror: EventMirror) -> String {
+        [
+            mirror.title,
+            "\(Int(mirror.startDate.timeIntervalSince1970.rounded()))",
+            "\(Int(mirror.endDate.timeIntervalSince1970.rounded()))",
+            mirror.isAllDay ? "1" : "0"
+        ].joined(separator: "|")
     }
 }
 

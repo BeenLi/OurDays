@@ -30,15 +30,7 @@ struct ActivityTabView: View {
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
 
-            if items.isEmpty {
-                ContentUnavailableView(
-                    strings.activityEmptyTitle,
-                    systemImage: "bubble.left.and.bubble.right",
-                    description: Text(strings.activityEmptyMessage)
-                )
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            } else {
+            if !items.isEmpty {
                 ForEach(ActivityFeedSectionPolicy.sections(items)) { section in
                     Section {
                         ForEach(section.items) { item in
@@ -65,7 +57,18 @@ struct ActivityTabView: View {
             }
         }
         .listStyle(.plain)
+        .overlay {
+            // Centered on the page like the calendar's setup card, not pinned under the title.
+            if items.isEmpty {
+                ContentUnavailableView(
+                    strings.activityEmptyTitle,
+                    systemImage: "bubble.left.and.bubble.right",
+                    description: Text(strings.activityEmptyMessage)
+                )
+            }
+        }
         .ourDaysListBackground()
+        .ourDaysReadableWidth()
         .ourDaysStatusBarCover()
         .refreshable {
             await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)

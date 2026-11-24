@@ -862,6 +862,72 @@ final class InvitationServiceTests: XCTestCase {
     }
 }
 
+final class InvitationSameDeviceCancelTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 20_000)
+
+    private func accepted(_ id: String) -> EventInvitation {
+        EventInvitation(
+            id: id,
+            creatorMemberID: "_partner",
+            inviteeMemberID: "_me",
+            title: "Dinner",
+            startDate: Date(timeIntervalSince1970: 10_000),
+            endDate: Date(timeIntervalSince1970: 12_000),
+            location: nil,
+            notes: nil,
+            statusRawValue: InvitationStatus.accepted.rawValue,
+            createdLocalEventID: "other-device-event"
+        )
+    }
+
+    func testEventNeverSeenHereDoesNotCancel() {
+        // Accepted on my other device; its event hasn't reached this calendar yet.
+        let invitation = accepted("a")
+        let result = InvitationLocalEventSyncPolicy.reconcileAcceptedInvitations(
+            [invitation], seenInvitationIDs: [], canReadCalendar: true, now: now, localEventExists: { _ in false }
+        )
+        XCTAssertTrue(result.canceled.isEmpty)
+        XCTAssertEqual(invitation.status, .accepted)
+        XCTAssertTrue(result.seenInvitationIDs.isEmpty)
+    }
+
+    func testEventSeenThenDeletedCancels() {
+        let invitation = accepted("a")
+        let first = InvitationLocalEventSyncPolicy.reconcileAcceptedInvitations(
+            [invitation], seenInvitationIDs: [], canReadCalendar: true, now: now, localEventExists: { _ in true }
+        )
+        XCTAssertEqual(first.seenInvitationIDs, ["a"])
+        XCTAssertEqual(invitation.status, .accepted)
+
+        let second = InvitationLocalEventSyncPolicy.reconcileAcceptedInvitations(
+            [invitation], seenInvitationIDs: first.seenInvitationIDs, canReadCalendar: true, now: now, localEventExists: { _ in false }
+        )
+        XCTAssertEqual(second.canceled.map(\.id), ["a"])
+        XCTAssertEqual(invitation.status, .canceled)
+        XCTAssertEqual(invitation.updatedAt, now)
+        XCTAssertTrue(second.seenInvitationIDs.isEmpty)
+    }
+
+    func testNoCalendarAccessDecidesNothing() {
+        let invitation = accepted("a")
+        let result = InvitationLocalEventSyncPolicy.reconcileAcceptedInvitations(
+            [invitation], seenInvitationIDs: ["a"], canReadCalendar: false, now: now, localEventExists: { _ in false }
+        )
+        XCTAssertTrue(result.canceled.isEmpty)
+        XCTAssertEqual(invitation.status, .accepted)
+        XCTAssertEqual(result.seenInvitationIDs, ["a"])
+    }
+
+    func testSeenSetDropsInvitationsNoLongerAccepted() {
+        let gone = accepted("gone")
+        gone.statusRawValue = InvitationStatus.declined.rawValue
+        let result = InvitationLocalEventSyncPolicy.reconcileAcceptedInvitations(
+            [gone, accepted("kept")], seenInvitationIDs: ["gone", "old"], canReadCalendar: true, now: now, localEventExists: { _ in true }
+        )
+        XCTAssertEqual(result.seenInvitationIDs, ["kept"])
+    }
+}
+
 final class InvitationListPolicyTests: XCTestCase {
     func testOnlyAcceptedInvitationsCanOpenInCalendar() {
         let accepted = invitation(id: "accepted", status: .accepted)

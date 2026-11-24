@@ -331,7 +331,16 @@ enum SyncCancellationPolicy {
 }
 
 enum CloudKitSharingFailureMessage {
-    static func userFacingMessage(for error: Error) -> String {
+    /// `serverRejectedRequest` means two different things. In a Development build it is
+    /// almost always the setup (an Apple Account outside the developer team, or schema
+    /// not imported), so the message says how to fix that. In a Production build the
+    /// user can do nothing about the setup, and telling them about simulators and
+    /// TestFlight is wrong; they get a plain retry message in their own language.
+    static func userFacingMessage(
+        for error: Error,
+        environment: String = CloudKitExpectedConfigurationPolicy.containerEnvironment,
+        language: AppLanguage = AppLanguagePreference.read(from: .standard)
+    ) -> String {
         let nsError = error as NSError
         if nsError.domain == CKError.errorDomain,
            CKError.Code(rawValue: nsError.code) == .invalidArguments,
@@ -342,12 +351,70 @@ enum CloudKitSharingFailureMessage {
             return "CloudKit Production schema is missing ShareCal record types. Run Scripts/import-cloudkit-schema.sh development, deploy schema changes to Production in CloudKit Console, then retry Start Pairing."
         }
 
+        if isQuotaExceeded(nsError) {
+            // The user's iCloud storage is full; CloudKit's own text for this is an
+            // English "Quota Exceeded" that tells them nothing.
+            switch language {
+            case .english:
+                return "Your iCloud storage is full, so OurDays can't save changes. Free up space or upgrade iCloud+ in Settings → your name → iCloud, then pull down to sync again."
+            case .chinese:
+                return "你的 iCloud 储存空间已满，OurDays 无法保存。请在「设置」→ 你的名字 →「iCloud」里清理空间或升级 iCloud+，然后下拉重新同步。"
+            }
+        }
+
         if nsError.domain == CKError.errorDomain,
            CKError.Code(rawValue: nsError.code) == .serverRejectedRequest {
-            return "CloudKit rejected private database writes for this container. For Development builds, sign in on this simulator with an Apple Account that belongs to the Apple Developer team, or deploy the CloudKit schema and test a Production/TestFlight build."
+            guard environment == "Production" else {
+                return "CloudKit rejected private database writes for this container. For Development builds, sign in on this simulator with an Apple Account that belongs to the Apple Developer team, or deploy the CloudKit schema and test a Production/TestFlight build."
+            }
+            let message: String
+            switch language {
+            case .english:
+                message = "iCloud didn't accept this change right now. Pull down to sync again in a moment. If it keeps happening, check that iCloud is signed in and has free storage."
+            case .chinese:
+                message = "iCloud 暂时没有接受这次保存。稍后下拉重新同步；如果一直出现，请检查 iCloud 是否已登录、存储空间是否已满。"
+            }
+            // "Server Rejected Request" says nothing about why. CloudKit's own reason and
+            // the request id ride along so a user's screenshot is enough to look the
+            // request up in CloudKit Console's logs.
+            return message + "\n" + serverDetail(for: nsError)
         }
 
         return error.localizedDescription
+    }
+
+    /// Quota errors arrive on their own or per record inside a `partialFailure`.
+    static func isQuotaExceeded(_ error: NSError) -> Bool {
+        guard error.domain == CKError.errorDomain else { return false }
+        switch CKError.Code(rawValue: error.code) {
+        case .quotaExceeded:
+            return true
+        case .partialFailure:
+            let itemErrors = (error.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error])?.values
+            return itemErrors?.contains { isQuotaExceeded($0 as NSError) } ?? false
+        default:
+            return false
+        }
+    }
+
+    /// "CKError 15 · <server message> · <request id>", from what CloudKit attached to the
+    /// error. Pieces CloudKit didn't send are left out.
+    static func serverDetail(for error: NSError) -> String {
+        let description = error.description
+        let serverMessage = (error.userInfo["ServerErrorDescription"] as? String)
+            ?? firstMatch(#"server message = "([^"]*)""#, in: description)
+        let requestID = firstMatch(#"uuid = ([0-9A-Fa-f-]{8,})"#, in: description)
+        return (["CKError \(error.code)", serverMessage, requestID].compactMap { $0 })
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    private static func firstMatch(_ pattern: String, in text: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        return String(text[range])
     }
 }
 

@@ -641,6 +641,37 @@ enum InvitationLocalEventSyncPolicy {
 
         return missing
     }
+
+    /// Deleting an accepted joint event from the system calendar means leaving it, so
+    /// the sync cancels the invitation. But the event lives in one device's calendar:
+    /// another device on the same Apple ID (iPad, a future Mac) may not have it yet
+    /// (iCloud Calendar still syncing) or ever (an "On My iPhone" calendar), and would
+    /// cancel an invitation nobody left. Only a device that has seen the event itself
+    /// may read its absence as a deletion (invitation-lifecycle decision 0002).
+    /// `seenInvitationIDs` is this device's memory of that; the result carries its next
+    /// value, trimmed to the accepted invitations still around.
+    static func reconcileAcceptedInvitations(
+        _ invitations: [EventInvitation],
+        seenInvitationIDs: Set<String>,
+        canReadCalendar: Bool,
+        now: Date,
+        localEventExists: (EventInvitation) -> Bool
+    ) -> (canceled: [EventInvitation], seenInvitationIDs: Set<String>) {
+        // Without read access every event looks missing; decide nothing.
+        guard canReadCalendar else { return ([], seenInvitationIDs) }
+        var canceled: [EventInvitation] = []
+        var seen: Set<String> = []
+        for invitation in invitations where invitation.status == .accepted {
+            if localEventExists(invitation) {
+                seen.insert(invitation.id)
+            } else if seenInvitationIDs.contains(invitation.id) {
+                invitation.statusRawValue = InvitationStatus.canceled.rawValue
+                invitation.updatedAt = now
+                canceled.append(invitation)
+            }
+        }
+        return (canceled, seen)
+    }
 }
 
 /// What the invites list says about an invitation: the stored status, except that a

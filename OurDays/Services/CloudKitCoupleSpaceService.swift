@@ -959,18 +959,43 @@ final class CloudKitCoupleSpaceService {
         cloudKitSharingInfo("deleteMirrorsForSync succeeded count=\(recordIDs.count)")
     }
 
+    /// Saves my MemberProfile unless the copy in the cloud is the newer edit (made on
+    /// another device of the same Apple ID); then nothing is written and that copy is
+    /// returned for the caller to adopt (`OwnMemberProfileMergePolicy`).
+    @discardableResult
     func saveMemberProfileForSync(
         ownerMemberID: String,
         displayName: String,
         avatar: MemberAvatar? = nil,
-        updatedAt: Date = .now
-    ) async throws {
+        localUpdatedAt: Date? = nil
+    ) async throws -> CloudKitMemberProfile? {
         try await ensureZone()
         try await ensureShareRoot(ownerMemberID: ownerMemberID)
+        let recordID = CKRecord.ID(
+            recordName: MemberProfileRecordMapper.recordName(ownerMemberID: ownerMemberID),
+            zoneID: zoneID
+        )
+        let cloudProfile = try await fetchRecordForUpsertIfPresent(with: recordID, database: privateDatabase)
+            .flatMap { try? MemberProfileRecordMapper.memberProfile(from: $0) }
+        switch OwnMemberProfileMergePolicy.decide(
+            localDisplayName: displayName,
+            localAvatar: avatar,
+            localUpdatedAt: localUpdatedAt,
+            cloud: cloudProfile
+        ) {
+        case .unchanged:
+            cloudKitSharingInfo("saveMemberProfileForSync skipped; cloud copy matches")
+            return nil
+        case .adoptCloud(let newer):
+            cloudKitSharingInfo("saveMemberProfileForSync skipped; cloud copy is newer updatedAt=\(newer.updatedAt)")
+            return newer
+        case .upload:
+            break
+        }
         let profile = CloudKitMemberProfile(
             ownerMemberID: ownerMemberID,
             displayName: displayName,
-            updatedAt: updatedAt,
+            updatedAt: localUpdatedAt ?? .now,
             avatar: avatar
         )
         do {
@@ -983,6 +1008,7 @@ final class CloudKitCoupleSpaceService {
             profileWithoutAvatar.avatar = nil
             try await saveMemberProfilesForSync([profileWithoutAvatar], in: zoneID, database: privateDatabase)
         }
+        return nil
     }
 
     @MainActor

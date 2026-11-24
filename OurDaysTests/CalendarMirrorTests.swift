@@ -687,6 +687,70 @@ final class EventDetailMirrorResolutionPolicyTests: XCTestCase {
     }
 }
 
+final class OwnEventTwinPolicyTests: XCTestCase {
+    private func mirror(id: String, key: String, title: String = "Dinner", start: TimeInterval = 1_000, deletedAt: Date? = nil) -> EventMirror {
+        EventMirror(
+            id: id,
+            ownerMemberID: "_me",
+            mirrorKey: key,
+            sourceCalendarID: "cal",
+            sourceCalendarTitle: "OurDays",
+            occurrenceStartDate: Date(timeIntervalSince1970: start),
+            startDate: Date(timeIntervalSince1970: start),
+            endDate: Date(timeIntervalSince1970: start + 3_600),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Shanghai",
+            title: title,
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#FF2D55",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: deletedAt,
+            cloudKitRecordName: nil
+        )
+    }
+
+    func testMacDisplayMirrorTakesTheUploadedCopysKey() {
+        let display = mirror(id: "display:mac-key", key: "mac-key")
+        let uploaded = mirror(id: "phone-key", key: "phone-key")
+
+        let result = OwnEventTwinPolicy.adoptingPersistedKeys([display], persistedOwn: [uploaded])
+
+        XCTAssertEqual(result.map(\.mirrorKey), ["phone-key"])
+        XCTAssertEqual(result.map(\.id), ["display:phone-key"])
+        XCTAssertEqual(EventDetailMirrorResolutionPolicy.persistedTwin(for: result[0], in: [uploaded])?.id, "phone-key")
+    }
+
+    func testMatchingKeyIsKept() {
+        let display = mirror(id: "display:k", key: "k")
+        let other = mirror(id: "other", key: "other")
+        let same = mirror(id: "k", key: "k")
+        XCTAssertEqual(OwnEventTwinPolicy.adoptingPersistedKeys([display], persistedOwn: [other, same]).map(\.mirrorKey), ["k"])
+    }
+
+    func testAmbiguousOrDeletedCopiesAreNotAdopted() {
+        let twins = [mirror(id: "a", key: "a"), mirror(id: "b", key: "b")]
+        XCTAssertEqual(
+            OwnEventTwinPolicy.adoptingPersistedKeys([mirror(id: "display:x", key: "x")], persistedOwn: twins).map(\.mirrorKey),
+            ["x"]
+        )
+        let deleted = mirror(id: "d", key: "d", deletedAt: Date(timeIntervalSince1970: 5))
+        XCTAssertEqual(
+            OwnEventTwinPolicy.adoptingPersistedKeys([mirror(id: "display:y", key: "y")], persistedOwn: [deleted]).map(\.mirrorKey),
+            ["y"]
+        )
+    }
+
+    func testDifferentEventIsNotMatched() {
+        let result = OwnEventTwinPolicy.adoptingPersistedKeys(
+            [mirror(id: "display:x", key: "x", title: "Lunch")],
+            persistedOwn: [mirror(id: "k", key: "k")]
+        )
+        XCTAssertEqual(result.map(\.mirrorKey), ["x"])
+    }
+}
+
 final class CloudKitMirrorSyncPolicyTests: XCTestCase {
     func testSkipsUnchangedActiveMirrors() {
         let existing = eventMirror(id: "event-1", title: "Planning")

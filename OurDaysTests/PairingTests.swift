@@ -378,6 +378,32 @@ final class ShareAcceptanceGuardPolicyTests: XCTestCase {
     }
 }
 
+final class InitialProfileCloudLookupPolicyTests: XCTestCase {
+    func testLooksUpWhenNoLocalNicknameAndCloudKitAvailable() {
+        XCTAssertTrue(InitialProfileCloudLookupPolicy.shouldLookUp(
+            localDisplayName: "", isCloudKitAvailable: true, hasAlreadyLookedUp: false
+        ))
+        XCTAssertTrue(InitialProfileCloudLookupPolicy.shouldLookUp(
+            localDisplayName: "   ", isCloudKitAvailable: true, hasAlreadyLookedUp: false
+        ))
+    }
+
+    func testSkipsWhenLocalNicknameExists() {
+        XCTAssertFalse(InitialProfileCloudLookupPolicy.shouldLookUp(
+            localDisplayName: "MacLee", isCloudKitAvailable: true, hasAlreadyLookedUp: false
+        ))
+    }
+
+    func testSkipsWithoutCloudKitOrAfterTheOneLookup() {
+        XCTAssertFalse(InitialProfileCloudLookupPolicy.shouldLookUp(
+            localDisplayName: nil, isCloudKitAvailable: false, hasAlreadyLookedUp: false
+        ))
+        XCTAssertFalse(InitialProfileCloudLookupPolicy.shouldLookUp(
+            localDisplayName: nil, isCloudKitAvailable: true, hasAlreadyLookedUp: true
+        ))
+    }
+}
+
 final class ExistingICloudDataRecoveryPolicyTests: XCTestCase {
     func testPromptsWhenFreshLocalStateFindsExistingCloudDataAfterProfileSetup() {
         XCTAssertTrue(
@@ -1231,5 +1257,80 @@ final class ShareCalPrewarmTests: XCTestCase {
         discarded.discard()
         let afterDiscard = try await discarded.take(key: "_me") { 4 }
         XCTAssertEqual(afterDiscard, 4)
+    }
+}
+
+final class OwnMemberProfileMergePolicyTests: XCTestCase {
+    private let earlier = Date(timeIntervalSince1970: 1_800_000_000)
+    private let later = Date(timeIntervalSince1970: 1_800_000_600)
+
+    private func cloud(_ name: String, avatar: MemberAvatar? = nil, at date: Date) -> CloudKitMemberProfile {
+        CloudKitMemberProfile(ownerMemberID: "_me", displayName: name, updatedAt: date, avatar: avatar)
+    }
+
+    func testUploadsWhenNoCloudCopyExists() {
+        XCTAssertEqual(
+            OwnMemberProfileMergePolicy.decide(localDisplayName: "Ali", localAvatar: nil, localUpdatedAt: nil, cloud: nil),
+            .upload
+        )
+    }
+
+    func testMatchingCopiesWriteNothing() {
+        let avatar = MemberAvatar(text: "A", background: .teal)
+        XCTAssertEqual(
+            OwnMemberProfileMergePolicy.decide(
+                localDisplayName: " Ali ",
+                localAvatar: avatar,
+                localUpdatedAt: earlier,
+                cloud: cloud("Ali", avatar: avatar, at: later)
+            ),
+            .unchanged
+        )
+    }
+
+    func testOtherDevicesNewerEditWins() {
+        let newer = cloud("Ali", avatar: MemberAvatar(text: "新", background: .coral), at: later)
+        XCTAssertEqual(
+            OwnMemberProfileMergePolicy.decide(localDisplayName: "Ali", localAvatar: nil, localUpdatedAt: earlier, cloud: newer),
+            .adoptCloud(newer)
+        )
+    }
+
+    func testThisDevicesNewerEditUploads() {
+        XCTAssertEqual(
+            OwnMemberProfileMergePolicy.decide(
+                localDisplayName: "Ali 2",
+                localAvatar: nil,
+                localUpdatedAt: later,
+                cloud: cloud("Ali", at: earlier)
+            ),
+            .upload
+        )
+    }
+
+    func testUndatedLocalCopyDefersToCloud() {
+        let existing = cloud("Ali", at: earlier)
+        XCTAssertEqual(
+            OwnMemberProfileMergePolicy.decide(localDisplayName: "Old", localAvatar: nil, localUpdatedAt: nil, cloud: existing),
+            .adoptCloud(existing)
+        )
+    }
+
+    func testLocalEditsAreDatedAndAdoptionKeepsCloudTime() throws {
+        let suiteName = "OwnMemberProfileMergePolicyTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = SettingsStore(defaults: defaults)
+        XCTAssertNil(settings.currentProfileUpdatedAt)
+        settings.currentDisplayName = "Ali"
+        XCTAssertNotNil(settings.currentProfileUpdatedAt)
+
+        let avatar = MemberAvatar(text: "A", background: .sage)
+        settings.adoptOwnProfile(cloud("Ali M", avatar: avatar, at: earlier))
+        let relaunched = SettingsStore(defaults: defaults)
+        XCTAssertEqual(relaunched.currentDisplayName, "Ali M")
+        XCTAssertEqual(relaunched.currentAvatar, avatar)
+        XCTAssertEqual(relaunched.currentProfileUpdatedAt, earlier)
     }
 }

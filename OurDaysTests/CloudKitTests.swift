@@ -959,9 +959,75 @@ final class CloudKitSharingFailureMessageTests: XCTestCase {
         let error = NSError(domain: CKError.errorDomain, code: CKError.Code.serverRejectedRequest.rawValue)
 
         XCTAssertEqual(
-            CloudKitSharingFailureMessage.userFacingMessage(for: error),
+            CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Development", language: .english),
             "CloudKit rejected private database writes for this container. For Development builds, sign in on this simulator with an Apple Account that belongs to the Apple Developer team, or deploy the CloudKit schema and test a Production/TestFlight build."
         )
+    }
+
+    func testProductionServerRejectedRequestDoesNotMentionDevelopmentSetup() {
+        let error = NSError(domain: CKError.errorDomain, code: CKError.Code.serverRejectedRequest.rawValue)
+
+        let chinese = CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .chinese)
+        let english = CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .english)
+
+        XCTAssertTrue(chinese.contains("iCloud"))
+        XCTAssertFalse(chinese.contains("Development"))
+        XCTAssertFalse(english.contains("Development"))
+        XCTAssertFalse(english.contains("simulator"))
+    }
+
+    func testProductionServerRejectedRequestCarriesServerReasonAndRequestID() {
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.serverRejectedRequest.rawValue,
+            userInfo: [
+                "ServerErrorDescription": "Invalid share permission",
+                NSLocalizedDescriptionKey: "Server Rejected Request"
+            ]
+        )
+
+        let message = CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .chinese)
+
+        XCTAssertTrue(message.hasPrefix("iCloud 暂时没有接受这次保存。"))
+        XCTAssertTrue(message.hasSuffix("\nCKError 15 · Invalid share permission"))
+    }
+
+    func testServerDetailParsesMessageAndRequestIDFromDescription() {
+        final class DescribedError: NSError {
+            override var description: String {
+                #"<CKError 0x1: "Server Rejected Request" (15/2000); server message = "Internal server error"; op = 1A2B; uuid = 0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0; container ID = "iCloud.x">"#
+            }
+        }
+        let error = DescribedError(domain: CKError.errorDomain, code: 15)
+
+        XCTAssertEqual(
+            CloudKitSharingFailureMessage.serverDetail(for: error),
+            "CKError 15 · Internal server error · 0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0"
+        )
+    }
+
+    func testQuotaExceededSaysICloudStorageIsFullInAppLanguage() {
+        let error = NSError(domain: CKError.errorDomain, code: CKError.Code.quotaExceeded.rawValue)
+
+        XCTAssertTrue(
+            CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .chinese)
+                .hasPrefix("你的 iCloud 储存空间已满")
+        )
+        XCTAssertTrue(
+            CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .english)
+                .hasPrefix("Your iCloud storage is full")
+        )
+    }
+
+    func testQuotaExceededInsidePartialFailureIsRecognized() {
+        let itemError = NSError(domain: CKError.errorDomain, code: CKError.Code.quotaExceeded.rawValue)
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.partialFailure.rawValue,
+            userInfo: [CKPartialErrorsByItemIDKey: [CKRecord.ID(recordName: "a"): itemError]]
+        )
+
+        XCTAssertTrue(CloudKitSharingFailureMessage.isQuotaExceeded(error))
     }
 
     func testUsesLocalizedDescriptionForOtherErrors() {

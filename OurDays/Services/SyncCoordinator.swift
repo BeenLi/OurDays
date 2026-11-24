@@ -874,7 +874,7 @@ enum ExistingICloudDataIdentityRecovery {
             ownProfile: identity.ownProfile
         )
         if let pairingDate = recovered.pairingDate {
-            settings.pairingDate = pairingDate
+            settings.setRecoveredPairingDate(pairingDate)
         }
         if let displayName = recovered.displayName {
             settings.currentDisplayName = displayName

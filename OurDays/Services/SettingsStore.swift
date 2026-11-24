@@ -87,6 +87,15 @@ final class SettingsStore {
     var pairingDate: Date? {
         didSet { saveOptionalDate(pairingDate, forKey: Key.pairingDate) }
     }
+    /// The pairing date came from the share root after a reinstall or on a new device,
+    /// not from seeing the pairing begin here; a relayed date replaces it (decision 0014).
+    var pairingDateIsRecovered: Bool {
+        didSet { defaults.set(pairingDateIsRecovered, forKey: Key.pairingDateIsRecovered) }
+    }
+    /// When this device last unpaired or switched partner.
+    var pairingClearedAt: Date? {
+        didSet { saveOptionalDate(pairingClearedAt, forKey: Key.pairingClearedAt) }
+    }
     var selectedCalendarIDs: Set<String> {
         didSet { saveSelectedCalendarIDs() }
     }
@@ -212,6 +221,8 @@ final class SettingsStore {
         iCloudSharingEnabled = defaults.object(forKey: Key.iCloudSharingEnabled) as? Bool ?? true
         hasStartedPairing = defaults.object(forKey: Key.hasStartedPairing) as? Bool ?? false
         pairingDate = defaults.object(forKey: Key.pairingDate) as? Date
+        pairingDateIsRecovered = defaults.object(forKey: Key.pairingDateIsRecovered) as? Bool ?? false
+        pairingClearedAt = defaults.object(forKey: Key.pairingClearedAt) as? Date
         selectedCalendarIDs = Set(defaults.stringArray(forKey: Key.selectedCalendarIDs) ?? [])
         defaultVisibility = EventVisibility(rawValue: defaults.string(forKey: Key.defaultVisibility) ?? "") ?? .fullDetails
         appLanguage = AppLanguagePreference.read(from: defaults)
@@ -352,6 +363,10 @@ final class SettingsStore {
             snapshot.language = OwnRelayedSettings.Value(rawValue: appLanguage.rawValue, updatedAt: updatedAt)
         }
         snapshot.lastSeenActivityAt = lastSeenActivityAt
+        if let pairingDate, !pairingDateIsRecovered, let partnerID = MemberIDPolicy.normalized(partnerShareOwnerID) {
+            snapshot.pairing = OwnRelayedSettings.Pairing(partnerID: partnerID, date: pairingDate)
+        }
+        snapshot.pairingClearedAt = pairingClearedAt
         return snapshot
     }
 
@@ -401,6 +416,20 @@ final class SettingsStore {
         }
         if let seen = relayed.lastSeenActivityAt, seen > (lastSeenActivityAt ?? .distantPast) {
             lastSeenActivityAt = seen
+        }
+        if let cleared = relayed.pairingClearedAt, cleared > (pairingClearedAt ?? .distantPast) {
+            pairingClearedAt = cleared
+        }
+        if let pairing = relayed.pairing,
+           PairingDateRelayPolicy.adoptsPairingDate(
+               pairing,
+               currentPartnerID: partnerShareOwnerID,
+               localDate: pairingDate,
+               localDateIsRecovered: pairingDateIsRecovered,
+               clearedAt: pairingClearedAt
+           ) {
+            pairingDate = pairing.date
+            pairingDateIsRecovered = false
         }
     }
 
@@ -456,6 +485,13 @@ final class SettingsStore {
     func markPairingDateIfNeeded(at date: Date = .now, calendar: Calendar = .current) {
         guard pairingDate == nil else { return }
         pairingDate = PairingDatePolicy.normalizedPairingDate(date, calendar: calendar)
+        pairingDateIsRecovered = false
+    }
+
+    /// The pairing date read back from the share root (reinstall, or a new device).
+    func setRecoveredPairingDate(_ date: Date) {
+        pairingDate = date
+        pairingDateIsRecovered = true
     }
 
     /// Takes the nickname/avatar another device of mine saved, keeping its edit time so
@@ -471,8 +507,10 @@ final class SettingsStore {
         lastReviewPromptAt = date
     }
 
-    func clearPairingDate() {
+    func clearPairingDate(at date: Date = .now) {
         pairingDate = nil
+        pairingDateIsRecovered = false
+        pairingClearedAt = OwnSettingsRelayClock.stamp(date)
     }
 
     private func savePairingConflict() {
@@ -526,6 +564,8 @@ final class SettingsStore {
         static let defaultVisibilityUpdatedAt = "defaultVisibilityUpdatedAt"
         static let appLanguageUpdatedAt = "appLanguageUpdatedAt"
         static let relayedCalendarReferences = "relayedCalendarReferences"
+        static let pairingDateIsRecovered = "pairingDateIsRecovered"
+        static let pairingClearedAt = "pairingClearedAt"
     }
 
     private enum LegacyKey {

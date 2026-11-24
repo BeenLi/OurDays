@@ -606,11 +606,16 @@ struct SyncCoordinator {
         guard let displayName = PairingSettingsPolicy.normalizedDisplayName(settings.currentDisplayName) else {
             return
         }
-        try await cloudKit.saveMemberProfileForSync(
+        if let newer = try await cloudKit.saveMemberProfileForSync(
             ownerMemberID: settings.currentMemberID,
             displayName: displayName,
-            avatar: settings.currentAvatar
-        )
+            avatar: settings.currentAvatar,
+            localUpdatedAt: settings.currentProfileUpdatedAt
+        ) {
+            // Changed on my other device: take it instead of writing this device's
+            // older copy back (which would also re-push both devices).
+            settings.adoptOwnProfile(newer)
+        }
     }
 
     private func upsert(mirrors: [EventMirror], modelContext: ModelContext) throws {
@@ -798,6 +803,7 @@ enum ExistingICloudDataIdentityRecovery {
         if let displayName = recovered.displayName {
             settings.currentDisplayName = displayName
             settings.currentAvatar = recovered.avatar
+            settings.currentProfileUpdatedAt = identity.ownProfile?.updatedAt
             settings.hasCompletedInitialProfilePrompt = true
         }
     }

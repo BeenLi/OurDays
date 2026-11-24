@@ -301,7 +301,7 @@ enum EventMirrorKeyPolicy {
     }
 
     /// One live record this device knows: its name, the occurrence it stands for now, and
-    /// (from a shadow) the content it was last uploaded with.
+    /// the content it was last uploaded with, when that is known.
     private struct NameBookEntry {
         let key: String
         let occurrence: OccurrenceID
@@ -309,7 +309,8 @@ enum EventMirrorKeyPolicy {
     }
 
     /// Live shadows first: they record the event identifier the occurrence has now. An own
-    /// mirror without a shadow only has the identifier its key was first derived from.
+    /// mirror without a shadow (the cloud copies on a reinstall's first sync) only has the
+    /// identifier its key was first derived from.
     private static func nameBook(existingShadows: [LocalEventShadow], existingMirrors: [EventMirror]) -> [NameBookEntry] {
         var entryByKey: [String: NameBookEntry] = [:]
         for shadow in existingShadows where !shadow.isTombstone && !shadow.localEventIdentifier.isEmpty {
@@ -343,7 +344,10 @@ enum EventMirrorKeyPolicy {
                     series: SeriesID(calendarIdentifier: mirror.sourceCalendarID, eventIdentifier: eventIdentifier),
                     epoch: epoch(mirror.occurrenceStartDate)
                 ),
-                content: nil
+                // Only a full-details copy still says what the event said.
+                content: mirror.visibility == .fullDetails
+                    ? [mirror.title, mirror.location ?? "", mirror.notes ?? "", mirror.urlString ?? ""].joined(separator: "|")
+                    : nil
             )
         }
         return entryByKey.keys.sorted().compactMap { entryByKey[$0] }

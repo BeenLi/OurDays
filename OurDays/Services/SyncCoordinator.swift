@@ -173,6 +173,24 @@ struct SyncCoordinator {
             timing.mark(
                 "localStateLoaded accessRequests=\(localAccessRequests.count) shadows=\(existingShadows.count) mirrors=\(existingLocalMirrors.count)"
             )
+            // On a Mac the own events stay local; the iPhone uploads them
+            // (OwnEventUploadPolicy). Its mirror keys are device-local, so
+            // uploading here too would show the partner every event twice. The
+            // Mac's persisted own mirrors are the iPhone's cloud copies instead
+            // (imported below), so comments and red dots line up with the partner's.
+            let uploadsOwnEvents = OwnEventUploadPolicy.uploadsOwnEvents(
+                isRunningOnMac: ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
+            )
+            // Reinstall: until this install has confirmed one cloud write (fresh
+            // install over existing iCloud data) there is no local previous state, so
+            // our own cloud mirrors stand in for it. Read before the keys are made, so
+            // an event moved earlier still finds the record it kept.
+            var cloudOwnMirrors: [EventMirror]?
+            if shouldRunCloudKit, uploadsOwnEvents, let cloudKit,
+               OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(existingShadows: existingShadows) {
+                cloudOwnMirrors = try await cloudKit.fetchOwnEventMirrors(currentMemberID: settings.currentMemberID)
+                timing.mark("cloudOwnMirrorsFetched count=\(cloudOwnMirrors?.count ?? 0)")
+            }
             let hardDeletedMirrors = eventMirrorService.mirrorsOutsideSharingWindows(
                 existingLocalMirrors,
                 sharingWindows: sharingWindows
@@ -185,7 +203,7 @@ struct SyncCoordinator {
             let keptKeys = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
                 sourceEvents,
                 existingShadows: retainedShadows,
-                existingMirrors: retainedLocalMirrors
+                existingMirrors: retainedLocalMirrors + (cloudOwnMirrors ?? [])
             )
             if !keptKeys.isEmpty {
                 syncInfo("foregroundSync rescheduled events keep their keys count=\(keptKeys.count)")
@@ -243,14 +261,6 @@ struct SyncCoordinator {
                 "foregroundSync mirror upload candidates total=\(mirrorsForSync.count) changed=\(mirrorsNeedingCloudUpload.count) hardDeletes=\(hardDeletedMirrors.count)"
             )
 
-            // On a Mac the own events stay local; the iPhone uploads them
-            // (OwnEventUploadPolicy). Its mirror keys are device-local, so
-            // uploading here too would show the partner every event twice. The
-            // Mac's persisted own mirrors are the iPhone's cloud copies instead
-            // (imported below), so comments and red dots line up with the partner's.
-            let uploadsOwnEvents = OwnEventUploadPolicy.uploadsOwnEvents(
-                isRunningOnMac: ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
-            )
             if uploadsOwnEvents {
                 try upsert(mirrors: mirrorsForSync, modelContext: modelContext)
             }
@@ -371,9 +381,7 @@ struct SyncCoordinator {
                 // Use our own cloud mirrors as that previous state instead.
                 var reconciledTombstones: [EventMirror] = []
                 let cloudHardDeletedMirrors = uploadsOwnEvents ? hardDeletedMirrors : []
-                if uploadsOwnEvents,
-                   OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(existingShadows: existingShadows) {
-                    let cloudOwnMirrors = try await cloudKit.fetchOwnEventMirrors(currentMemberID: settings.currentMemberID)
+                if let cloudOwnMirrors {
                     reconciledTombstones = eventMirrorService.deletedMirrorTombstones(
                         existingEventKeys: currentMirrorKeys,
                         existingMirrors: cloudOwnMirrors,

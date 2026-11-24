@@ -949,7 +949,7 @@ final class RescheduledEventKeyTests: XCTestCase {
         XCTAssertEqual(EventMirrorKeyPolicy.mirrorKey(for: moved, keptKeys: kept), "work:event-1:1800")
     }
 
-    func testKeyIsFoundFromTheMirrorAloneWithoutAShadow() {
+    func testKeyIsFoundFromTheCloudCopyAloneAfterAReinstall() {
         let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
             [event(start: 5_400)],
             existingShadows: [],
@@ -1256,6 +1256,11 @@ final class MovedSeriesKeyTests: XCTestCase {
         XCTAssertEqual(new.shadows.map(\.id), before.map(key))
         XCTAssertEqual(
             EventMirrorKeyPolicy.keptKeysForRescheduledEvents(after, existingShadows: new.shadows, existingMirrors: new.mirrors),
+            kept
+        )
+        // A reinstall's first sync has only the cloud copies, named after the old series.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(after, existingShadows: [], existingMirrors: new.mirrors),
             kept
         )
         XCTAssertEqual(

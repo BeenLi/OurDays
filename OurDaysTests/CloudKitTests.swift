@@ -1006,6 +1006,30 @@ final class CloudKitSharingFailureMessageTests: XCTestCase {
         )
     }
 
+    func testQuotaExceededSaysICloudStorageIsFullInAppLanguage() {
+        let error = NSError(domain: CKError.errorDomain, code: CKError.Code.quotaExceeded.rawValue)
+
+        XCTAssertTrue(
+            CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .chinese)
+                .hasPrefix("你的 iCloud 储存空间已满")
+        )
+        XCTAssertTrue(
+            CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .english)
+                .hasPrefix("Your iCloud storage is full")
+        )
+    }
+
+    func testQuotaExceededInsidePartialFailureIsRecognized() {
+        let itemError = NSError(domain: CKError.errorDomain, code: CKError.Code.quotaExceeded.rawValue)
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.partialFailure.rawValue,
+            userInfo: [CKPartialErrorsByItemIDKey: [CKRecord.ID(recordName: "a"): itemError]]
+        )
+
+        XCTAssertTrue(CloudKitSharingFailureMessage.isQuotaExceeded(error))
+    }
+
     func testUsesLocalizedDescriptionForOtherErrors() {
         let error = NSError(domain: NSCocoaErrorDomain, code: 4, userInfo: [NSLocalizedDescriptionKey: "Missing file"])
 

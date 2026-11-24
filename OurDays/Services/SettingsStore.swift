@@ -105,6 +105,15 @@ final class SettingsStore {
     }
     /// App Store rating moments already used on this install (`ReviewPromptPolicy`).
     /// Kept across unpair/re-pair: each moment asks once per install.
+    /// Accepted invitations whose joint event this device has seen in its own system
+    /// calendar; only those may be auto-canceled when the event disappears
+    /// (`InvitationLocalEventSyncPolicy.reconcileAcceptedInvitations`).
+    var invitationIDsWithLocalEventSeen: Set<String> {
+        didSet {
+            guard invitationIDsWithLocalEventSeen != oldValue else { return }
+            defaults.set(invitationIDsWithLocalEventSeen.sorted(), forKey: Key.invitationIDsWithLocalEventSeen)
+        }
+    }
     var reviewPromptedMoments: Set<ReviewPromptMoment> {
         didSet { defaults.set(reviewPromptedMoments.map(\.rawValue).sorted(), forKey: Key.reviewPromptedMoments) }
     }
@@ -175,6 +184,7 @@ final class SettingsStore {
         lastSyncAt = defaults.object(forKey: Key.lastSyncAt) as? Date
         lastSeenActivityAt = defaults.object(forKey: Key.lastSeenActivityAt) as? Date
         lastNotifiedAt = defaults.object(forKey: Key.lastNotifiedAt) as? Date
+        invitationIDsWithLocalEventSeen = Set(defaults.stringArray(forKey: Key.invitationIDsWithLocalEventSeen) ?? [])
         reviewPromptedMoments = Set((defaults.stringArray(forKey: Key.reviewPromptedMoments) ?? []).compactMap(ReviewPromptMoment.init(rawValue:)))
         lastReviewPromptAt = defaults.object(forKey: Key.lastReviewPromptAt) as? Date
     }
@@ -347,6 +357,7 @@ final class SettingsStore {
         static let lastSeenActivityAt = "lastSeenActivityAt"
         static let lastNotifiedAt = "lastNotifiedAt"
         static let reviewPromptedMoments = "reviewPromptedMoments"
+        static let invitationIDsWithLocalEventSeen = "invitationIDsWithLocalEventSeen"
         static let lastReviewPromptAt = "lastReviewPromptAt"
     }
 

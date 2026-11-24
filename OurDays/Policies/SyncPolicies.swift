@@ -224,6 +224,20 @@ enum CloudKitMirrorSyncPolicy {
 /// "previous state" for the ordinary tombstone diff. Shadows are written before the
 /// cloud step, so "no shadows at all" would stop after the first attempt even if that
 /// attempt failed; the upload stamp is the signal that the memory is trustworthy.
+/// Which device of one Apple ID uploads my own events. A mirror's key is built from
+/// EventKit's `calendarIdentifier` + `eventIdentifier`, which are only valid on the
+/// device that read them, so the iPhone and a Mac reading the same iCloud calendar
+/// would each upload their own copy and the partner would see every event twice.
+/// The iPhone stays the only uploader; a Mac keeps its mirrors local (for its own
+/// display) and its new events reach the partner through iCloud Calendar and the
+/// iPhone (pairing-sync-integrity decision 0010). The delay is until the iPhone app
+/// next syncs: EventKit changes don't wake it.
+enum OwnEventUploadPolicy {
+    static func uploadsOwnEvents(isRunningOnMac: Bool) -> Bool {
+        !isRunningOnMac
+    }
+}
+
 enum OwnMirrorReconciliationPolicy {
     static func shouldReconcileWithCloud(existingShadows: [LocalEventShadow]) -> Bool {
         !existingShadows.contains { $0.lastUploadedAt != nil }

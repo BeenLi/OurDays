@@ -292,3 +292,10 @@ final class OwnMirrorReconciliationPolicyTests: XCTestCase {
         )
     }
 }
+
+final class OwnEventUploadPolicyTests: XCTestCase {
+    func testOnlyTheNonMacDeviceUploadsOwnEvents() {
+        XCTAssertTrue(OwnEventUploadPolicy.uploadsOwnEvents(isRunningOnMac: false))
+        XCTAssertFalse(OwnEventUploadPolicy.uploadsOwnEvents(isRunningOnMac: true))
+    }
+}

@@ -228,13 +228,17 @@ struct SyncCoordinator {
             try upsert(shadows: activeShadows + deletedShadows, modelContext: modelContext)
             timing.mark("localMirrorsUpserted mirrors=\(mirrorsForSync.count) shadows=\(activeShadows.count + deletedShadows.count)")
             let localInvitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
-            let canceledInvitations = InvitationLocalEventSyncPolicy.cancelAcceptedInvitationsMissingLocalEvents(
+            let invitationCheck = InvitationLocalEventSyncPolicy.reconcileAcceptedInvitations(
                 localInvitations,
+                seenInvitationIDs: settings.invitationIDsWithLocalEventSeen,
+                canReadCalendar: calendarAccess.authorizationState().canReadEvents,
                 now: syncedAt,
                 localEventExists: { invitation in
                     calendarAccess.localEventExists(for: invitation)
                 }
             )
+            let canceledInvitations = invitationCheck.canceled
+            settings.invitationIDsWithLocalEventSeen = invitationCheck.seenInvitationIDs
             if !canceledInvitations.isEmpty {
                 try modelContext.save()
             }
@@ -331,7 +335,15 @@ struct SyncCoordinator {
                 // while the app was gone would stay live in the cloud for the partner.
                 // Use our own cloud mirrors as that previous state instead.
                 var reconciledTombstones: [EventMirror] = []
-                if OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(existingShadows: existingShadows) {
+                // On a Mac the own events stay local; the iPhone uploads them
+                // (OwnEventUploadPolicy). Its mirror keys are device-local, so
+                // uploading here too would show the partner every event twice.
+                let uploadsOwnEvents = OwnEventUploadPolicy.uploadsOwnEvents(
+                    isRunningOnMac: ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
+                )
+                let cloudHardDeletedMirrors = uploadsOwnEvents ? hardDeletedMirrors : []
+                if uploadsOwnEvents,
+                   OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(existingShadows: existingShadows) {
                     let cloudOwnMirrors = try await cloudKit.fetchOwnEventMirrors(currentMemberID: settings.currentMemberID)
                     reconciledTombstones = eventMirrorService.deletedMirrorTombstones(
                         existingEventKeys: currentMirrorKeys,
@@ -342,14 +354,14 @@ struct SyncCoordinator {
                     )
                     timing.mark("cloudOwnMirrorsReconciled cloud=\(cloudOwnMirrors.count) tombstones=\(reconciledTombstones.count)")
                 }
-                let mirrorsToUpload = mirrorsNeedingCloudUpload + reconciledTombstones
+                let mirrorsToUpload = uploadsOwnEvents ? mirrorsNeedingCloudUpload + reconciledTombstones : []
 
                 let accessRequestsNeedingCloudUpload = CalendarAccessRequestCloudUploadPolicy.requestsNeedingUpload(
                     localAccessRequests,
                     currentMemberID: settings.currentMemberID
                 )
                 let hasCloudWrites = !mirrorsToUpload.isEmpty
-                    || !hardDeletedMirrors.isEmpty
+                    || !cloudHardDeletedMirrors.isEmpty
                     || !canceledInvitations.isEmpty
                     || !accessRequestsNeedingCloudUpload.isEmpty
                 let shouldUpdateShareRootMetadata = settings.hasStartedPairing
@@ -369,8 +381,8 @@ struct SyncCoordinator {
                         try await cloudKit.saveMirrorsForSync(mirrorsToUpload)
                         try upsert(mirrors: mirrorsToUpload, modelContext: modelContext)
                         timing.mark("cloudMirrorsSaved count=\(mirrorsToUpload.count)")
-                        try await cloudKit.deleteMirrorsForSync(hardDeletedMirrors)
-                        timing.mark("cloudHardDeletesSaved count=\(hardDeletedMirrors.count)")
+                        try await cloudKit.deleteMirrorsForSync(cloudHardDeletedMirrors)
+                        timing.mark("cloudHardDeletesSaved count=\(cloudHardDeletedMirrors.count)")
                         // CloudKit accepted the mirror writes — only now mark
                         // the shadows as uploaded.
                         for shadow in activeShadows + deletedShadows {

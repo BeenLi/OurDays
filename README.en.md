@@ -22,6 +22,7 @@ OurDays (formerly ShareCal) is a shared calendar iOS app for couples, **strictly
 - **Nicknames and avatars**: your partner is shown as "your note > their synced nickname > fallback". Avatars can be a photo or text on a color and sync through iCloud; iCloud identity details such as email are never shown. The Us tab shows "Day N together".
 - **Survives reinstall**: pairing, comments and invitations all live in your own iCloud. On first launch after reinstalling, if existing data is found, choose "Keep using existing iCloud data" to restore the pairing day, nickname and avatar without pairing again; events deleted while the app was gone get tombstones too, so nothing lingers on your partner's side.
 - **Chinese and English**: built-in Chinese and English strings, switchable in settings.
+- **Foldables and wide screens**: fills both iPhone Duo screens; on wide screens lists are capped in width and centered.
 
 ## Product UI
 
@@ -62,7 +63,7 @@ Each person owns a private `CoupleSpace` zone. Every record hangs under the `cou
 
 ### Record types
 
-CloudKit holds only 6 record types (schema in [`CloudKit/ShareCalSchema.ckdb`](CloudKit/ShareCalSchema.ckdb)). All of them have `couple-space-root` as parent, so a single CKShare covers the whole zone:
+Only 6 record types are shared with the partner (schema in [`CloudKit/ShareCalSchema.ckdb`](CloudKit/ShareCalSchema.ckdb)). All of them have `couple-space-root` as parent, so a single CKShare covers the whole zone:
 
 | Record | Purpose | Who writes, and where |
 | --- | --- | --- |
@@ -72,6 +73,8 @@ CloudKit holds only 6 record types (schema in [`CloudKit/ShareCalSchema.ckdb`](C
 | `EventInvitation` | Event invitations and their status; history requests reuse this type with a `history-access-request:` prefix (to avoid deploying another record type) | The sender writes its own zone; the responder writes the status back into the sender's shared zone |
 | `EventComment` | Comments; `eventMirrorID` points to the commented mirrorKey (joint events point to the invitation id) | Comments on your own events go into your zone; comments on your partner's events go into their shared zone |
 | `CalendarAccessRequest` | Local model for history requests; travels in the cloud as the prefixed Invitation records above | Same as invitations |
+
+A seventh, unshared type, `OwnSettings`, lives in its own private zone `OwnDevices`: it carries the note name, selected calendars, default visibility and language between devices of the same Apple ID, and the partner can't read it.
 
 Local SwiftData also has `LocalEventShadow`, which never goes to the cloud: it records each local event's fingerprint and `lastUploadedAt` from its last successful upload, and is the basis for "upload only changed mirrors" and "detect local deletes".
 

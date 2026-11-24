@@ -1130,6 +1130,25 @@ final class ShareCalLaunchDiagnosticPolicyTests: XCTestCase {
         XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.shouldProbeEventComments(arguments: ["ShareCal"]))
     }
 
+    func testParsesSeriesSmokeArguments() {
+        let arguments = [
+            "ShareCal", "-ShareCalSeedDailySeriesTitled", "Series", "-ShareCalMoveSeriesTitled", "Series",
+            "-ShareCalMoveSeriesFromOccurrence", "0", "-ShareCalDeleteSeriesTitled", "Old Series",
+            "-ShareCalEventCommentOccurrence", "3"
+        ]
+
+        XCTAssertEqual(ShareCalLaunchDiagnosticPolicy.seedDailySeriesTitle(arguments: arguments), "Series")
+        XCTAssertEqual(ShareCalLaunchDiagnosticPolicy.moveSeriesTitle(arguments: arguments), "Series")
+        XCTAssertEqual(ShareCalLaunchDiagnosticPolicy.moveSeriesFromOccurrence(arguments: arguments), 0)
+        XCTAssertEqual(ShareCalLaunchDiagnosticPolicy.deleteSeriesTitle(arguments: arguments), "Old Series")
+        XCTAssertEqual(ShareCalLaunchDiagnosticPolicy.eventCommentOccurrence(arguments: arguments), 3)
+        // "All future events" from the third occurrence unless told otherwise; no occurrence
+        // named means the first event found, as before.
+        XCTAssertEqual(ShareCalLaunchDiagnosticPolicy.moveSeriesFromOccurrence(arguments: ["ShareCal"]), 2)
+        XCTAssertNil(ShareCalLaunchDiagnosticPolicy.eventCommentOccurrence(arguments: ["ShareCal"]))
+        XCTAssertNil(ShareCalLaunchDiagnosticPolicy.moveSeriesTitle(arguments: ["ShareCal"]))
+    }
+
     func testPreparesPairingShareOnlyWhenLaunchArgumentIsPresent() {
         XCTAssertTrue(
             ShareCalLaunchDiagnosticPolicy.shouldPreparePairingShare(

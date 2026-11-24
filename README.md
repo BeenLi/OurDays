@@ -22,6 +22,7 @@ OurDays（原名 ShareCal）是一款**严格两人配对**的情侣共享日历
 - **昵称与头像**：对方显示为"备注名 > 对方同步的昵称 > 兜底"，头像可选图片或文字+底色并随 iCloud 同步，不展示邮箱等 iCloud 身份信息。"我们"页显示配对第 N 天。
 - **删除重装可恢复**：配对、评论、邀请都在自己的 iCloud 里。重装后首次启动若检测到已有数据，选「继续使用现有 iCloud 数据」即可找回配对日、昵称头像，不用重新配对；App 不在期间删掉的日程也会补发墓碑，对方那边不会残留。
 - **中英双语**：内置中 / 英文案，可在设置中切换。
+- **折叠屏与宽屏**：iPhone Duo 内外屏都铺满全屏，宽屏上列表限宽居中。
 
 ## 产品 UI
 
@@ -62,7 +63,7 @@ App 为四个 Tab 的标准 iOS 结构：
 
 ### 记录类型
 
-CloudKit 里只有 6 种记录类型（schema 见 [`CloudKit/ShareCalSchema.ckdb`](CloudKit/ShareCalSchema.ckdb)），全部以 `couple-space-root` 为 parent，因此一条 CKShare 就覆盖整个 zone：
+共享给对方的 CloudKit 记录只有 6 种（schema 见 [`CloudKit/ShareCalSchema.ckdb`](CloudKit/ShareCalSchema.ckdb)），全部以 `couple-space-root` 为 parent，因此一条 CKShare 就覆盖整个 zone：
 
 | 记录 | 作用 | 谁写、写到哪 |
 | --- | --- | --- |
@@ -72,6 +73,8 @@ CloudKit 里只有 6 种记录类型（schema 见 [`CloudKit/ShareCalSchema.ckdb
 | `EventInvitation` | 日程邀请及其状态；历史日历申请复用此类型，以 `history-access-request:` 前缀区分（避免再部署一种记录类型） | 发起方写自己的 zone，回应方把状态写回发起方的共享 zone |
 | `EventComment` | 评论，`eventMirrorID` 指向所评论的 mirrorKey（共同日程指向邀请 id） | 评论自己的日程写自己的 zone；评论对方的日程写对方的共享 zone |
 | `CalendarAccessRequest` | 历史日历申请的本地模型；云端以上面的 Invitation 前缀记录传输 | 同邀请 |
+
+另有一种不共享的 `OwnSettings`，放在单独的私有 zone `OwnDevices` 里，只在同一 Apple ID 的自己设备之间接力备注名、所选日历、默认可见性和语言，对方读不到。
 
 本地 SwiftData 还有一个不上云的 `LocalEventShadow`：记录每条本地日程上次成功上传时的指纹与 `lastUploadedAt`，是"只上传有变化的 mirror"和"检测本地删除"的依据。
 

@@ -949,7 +949,7 @@ final class RescheduledEventKeyTests: XCTestCase {
         XCTAssertEqual(EventMirrorKeyPolicy.mirrorKey(for: moved, keptKeys: kept), "work:event-1:1800")
     }
 
-    func testKeyIsFoundFromTheMirrorAloneWithoutAShadow() {
+    func testKeyIsFoundFromTheCloudCopyAloneAfterAReinstall() {
         let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
             [event(start: 5_400)],
             existingShadows: [],

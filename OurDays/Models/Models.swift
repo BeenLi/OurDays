@@ -145,14 +145,10 @@ final class LocalEventShadow {
     var lastUploadedAt: Date?
     var isTombstone: Bool
 
-    var mirrorKey: String {
-        EventMirrorKeyPolicy.makeMirrorKey(
-            calendarIdentifier: calendarIdentifier,
-            eventIdentifier: localEventIdentifier,
-            occurrenceStartDate: occurrenceStartDate,
-            fingerprint: fingerprint
-        )
-    }
+    /// The shadow is stored under its mirror's key. That key is not always derivable from
+    /// the fields: an event moved to a new time keeps its first key
+    /// (`EventMirrorKeyPolicy.keptKeysForRescheduledEvents`).
+    var mirrorKey: String { id }
 
     init(
         id: String = UUID().uuidString,

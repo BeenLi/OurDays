@@ -165,23 +165,6 @@ struct SyncCoordinator {
                 selectedCalendarIDs: settings.selectedCalendarIDs
             )
             timing.mark("localEventsFetched count=\(sourceEvents.count)")
-            let mirrors = eventMirrorService.makeMirrors(
-                from: sourceEvents,
-                selectedCalendarIDs: settings.selectedCalendarIDs,
-                ownerMemberID: settings.currentMemberID,
-                visibility: settings.defaultVisibility,
-                sharingWindows: sharingWindows
-            )
-            // Shadows are recorded without an upload stamp; the stamp is set
-            // only after CloudKit writes succeed, so events synced before
-            // pairing still upload once a partner exists.
-            let activeShadows = eventMirrorService.makeShadows(
-                from: sourceEvents,
-                selectedCalendarIDs: settings.selectedCalendarIDs,
-                uploadedAt: nil,
-                sharingWindows: sharingWindows
-            )
-            let currentMirrorKeys = Set(mirrors.map(\.mirrorKey))
             let existingShadows = try modelContext.fetch(FetchDescriptor<LocalEventShadow>())
             let existingLocalMirrors = try localMirrors(
                 ownerMemberID: settings.currentMemberID,
@@ -190,6 +173,35 @@ struct SyncCoordinator {
             timing.mark(
                 "localStateLoaded accessRequests=\(localAccessRequests.count) shadows=\(existingShadows.count) mirrors=\(existingLocalMirrors.count)"
             )
+            // A one-off event moved to another time keeps its record, so the
+            // comments on it stay with it.
+            let keptKeys = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                sourceEvents,
+                existingShadows: existingShadows,
+                existingMirrors: existingLocalMirrors
+            )
+            if !keptKeys.isEmpty {
+                syncInfo("foregroundSync rescheduled events keep their keys count=\(keptKeys.count)")
+            }
+            let mirrors = eventMirrorService.makeMirrors(
+                from: sourceEvents,
+                selectedCalendarIDs: settings.selectedCalendarIDs,
+                ownerMemberID: settings.currentMemberID,
+                visibility: settings.defaultVisibility,
+                sharingWindows: sharingWindows,
+                keptKeys: keptKeys
+            )
+            // Shadows are recorded without an upload stamp; the stamp is set
+            // only after CloudKit writes succeed, so events synced before
+            // pairing still upload once a partner exists.
+            let activeShadows = eventMirrorService.makeShadows(
+                from: sourceEvents,
+                selectedCalendarIDs: settings.selectedCalendarIDs,
+                uploadedAt: nil,
+                sharingWindows: sharingWindows,
+                keptKeys: keptKeys
+            )
+            let currentMirrorKeys = Set(mirrors.map(\.mirrorKey))
             let hardDeletedMirrors = eventMirrorService.mirrorsOutsideSharingWindows(
                 existingLocalMirrors,
                 sharingWindows: sharingWindows

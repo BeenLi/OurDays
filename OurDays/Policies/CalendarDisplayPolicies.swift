@@ -203,16 +203,11 @@ enum CalendarDisplayMirrorPolicy {
 
     static func displayMirrors(
         from events: [CalendarSourceEvent],
-        ownerMemberID: String
+        ownerMemberID: String,
+        keptKeys: [String: String] = [:]
     ) -> [EventMirror] {
         events.map { event in
-            let fingerprint = EventMirrorKeyPolicy.fingerprint(for: event)
-            let mirrorKey = EventMirrorKeyPolicy.makeMirrorKey(
-                calendarIdentifier: event.calendarIdentifier,
-                eventIdentifier: event.eventIdentifier,
-                occurrenceStartDate: event.occurrenceStartDate,
-                fingerprint: fingerprint
-            )
+            let mirrorKey = EventMirrorKeyPolicy.mirrorKey(for: event, keptKeys: keptKeys)
             return EventMirror(
                 id: "\(transientIDPrefix)\(mirrorKey)",
                 ownerMemberID: ownerMemberID,

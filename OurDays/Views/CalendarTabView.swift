@@ -393,10 +393,20 @@ struct CalendarTabView: View {
         )
         let selectedCalendarIDs = settings.selectedCalendarIDs
         let persistedOwn = mirrors.filter { $0.ownerMemberID == settings.currentMemberID }
+        let shownEvents = sourceEvents.filter { selectedCalendarIDs.contains($0.calendarIdentifier) }
+        // An event just moved keeps its uploaded key (the next sync updates that record
+        // in place), so its comments show right away.
         let display = OwnEventTwinPolicy.adoptingPersistedKeys(
             CalendarDisplayMirrorPolicy.displayMirrors(
-                from: sourceEvents.filter { selectedCalendarIDs.contains($0.calendarIdentifier) },
-                ownerMemberID: settings.currentMemberID
+                from: shownEvents,
+                ownerMemberID: settings.currentMemberID,
+                keptKeys: EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                    shownEvents,
+                    existingShadows: [],
+                    existingMirrors: persistedOwn.filter {
+                        !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
+                    }
+                )
             ),
             persistedOwn: persistedOwn
         )

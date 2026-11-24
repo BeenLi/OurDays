@@ -162,7 +162,8 @@ final class CalendarAccessService {
                 title: event.title ?? "Untitled",
                 location: event.location,
                 notes: event.notes,
-                url: event.url
+                url: event.url,
+                isRecurring: event.hasRecurrenceRules
             )
         }
     }

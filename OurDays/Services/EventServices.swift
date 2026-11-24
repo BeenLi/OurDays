@@ -6,7 +6,8 @@ struct EventMirrorService {
         selectedCalendarIDs: Set<String>,
         ownerMemberID: String,
         visibility: EventVisibility,
-        sharingWindows: [DateInterval]? = nil
+        sharingWindows: [DateInterval]? = nil,
+        keptKeys: [String: String] = [:]
     ) -> [EventMirror] {
         guard visibility != .hidden else { return [] }
 
@@ -17,13 +18,7 @@ struct EventMirrorService {
                 return Self.isEvent(event, inside: sharingWindows)
             }
             .map { event in
-                let fingerprint = EventMirrorKeyPolicy.fingerprint(for: event)
-                let mirrorKey = EventMirrorKeyPolicy.makeMirrorKey(
-                    calendarIdentifier: event.calendarIdentifier,
-                    eventIdentifier: event.eventIdentifier,
-                    occurrenceStartDate: event.occurrenceStartDate,
-                    fingerprint: fingerprint
-                )
+                let mirrorKey = EventMirrorKeyPolicy.mirrorKey(for: event, keptKeys: keptKeys)
                 let visibleFields = Self.visibleFields(for: event, visibility: visibility)
 
                 return EventMirror(
@@ -53,7 +48,8 @@ struct EventMirrorService {
         from events: [CalendarSourceEvent],
         selectedCalendarIDs: Set<String>,
         uploadedAt: Date?,
-        sharingWindows: [DateInterval]? = nil
+        sharingWindows: [DateInterval]? = nil,
+        keptKeys: [String: String] = [:]
     ) -> [LocalEventShadow] {
         events
             .filter { selectedCalendarIDs.contains($0.calendarIdentifier) }
@@ -63,12 +59,7 @@ struct EventMirrorService {
             }
             .map { event in
                 let fingerprint = EventMirrorKeyPolicy.fingerprint(for: event)
-                let mirrorKey = EventMirrorKeyPolicy.makeMirrorKey(
-                    calendarIdentifier: event.calendarIdentifier,
-                    eventIdentifier: event.eventIdentifier,
-                    occurrenceStartDate: event.occurrenceStartDate,
-                    fingerprint: fingerprint
-                )
+                let mirrorKey = EventMirrorKeyPolicy.mirrorKey(for: event, keptKeys: keptKeys)
                 return LocalEventShadow(
                     id: mirrorKey,
                     localEventIdentifier: event.eventIdentifier,

@@ -178,6 +178,22 @@ struct ExistingICloudDataRecoveredState: Equatable {
     var avatar: MemberAvatar?
 }
 
+/// Before the first-run "set my nickname" prompt, a device with no local nickname first
+/// looks for the one this Apple ID already has in the cloud (another device of the same
+/// Apple ID, e.g. a Mac next to the iPhone, or a reinstall). Asking first would make the
+/// typed (or skipped → random) name the newest edit, and the newer-edit-wins merge
+/// (pairing-sync-integrity 0009) would then overwrite the name the partner knows.
+enum InitialProfileCloudLookupPolicy {
+    static func shouldLookUp(
+        localDisplayName: String?,
+        isCloudKitAvailable: Bool,
+        hasAlreadyLookedUp: Bool
+    ) -> Bool {
+        guard isCloudKitAvailable, !hasAlreadyLookedUp else { return false }
+        return PairingSettingsPolicy.normalizedDisplayName(localDisplayName) == nil
+    }
+}
+
 enum ExistingICloudDataRecoveryPolicy {
     static func recoveredState(
         shareRootCreatedAt: Date?,

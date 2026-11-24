@@ -237,6 +237,38 @@ enum CalendarDisplayMirrorPolicy {
     }
 }
 
+enum OwnEventTwinPolicy {
+    /// A display mirror is keyed from this device's EventKit IDs, which only match the
+    /// persisted (cloud) copy on the device that uploaded it. On another device of the
+    /// same Apple ID (a Mac, which doesn't upload: `OwnEventUploadPolicy`) the same event
+    /// gets a different key, so comments and red dots anchored to the uploaded copy
+    /// wouldn't find it. A display mirror with no key match takes the key of the one
+    /// persisted own mirror with the same title and times; with none, or more than one
+    /// (two identical events), it keeps its own.
+    static func adoptingPersistedKeys(_ display: [EventMirror], persistedOwn: [EventMirror]) -> [EventMirror] {
+        let live = persistedOwn.filter {
+            $0.deletedAt == nil && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
+        }
+        let knownKeys = Set(live.map(\.mirrorKey))
+        let byMatch = Dictionary(grouping: live, by: matchKey(for:))
+        for mirror in display where !knownKeys.contains(mirror.mirrorKey) {
+            guard let candidates = byMatch[matchKey(for: mirror)], candidates.count == 1 else { continue }
+            mirror.mirrorKey = candidates[0].mirrorKey
+            mirror.id = "\(CalendarDisplayMirrorPolicy.transientIDPrefix)\(candidates[0].mirrorKey)"
+        }
+        return display
+    }
+
+    static func matchKey(for mirror: EventMirror) -> String {
+        [
+            mirror.title,
+            "\(Int(mirror.startDate.timeIntervalSince1970.rounded()))",
+            "\(Int(mirror.endDate.timeIntervalSince1970.rounded()))",
+            mirror.isAllDay ? "1" : "0"
+        ].joined(separator: "|")
+    }
+}
+
 enum EventDetailMirrorResolutionPolicy {
     /// Resolves a possibly-transient display mirror (my own events render as `display:` mirrors,
     /// see `CalendarDisplayMirrorPolicy`) to its persisted twin, matched by the shared `mirrorKey`,

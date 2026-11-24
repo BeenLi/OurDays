@@ -53,6 +53,8 @@ struct RootView: View {
     @State private var settingsFocus: SettingsFocusTarget?
     @State private var activeRootSheet: RootSheet?
     @State private var hasEvaluatedExistingICloudDataPrompt = false
+    @State private var hasLookedUpCloudProfile = false
+    @State private var isLookingUpCloudProfile = false
     @State private var pendingReplacementOwnerID: String?
     @State private var showPairingConflictAlert = false
     @Query(sort: \EventInvitation.startDate) private var invitations: [EventInvitation]
@@ -248,6 +250,7 @@ struct RootView: View {
             }
         }
         .sheet(item: $activeRootSheet) { sheet in
+            Group {
             switch sheet {
             case .initialProfilePrompt:
                 InitialProfilePromptSheet(
@@ -302,6 +305,9 @@ struct RootView: View {
                     }
                 )
             }
+            }
+            .environment(settings)
+            .environment(services)
         }
         .alert(
             settings.strings.pairingReplacementTitle,
@@ -522,6 +528,22 @@ struct RootView: View {
     }
 
 
+    /// Once per launch, before asking for a nickname, take the one this Apple ID already
+    /// has in the cloud (pairing-sync-integrity 0012).
+    private func adoptCloudProfileBeforePromptIfNeeded() async {
+        guard activeRootSheet == nil,
+              InitialProfileCloudLookupPolicy.shouldLookUp(
+                  localDisplayName: settings.currentDisplayName,
+                  isCloudKitAvailable: services.cloudKitIfAvailable != nil,
+                  hasAlreadyLookedUp: hasLookedUpCloudProfile
+              ),
+              let cloudKit = services.cloudKitIfAvailable else { return }
+        hasLookedUpCloudProfile = true
+        isLookingUpCloudProfile = true
+        defer { isLookingUpCloudProfile = false }
+        await ExistingICloudDataIdentityRecovery.restoreOwnProfile(cloudKit: cloudKit, settings: settings)
+    }
+
     private func presentInitialProfilePromptIfNeeded() {
         guard activeRootSheet == nil else { return }
         if PairingSettingsPolicy.normalizedDisplayName(settings.currentDisplayName) != nil {
@@ -620,6 +642,9 @@ struct RootView: View {
         purgeLegacyLocalDataIfNeeded()
         checkPendingShareReplacement()
         representPairingConflictIfNeeded()
+        await adoptCloudProfileBeforePromptIfNeeded()
+        // Another pass is still looking up the cloud nickname; it decides the prompt.
+        guard !isLookingUpCloudProfile else { return }
         presentInitialProfilePromptIfNeeded()
         guard activeRootSheet == nil else { return }
         await syncAfterAcceptedShareIfNeeded()

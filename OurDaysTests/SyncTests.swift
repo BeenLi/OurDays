@@ -390,20 +390,24 @@ final class OwnRecordAdoptionPolicyTests: XCTestCase {
         _ events: [CalendarSourceEvent],
         cloud: [EventMirror],
         confirmed: Set<String> = [],
+        confirmedTombstones: Set<String> = [],
         keptKeys: [String: String] = [:],
         wholeZone: Bool = true,
         mayStart: Bool = true,
-        onMac: Bool = true
+        onMac: Bool = true,
+        ownCalendars: Set<String> = []
     ) -> OwnRecordAdoptionPolicy.Result {
         OwnRecordAdoptionPolicy.resolve(
             events: events,
             stableKeys: EventStableKeyPolicy.stableKeys(for: events),
             keptKeys: keptKeys,
             confirmedKeys: confirmed,
+            confirmedTombstoneKeys: confirmedTombstones,
             cloudOwnMirrors: cloud,
             cloudCoversWholeZone: wholeZone,
             mayStartNewRecords: mayStart,
-            isRunningOnMac: onMac
+            isRunningOnMac: onMac,
+            ownCalendarIDs: ownCalendars
         )
     }
 
@@ -491,6 +495,57 @@ final class OwnRecordAdoptionPolicyTests: XCTestCase {
         let uploaded = ownMirrors(of: [ownEvent(id: "p", calendar: "phone-cal", external: nil)])
         let result = resolve([ownEvent(id: "m", calendar: "mac-cal", external: nil)], cloud: uploaded)
         XCTAssertFalse(result.keptKeys.values.contains(uploaded[0].mirrorKey))
+    }
+
+    func testAStampTheCloudDoesNotBackIsNotTrusted() {
+        // A sync that saw no events stamped the Mac's own key as uploaded; the record
+        // never reached the cloud, so the Mac must still take the iPhone's record.
+        let macKey = EventMirrorKeyPolicy.makeMirrorKey(for: mac)
+        let uploaded = ownMirrors(of: [phone])
+        let result = resolve([mac], cloud: uploaded, confirmed: [macKey])
+
+        XCTAssertEqual(result.keptKeys[macKey], uploaded[0].mirrorKey)
+        XCTAssertEqual(result.adoptedKeys, [uploaded[0].mirrorKey])
+    }
+
+    func testWithoutAWholeZoneReadAStampStillCounts() {
+        let phoneKey = EventMirrorKeyPolicy.makeMirrorKey(for: phone)
+        let result = resolve([phone], cloud: [], confirmed: [phoneKey], wholeZone: false, onMac: false)
+        XCTAssertTrue(result.keptKeys.isEmpty)
+        XCTAssertTrue(result.heldKeys.isEmpty)
+    }
+
+    func testMacYieldsToARecordWrittenFromAnotherDevicesCalendar() {
+        // Both devices wrote an unprefixed record for one event; the Mac's own one
+        // loses even when its name sorts first.
+        let macKey = EventMirrorKeyPolicy.makeMirrorKey(for: mac)
+        let macRecord = ownMirrors(of: [mac])
+        let phoneRecord = ownMirrors(of: [phone])
+        let result = resolve(
+            [mac],
+            cloud: macRecord + phoneRecord,
+            confirmed: [macKey],
+            ownCalendars: ["mac-cal"]
+        )
+        XCTAssertEqual(result.keptKeys[macKey], phoneRecord[0].mirrorKey)
+        XCTAssertEqual(
+            OwnRecordAdoptionPolicy.preferred(["a", "b"], demoted: ["a"]),
+            "b"
+        )
+    }
+
+    func testMacRevivesATombstoneItWroteItselfWhenTheEventReturns() {
+        let macKey = EventMirrorKeyPolicy.makeMirrorKey(for: mac)
+        let prefixed = "mac:\(macKey)"
+        let deleted = ownMirrors(of: [mac], keptKeys: [macKey: prefixed])
+        deleted[0].deletedAt = Date(timeIntervalSince1970: 5)
+
+        let own = resolve([mac], cloud: deleted, confirmedTombstones: [prefixed], keptKeys: [macKey: prefixed])
+        XCTAssertTrue(own.heldKeys.isEmpty)
+        XCTAssertEqual(own.keptKeys[macKey], prefixed)
+
+        let foreign = resolve([mac], cloud: deleted, keptKeys: [macKey: prefixed])
+        XCTAssertEqual(foreign.heldKeys, [prefixed], "someone else's deletion still holds")
     }
 
     func testIPhoneRecordIsPreferredOverAMacsThenTheSmallerName() {

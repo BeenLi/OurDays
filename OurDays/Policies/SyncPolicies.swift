@@ -300,15 +300,23 @@ enum OwnRecordAdoptionPolicy {
         var adoptedKeys: Set<String>
     }
 
+    /// - `confirmedKeys`: live shadows this device has seen through to the cloud;
+    ///   `confirmedTombstoneKeys`: the deletions it uploaded itself. With a read of the
+    ///   whole zone, a key counts as confirmed only if its record is really there: a
+    ///   stamp alone (say, from a sync that saw no events at all) proves nothing.
+    /// - `ownCalendarIDs`: this device's calendars. A Mac yields to records written
+    ///   from another device's calendars.
     static func resolve(
         events: [CalendarSourceEvent],
         stableKeys: [String: String],
         keptKeys: [String: String],
         confirmedKeys: Set<String>,
+        confirmedTombstoneKeys: Set<String> = [],
         cloudOwnMirrors: [EventMirror],
         cloudCoversWholeZone: Bool,
         mayStartNewRecords: Bool,
-        isRunningOnMac: Bool
+        isRunningOnMac: Bool,
+        ownCalendarIDs: Set<String> = []
     ) -> Result {
         let derivedKeys = events.map { EventMirrorKeyPolicy.makeMirrorKey(for: $0) }
         let currentKeys = derivedKeys.map { keptKeys[$0] ?? $0 }
@@ -321,6 +329,10 @@ enum OwnRecordAdoptionPolicy {
             grouping: cloudOwnMirrors.filter { !($0.stableKey ?? "").isEmpty },
             by: { $0.stableKey ?? "" }
         )
+        let cloudKeys = Set(cloudOwnMirrors.map(\.mirrorKey))
+        let writtenHere = isRunningOnMac
+            ? Set(cloudOwnMirrors.filter { ownCalendarIDs.contains($0.sourceCalendarID) }.map(\.mirrorKey))
+            : []
 
         enum Proposal { case keep, adopt(String, fromCloud: Bool), hold }
         var proposals: [Proposal] = []
@@ -330,16 +342,21 @@ enum OwnRecordAdoptionPolicy {
             let unique = !stableKey.isEmpty && stableKeyCounts[stableKey] == 1
             let records = unique ? (cloudByStableKey[stableKey] ?? []) : []
             let live = records.filter { $0.deletedAt == nil }.map(\.mirrorKey)
-            if confirmedKeys.contains(current) {
-                if cloudCoversWholeZone, let winner = preferred(live), winner != current {
+            let winner = preferred(live, demoted: writtenHere)
+            let isConfirmed = confirmedKeys.contains(current) && (!cloudCoversWholeZone || cloudKeys.contains(current))
+            if isConfirmed {
+                if cloudCoversWholeZone, let winner, winner != current {
                     proposals.append(.adopt(winner, fromCloud: false))
                 } else {
                     proposals.append(.keep)
                 }
                 continue
             }
-            if let winner = preferred(live) {
+            if let winner {
                 proposals.append(winner == current ? .keep : .adopt(winner, fromCloud: true))
+            } else if confirmedTombstoneKeys.contains(current), records.contains(where: { $0.mirrorKey == current }) {
+                // This device deleted it itself and the event is back: revive its record.
+                proposals.append(.keep)
             } else if !records.isEmpty || !mayStartNewRecords {
                 proposals.append(.hold)
             } else if isRunningOnMac, !current.hasPrefix(macRecordPrefix) {
@@ -381,12 +398,13 @@ enum OwnRecordAdoptionPolicy {
         return result
     }
 
-    /// Among live records for one event: an iPhone's before a Mac's, then the smaller name.
-    static func preferred(_ keys: [String]) -> String? {
+    /// Among live records for one event: an iPhone's before a Mac's (a `mac:` name, or on
+    /// a Mac one written from its own calendars: `demoted`), then the smaller name.
+    static func preferred(_ keys: [String], demoted: Set<String> = []) -> String? {
         keys.min { lhs, rhs in
-            let lhsMac = lhs.hasPrefix(macRecordPrefix)
-            let rhsMac = rhs.hasPrefix(macRecordPrefix)
-            if lhsMac != rhsMac { return !lhsMac }
+            let lhsLate = lhs.hasPrefix(macRecordPrefix) || demoted.contains(lhs)
+            let rhsLate = rhs.hasPrefix(macRecordPrefix) || demoted.contains(rhs)
+            if lhsLate != rhsLate { return !lhsLate }
             return lhs < rhs
         }
     }

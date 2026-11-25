@@ -217,18 +217,30 @@ struct SyncCoordinator {
             )
             let stableKeys = EventStableKeyPolicy.stableKeys(for: sharedEvents)
             let confirmedKeys = Set(existingShadows.filter { $0.lastUploadedAt != nil }.map(\.id))
-            // While a Mac of mine uploads, the iPhone looks for the Mac's record before
-            // starting one for an event it hasn't uploaded yet (one query, only then).
+            let confirmedLiveKeys = Set(existingShadows.filter { $0.lastUploadedAt != nil && !$0.isTombstone }.map(\.id))
+            let confirmedTombstoneKeys = confirmedKeys.subtracting(confirmedLiveKeys)
+            let ownCalendarIDs = calendarAccess.authorizationState().canReadEvents
+                ? Set(calendarAccess.calendars().map(\.id))
+                : settings.selectedCalendarIDs
+            // Before starting a record for an event it hasn't uploaded yet, the iPhone looks
+            // for one by stable key (one query, only then): while a Mac of mine uploads, or
+            // when uploaded events seem to vanish in the same sync (their identifiers
+            // changed, as after signing in to iCloud again), so they keep their records.
             var cloudCopies = cloudOwnMirrors
-            if cloudCopies == nil, shouldRunCloudKit, let cloudKit,
-               OwnEventUploadPolicy.looksUpNewEventsInCloud(
+            let provisionalKeys = Set(sharedEvents.map { event in
+                let derivedKey = EventMirrorKeyPolicy.makeMirrorKey(for: event)
+                return localKeptKeys[derivedKey] ?? derivedKey
+            })
+            let uploadedEventsVanish = !confirmedLiveKeys.subtracting(provisionalKeys).isEmpty
+            if cloudCopies == nil, shouldRunCloudKit, let cloudKit, !isRunningOnMac,
+               uploadedEventsVanish || OwnEventUploadPolicy.looksUpNewEventsInCloud(
                    isRunningOnMac: isRunningOnMac,
                    macUploadsOwnEventsAt: settings.macUploadsOwnEventsAt,
                    now: syncedAt
                ) {
                 let newEventStableKeys = Set(sharedEvents.compactMap { event -> String? in
                     let derivedKey = EventMirrorKeyPolicy.makeMirrorKey(for: event)
-                    guard !confirmedKeys.contains(localKeptKeys[derivedKey] ?? derivedKey) else { return nil }
+                    guard !confirmedLiveKeys.contains(localKeptKeys[derivedKey] ?? derivedKey) else { return nil }
                     return stableKeys[derivedKey]
                 }.filter { !$0.isEmpty })
                 if !newEventStableKeys.isEmpty {
@@ -248,14 +260,16 @@ struct SyncCoordinator {
                 events: sharedEvents,
                 stableKeys: stableKeys,
                 keptKeys: localKeptKeys,
-                confirmedKeys: confirmedKeys,
+                confirmedKeys: confirmedLiveKeys,
+                confirmedTombstoneKeys: confirmedTombstoneKeys,
                 cloudOwnMirrors: cloudCopies ?? [],
                 cloudCoversWholeZone: cloudOwnMirrors != nil,
                 mayStartNewRecords: OwnEventUploadPolicy.mayStartNewRecords(
                     isRunningOnMac: isRunningOnMac,
                     cloudOwnMirrors: cloudOwnMirrors
                 ),
-                isRunningOnMac: isRunningOnMac
+                isRunningOnMac: isRunningOnMac,
+                ownCalendarIDs: ownCalendarIDs
             )
             let keptKeys = adoption.keptKeys
             if !adoption.adoptedKeys.isEmpty || !adoption.heldKeys.isEmpty {
@@ -503,10 +517,13 @@ struct SyncCoordinator {
                 } else {
                     timing.mark("cloudWritesSkipped")
                 }
-                // Checked against the cloud with nothing to write: this state is what the
-                // cloud holds, so the shadows count as uploaded.
-                if !hasCloudWrites, cloudCopies != nil {
-                    for shadow in activeShadows + deletedShadows where shadow.lastUploadedAt == nil {
+                // Checked against the cloud with nothing to write: the events whose record
+                // the cloud holds as it is count as uploaded. Only those: a shadow with no
+                // record behind it must not pass for confirmed.
+                if !hasCloudWrites, let cloudCopies {
+                    let cloudKeys = Set(cloudCopies.map(\.mirrorKey))
+                    for shadow in activeShadows + deletedShadows
+                    where shadow.lastUploadedAt == nil && cloudKeys.contains(shadow.id) {
                         shadow.lastUploadedAt = syncedAt
                     }
                     try upsert(shadows: activeShadows + deletedShadows, modelContext: modelContext)
@@ -682,9 +699,7 @@ struct SyncCoordinator {
                     cloudOwnMirrors: cloudOwnMirrors,
                     liveKeys: currentMirrorKeys,
                     confirmedKeys: confirmedKeys,
-                    ownCalendarIDs: calendarAccess.authorizationState().canReadEvents
-                        ? Set(calendarAccess.calendars().map(\.id))
-                        : settings.selectedCalendarIDs,
+                    ownCalendarIDs: ownCalendarIDs,
                     now: syncedAt
                 )
                 if !expiredTombstones.isEmpty {

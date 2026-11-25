@@ -839,14 +839,26 @@ final class CloudKitCoupleSpaceService {
     }
 
     private func fetchRecordIfPresent(with recordID: CKRecord.ID) async throws -> CKRecord? {
-        do {
-            return try await fetchRecord(with: recordID)
-        } catch {
-            guard CloudKitRootLookupPolicy.shouldCreateRootAfterLookupFailure(error) else {
-                throw error
+        var attempt = 1
+        while true {
+            do {
+                return try await fetchRecord(with: recordID)
+            } catch {
+                if CloudKitRootLookupPolicy.meansRecordMissing(error) {
+                    cloudKitSharingInfo("root lookup found no record=\(recordID.recordName); creating root")
+                    return nil
+                }
+                // A rejected read says nothing about whether the root exists (cross-region
+                // China↔US requests return transient 15s). Treating it as missing used to
+                // write a fresh root over a shared one and then fail to share it again.
+                guard attempt < CloudKitRootLookupPolicy.maxAttempts,
+                      CloudKitRootLookupPolicy.isWorthRetrying(error) else {
+                    throw error
+                }
+                cloudKitSharingInfo("root lookup rejected record=\(recordID.recordName) attempt=\(attempt) error=\(describeCloudKitFailure(error)); retrying")
+                attempt += 1
+                try await Task.sleep(for: .seconds(2))
             }
-            cloudKitSharingInfo("root lookup failed recoverably record=\(recordID.recordName) error=\(describeCloudKitFailure(error)); creating root")
-            return nil
         }
     }
 
@@ -876,10 +888,14 @@ final class CloudKitCoupleSpaceService {
 
         do {
             let targetDatabase = database ?? privateDatabase
-            let results = try await withCheckedThrowingContinuation { continuation in
-                targetDatabase.fetch(withRecordIDs: uniqueRecordIDs) { result in
-                    continuation.resume(with: result)
+            var results: [CKRecord.ID: Result<CKRecord, any Error>] = [:]
+            for batch in CloudKitBatchSizePolicy.batches(uniqueRecordIDs) {
+                let batchResults = try await withCheckedThrowingContinuation { continuation in
+                    targetDatabase.fetch(withRecordIDs: batch) { result in
+                        continuation.resume(with: result)
+                    }
                 }
+                results.merge(batchResults) { _, new in new }
             }
 
             var recordsByID: [CKRecord.ID: CKRecord] = [:]
@@ -957,7 +973,9 @@ final class CloudKitCoupleSpaceService {
         cloudKitSharingInfo(
             "saveMirrorsForSync saving records=\(records.map { "\($0.recordType):\($0.recordID.recordName)" }.joined(separator: ","))"
         )
-        _ = try await modifyRecords(saving: records, deleting: [], savePolicy: .changedKeys, atomically: false)
+        for batch in CloudKitBatchSizePolicy.batches(records) {
+            _ = try await modifyRecords(saving: batch, deleting: [], savePolicy: .changedKeys, atomically: false)
+        }
         cloudKitSharingInfo("saveMirrorsForSync succeeded count=\(records.count)")
     }
 
@@ -971,7 +989,9 @@ final class CloudKitCoupleSpaceService {
         }
 
         cloudKitSharingInfo("deleteMirrorsForSync deleting records=\(recordIDs.map(\.recordName).joined(separator: ","))")
-        _ = try await modifyRecords(saving: [], deleting: recordIDs, savePolicy: .changedKeys, atomically: false)
+        for batch in CloudKitBatchSizePolicy.batches(recordIDs) {
+            _ = try await modifyRecords(saving: [], deleting: batch, savePolicy: .changedKeys, atomically: false)
+        }
         cloudKitSharingInfo("deleteMirrorsForSync succeeded count=\(recordIDs.count)")
     }
 
@@ -1341,8 +1361,7 @@ final class CloudKitCoupleSpaceService {
             cloudKitSharingInfo("purgeExPartnerRecordsFromPrivateZone nothing to delete")
             return
         }
-        // CloudKit caps one modify operation at 400 records.
-        for batch in stride(from: 0, to: recordIDs.count, by: 200).map({ Array(recordIDs[$0..<min($0 + 200, recordIDs.count)]) }) {
+        for batch in CloudKitBatchSizePolicy.batches(recordIDs) {
             _ = try await modifyRecords(saving: [], deleting: batch, savePolicy: .changedKeys, atomically: false)
         }
         cloudKitSharingInfo("purgeExPartnerRecordsFromPrivateZone deleted records=\(recordIDs.count)")

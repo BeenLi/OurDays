@@ -3,16 +3,35 @@ import Foundation
 import UIKit
 
 enum CloudKitRootLookupPolicy {
-    static func shouldCreateRootAfterLookupFailure(_ error: Error) -> Bool {
+    static let maxAttempts = 3
+
+    /// Only `unknownItem` means the root isn't there. Anything else (notably
+    /// `serverRejectedRequest`) is a failed read, not an answer.
+    static func meansRecordMissing(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == CKError.errorDomain
+            && CKError.Code(rawValue: nsError.code) == .unknownItem
+    }
+
+    static func isWorthRetrying(_ error: Error) -> Bool {
         let nsError = error as NSError
         guard nsError.domain == CKError.errorDomain else { return false }
-
         switch CKError.Code(rawValue: nsError.code) {
-        case .unknownItem, .serverRejectedRequest:
+        case .serverRejectedRequest, .serviceUnavailable, .requestRateLimited, .zoneBusy, .networkFailure, .networkUnavailable:
             return true
         default:
             return false
         }
+    }
+}
+
+/// CloudKit refuses a single request with more than 400 records (`limitExceeded`);
+/// big first syncs (one mirror per occurrence, years ahead) can pass that.
+enum CloudKitBatchSizePolicy {
+    static let maxRecordsPerRequest = 200
+
+    static func batches<Element>(_ items: [Element], size: Int = maxRecordsPerRequest) -> [[Element]] {
+        stride(from: 0, to: items.count, by: size).map { Array(items[$0..<min($0 + size, items.count)]) }
     }
 }
 

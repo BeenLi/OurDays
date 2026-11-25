@@ -536,18 +536,32 @@ final class CloudKitAccessRequestWritePolicyTests: XCTestCase {
 }
 
 final class CloudKitRootLookupPolicyTests: XCTestCase {
-    func testTreatsMissingRootAndRejectedServerLookupAsRecoverableLookupFailures() {
+    func testOnlyUnknownItemMeansTheRootIsMissing() {
         let unknownItem = NSError(domain: CKError.errorDomain, code: CKError.Code.unknownItem.rawValue)
         let serverRejectedRequest = NSError(domain: CKError.errorDomain, code: CKError.Code.serverRejectedRequest.rawValue)
 
-        XCTAssertTrue(CloudKitRootLookupPolicy.shouldCreateRootAfterLookupFailure(unknownItem))
-        XCTAssertTrue(CloudKitRootLookupPolicy.shouldCreateRootAfterLookupFailure(serverRejectedRequest))
+        XCTAssertTrue(CloudKitRootLookupPolicy.meansRecordMissing(unknownItem))
+        // A rejected read used to count as "missing", which wrote a fresh root over a
+        // shared one and then failed to share it again.
+        XCTAssertFalse(CloudKitRootLookupPolicy.meansRecordMissing(serverRejectedRequest))
+        XCTAssertTrue(CloudKitRootLookupPolicy.isWorthRetrying(serverRejectedRequest))
     }
 
-    func testDoesNotTreatAuthenticationFailureAsRecoverableLookupFailure() {
+    func testDoesNotRetryAuthenticationFailure() {
         let notAuthenticated = NSError(domain: CKError.errorDomain, code: CKError.Code.notAuthenticated.rawValue)
 
-        XCTAssertFalse(CloudKitRootLookupPolicy.shouldCreateRootAfterLookupFailure(notAuthenticated))
+        XCTAssertFalse(CloudKitRootLookupPolicy.meansRecordMissing(notAuthenticated))
+        XCTAssertFalse(CloudKitRootLookupPolicy.isWorthRetrying(notAuthenticated))
+    }
+}
+
+final class CloudKitBatchSizePolicyTests: XCTestCase {
+    func testSplitsIntoRequestsUnderCloudKitsLimit() {
+        let batches = CloudKitBatchSizePolicy.batches(Array(0..<450))
+
+        XCTAssertEqual(batches.map(\.count), [200, 200, 50])
+        XCTAssertEqual(batches.flatMap { $0 }, Array(0..<450))
+        XCTAssertTrue(CloudKitBatchSizePolicy.batches([Int]()).isEmpty)
     }
 }
 

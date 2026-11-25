@@ -57,6 +57,7 @@ Each person owns a private `CoupleSpace` zone. Every record hangs under the `cou
 
 ![OurDays sync architecture: two private zones, one CKShare each, read-only to the other side](docs/diagrams/sync-architecture.en.png)
 
+- **EventKit is the only way in**: Google (CalDAV), Outlook (Exchange), iCloud and On My iPhone calendars are each synced by the system into one calendar store. OurDays talks to no calendar service directly; it reads the chosen calendars through EventKit and writes them as EventMirrors into its own zone. Any calendar visible in the system Calendar app can be shared.
 - **Write path rule**: your own data goes into your private zone; responses to your partner's data (comments, invitation status, request approvals) go into your partner's shared zone.
 - **Mirrors are derived data**: your own EventMirrors are rebuilt from EventKit on every sync; SwiftData is just a cache.
 - **mirrorKey is the stable cross-device anchor**: `calendarID:eventID:occurrenceDate` is at once the SwiftData id, the CloudKit recordName and the comment thread key. Both sides generate it the same way, which is why an event can be commented on before it has synced.

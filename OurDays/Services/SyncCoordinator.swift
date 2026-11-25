@@ -407,11 +407,33 @@ struct SyncCoordinator {
                 // status would pass through a half-pairing (an unpairing partner reads as
                 // "waiting for you to share" for a moment) and the UI would react to it.
                 settings.partnerShareOwnerID = resolution.partnerID
+                var pairingDayConfirmed = false
+                // Still paired to the same person although an unpair is on record (one
+                // of my devices went through a clear this one never saw): say so, so the
+                // pairing day keeps travelling (decision 0021).
+                if let confirmedAt = PairingDateRelayPolicy.confirmation(
+                    previousPartnerID: previousPartnerShareOwnerID,
+                    resolvedPartnerID: resolution.partnerID,
+                    hasConflict: resolution.conflict != nil,
+                    pairingDate: settings.pairingDate,
+                    pairingDateIsRecovered: settings.pairingDateIsRecovered,
+                    clearedAt: settings.pairingClearedAt,
+                    confirmedAt: settings.pairingConfirmedAt,
+                    now: syncedAt
+                ) {
+                    settings.pairingConfirmedAt = confirmedAt
+                    pairingDayConfirmed = true
+                    syncInfo("foregroundSync pairing day confirmed after a recorded unpair")
+                }
                 // The partner note travels per partner; a new device learns who the
                 // partner is only here. Same main-actor turn, so the note prompt never
                 // sees the partner without the note.
                 if let relayedSettings {
                     settings.adoptRelayedSettings(relayedSettings.settings, calendars: relayedSettings.calendars)
+                }
+                if pairingDayConfirmed, settings.iCloudSharingEnabled {
+                    // Upload the confirmation now rather than on the next sync.
+                    _ = await relayOwnSettings(cloudKit: cloudKit, settings: settings)
                 }
 
                 if PartnerDeparturePolicy.partnerHasLeft(

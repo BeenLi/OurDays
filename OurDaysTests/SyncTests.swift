@@ -960,6 +960,94 @@ final class PairingDateRelayTests: XCTestCase {
         XCTAssertEqual(mac.pairingDate, day(20))
     }
 
+    func testClearStampedElsewhereDoesNotEndAConfirmedPairing() {
+        let pairing = OwnRelayedSettings.Pairing(partnerID: "_partner", date: day(1))
+        let clearedAt = day(25).addingTimeInterval(8 * 3_600)
+        XCTAssertNil(PairingDateRelayPolicy.merge(pairing, nil, clearedAt: clearedAt, calendar: calendar))
+
+        var confirmed = pairing
+        confirmed.confirmedAt = clearedAt.addingTimeInterval(60)
+        XCTAssertEqual(PairingDateRelayPolicy.merge(confirmed, nil, clearedAt: clearedAt, calendar: calendar), confirmed)
+        // Same partner: the earliest day, with the latest confirmation of the two.
+        let mac = OwnRelayedSettings.Pairing(partnerID: "_partner", date: day(24), confirmedAt: clearedAt.addingTimeInterval(120))
+        XCTAssertEqual(
+            PairingDateRelayPolicy.merge(mac, confirmed, clearedAt: clearedAt, calendar: calendar),
+            .init(partnerID: "_partner", date: day(1), confirmedAt: clearedAt.addingTimeInterval(120))
+        )
+    }
+
+    func testConfirmsOnlyWhenTheSamePartnerIsStillThere() {
+        let clearedAt = day(25).addingTimeInterval(8 * 3_600)
+        let now = day(25).addingTimeInterval(16 * 3_600)
+        func confirm(
+            previous: String? = "_partner",
+            resolved: String? = "_partner",
+            conflict: Bool = false,
+            date: Date? = nil,
+            recovered: Bool = false,
+            cleared: Date?? = nil,
+            confirmedAt: Date? = nil
+        ) -> Date? {
+            PairingDateRelayPolicy.confirmation(
+                previousPartnerID: previous,
+                resolvedPartnerID: resolved,
+                hasConflict: conflict,
+                pairingDate: date ?? day(1),
+                pairingDateIsRecovered: recovered,
+                clearedAt: cleared ?? clearedAt,
+                confirmedAt: confirmedAt,
+                now: now,
+                calendar: calendar
+            )
+        }
+        XCTAssertEqual(confirm(), now)
+        XCTAssertNil(confirm(confirmedAt: now), "confirmed once is enough")
+        XCTAssertNil(confirm(cleared: .some(nil)), "nothing on record")
+        XCTAssertNil(confirm(date: day(26)), "paired after the clear: already live")
+        XCTAssertNil(confirm(previous: nil), "a new device doesn't vouch for a pairing it didn't hold")
+        XCTAssertNil(confirm(resolved: nil), "the partner left")
+        XCTAssertNil(confirm(resolved: "_other"), "a different person")
+        XCTAssertNil(confirm(conflict: true))
+        XCTAssertNil(confirm(recovered: true), "a share-root date isn't a seen day")
+    }
+
+    func testMacTakesTheIPhoneDayAfterAStrayClear() {
+        // One of my devices stamped an unpair the iPhone never went through.
+        var cloud = OwnRelayedSettings()
+        cloud.pairingClearedAt = day(25).addingTimeInterval(8 * 3_600)
+
+        let phone = makeStore()
+        phone.partnerShareOwnerID = "_partner"
+        phone.pairingDate = day(1)
+        phone.adoptRelayedSettings(cloud, calendars: nil)
+        var merged = OwnSettingsRelayMergePolicy.merge(local: phone.relayedSettingsSnapshot(calendars: nil), cloud: cloud, calendar: calendar)
+        XCTAssertNil(merged.pairing, "before the fix the iPhone's day stopped travelling here")
+
+        phone.pairingConfirmedAt = PairingDateRelayPolicy.confirmation(
+            previousPartnerID: "_partner",
+            resolvedPartnerID: "_partner",
+            hasConflict: false,
+            pairingDate: phone.pairingDate,
+            pairingDateIsRecovered: phone.pairingDateIsRecovered,
+            clearedAt: phone.pairingClearedAt,
+            confirmedAt: phone.pairingConfirmedAt,
+            now: day(25).addingTimeInterval(16 * 3_600),
+            calendar: calendar
+        )
+        merged = OwnSettingsRelayMergePolicy.merge(local: phone.relayedSettingsSnapshot(calendars: nil), cloud: merged, calendar: calendar)
+        XCTAssertEqual(merged.pairing?.date, day(1))
+        XCTAssertTrue(OwnSettingsRelayMergePolicy.needsUpload(merged: merged, cloud: cloud))
+
+        let mac = makeStore()
+        mac.partnerShareOwnerID = "_partner"
+        mac.setRecoveredPairingDate(day(24))
+        mac.adoptRelayedSettings(merged, calendars: nil)
+        XCTAssertEqual(mac.pairingDate, day(1))
+        XCTAssertFalse(mac.pairingDateIsRecovered)
+        let macMerged = OwnSettingsRelayMergePolicy.merge(local: mac.relayedSettingsSnapshot(calendars: nil), cloud: merged, calendar: calendar)
+        XCTAssertFalse(OwnSettingsRelayMergePolicy.needsUpload(merged: macMerged, cloud: merged), "the Mac doesn't write it back")
+    }
+
     func testUnpairStampsTheClearTime() {
         let phone = makeStore()
         phone.partnerShareOwnerID = "_partner"

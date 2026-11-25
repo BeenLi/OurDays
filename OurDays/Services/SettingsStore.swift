@@ -96,6 +96,11 @@ final class SettingsStore {
     var pairingClearedAt: Date? {
         didSet { saveOptionalDate(pairingClearedAt, forKey: Key.pairingClearedAt) }
     }
+    /// When this device last found its pairing still in place after an unpair was on
+    /// record (decision 0021).
+    var pairingConfirmedAt: Date? {
+        didSet { saveOptionalDate(pairingConfirmedAt, forKey: Key.pairingConfirmedAt) }
+    }
     var selectedCalendarIDs: Set<String> {
         didSet { saveSelectedCalendarIDs() }
     }
@@ -228,6 +233,7 @@ final class SettingsStore {
         pairingDate = defaults.object(forKey: Key.pairingDate) as? Date
         pairingDateIsRecovered = defaults.object(forKey: Key.pairingDateIsRecovered) as? Bool ?? false
         pairingClearedAt = defaults.object(forKey: Key.pairingClearedAt) as? Date
+        pairingConfirmedAt = defaults.object(forKey: Key.pairingConfirmedAt) as? Date
         selectedCalendarIDs = Set(defaults.stringArray(forKey: Key.selectedCalendarIDs) ?? [])
         defaultVisibility = EventVisibility(rawValue: defaults.string(forKey: Key.defaultVisibility) ?? "") ?? .fullDetails
         appLanguage = AppLanguagePreference.read(from: defaults)
@@ -370,7 +376,7 @@ final class SettingsStore {
         }
         snapshot.lastSeenActivityAt = lastSeenActivityAt
         if let pairingDate, !pairingDateIsRecovered, let partnerID = MemberIDPolicy.normalized(partnerShareOwnerID) {
-            snapshot.pairing = OwnRelayedSettings.Pairing(partnerID: partnerID, date: pairingDate)
+            snapshot.pairing = OwnRelayedSettings.Pairing(partnerID: partnerID, date: pairingDate, confirmedAt: pairingConfirmedAt)
         }
         snapshot.pairingClearedAt = pairingClearedAt
         snapshot.macUploadsOwnEventsAt = macUploadsOwnEventsAt
@@ -440,6 +446,13 @@ final class SettingsStore {
            ) {
             pairingDate = pairing.date
             pairingDateIsRecovered = false
+            pairingConfirmedAt = pairing.confirmedAt
+        } else if let pairing = relayed.pairing,
+                  let confirmedAt = pairing.confirmedAt,
+                  confirmedAt > (pairingConfirmedAt ?? .distantPast),
+                  MemberIDPolicy.normalized(pairing.partnerID) == MemberIDPolicy.normalized(partnerShareOwnerID),
+                  pairing.date == pairingDate {
+            pairingConfirmedAt = confirmedAt
         }
     }
 
@@ -496,12 +509,14 @@ final class SettingsStore {
         guard pairingDate == nil else { return }
         pairingDate = PairingDatePolicy.normalizedPairingDate(date, calendar: calendar)
         pairingDateIsRecovered = false
+        pairingConfirmedAt = nil
     }
 
     /// The pairing date read back from the share root (reinstall, or a new device).
     func setRecoveredPairingDate(_ date: Date) {
         pairingDate = date
         pairingDateIsRecovered = true
+        pairingConfirmedAt = nil
     }
 
     /// Takes the nickname/avatar another device of mine saved, keeping its edit time so
@@ -520,6 +535,7 @@ final class SettingsStore {
     func clearPairingDate(at date: Date = .now) {
         pairingDate = nil
         pairingDateIsRecovered = false
+        pairingConfirmedAt = nil
         pairingClearedAt = OwnSettingsRelayClock.stamp(date)
     }
 
@@ -577,6 +593,7 @@ final class SettingsStore {
         static let relayedCalendarReferences = "relayedCalendarReferences"
         static let pairingDateIsRecovered = "pairingDateIsRecovered"
         static let pairingClearedAt = "pairingClearedAt"
+        static let pairingConfirmedAt = "pairingConfirmedAt"
     }
 
     private enum LegacyKey {

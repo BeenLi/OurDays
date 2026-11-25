@@ -41,6 +41,10 @@ struct OwnRelayedSettings: Codable, Equatable {
     struct Pairing: Codable, Equatable {
         let partnerID: String
         let date: Date
+        /// The last time a device of mine saw this pairing still in place after an
+        /// unpair was recorded (decision 0021). A clear stamped by one device while
+        /// another stays paired to the same person doesn't end the pairing.
+        var confirmedAt: Date? = nil
     }
 
     var partnerNote: PartnerNote?
@@ -203,14 +207,43 @@ enum PairingDateRelayPolicy {
         guard live.count == 2 else { return first }
         let (a, b) = (live[0], live[1])
         if MemberIDPolicy.normalized(a.partnerID) == MemberIDPolicy.normalized(b.partnerID) {
-            return a.date <= b.date ? a : b
+            let earliest = a.date <= b.date ? a : b
+            let confirmedAt = [a.confirmedAt, b.confirmedAt].compactMap { $0 }.max()
+            return OwnRelayedSettings.Pairing(partnerID: earliest.partnerID, date: earliest.date, confirmedAt: confirmedAt)
         }
         return a.date >= b.date ? a : b
     }
 
+    /// A pairing is over once an unpair was recorded after it began, unless a device
+    /// confirmed it still in place since then (decision 0021).
     static func isLive(_ pairing: OwnRelayedSettings.Pairing, clearedAt: Date?, calendar: Calendar = .current) -> Bool {
         guard let clearedAt else { return true }
+        if let confirmedAt = pairing.confirmedAt, confirmedAt >= clearedAt { return true }
         return pairing.date >= calendar.startOfDay(for: clearedAt)
+    }
+
+    /// When a sync finds the partner unchanged (the same person before and after it
+    /// resolved the shares) while an unpair is on record that would end this device's
+    /// own pairing, that unpair didn't happen to this pairing: confirm it, once.
+    static func confirmation(
+        previousPartnerID: String?,
+        resolvedPartnerID: String?,
+        hasConflict: Bool,
+        pairingDate: Date?,
+        pairingDateIsRecovered: Bool,
+        clearedAt: Date?,
+        confirmedAt: Date?,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Date? {
+        guard !hasConflict,
+              let previous = MemberIDPolicy.normalized(previousPartnerID),
+              MemberIDPolicy.normalized(resolvedPartnerID) == previous,
+              let pairingDate, !pairingDateIsRecovered,
+              let clearedAt else { return nil }
+        let pairing = OwnRelayedSettings.Pairing(partnerID: previous, date: pairingDate, confirmedAt: confirmedAt)
+        guard !isLive(pairing, clearedAt: clearedAt, calendar: calendar) else { return nil }
+        return OwnSettingsRelayClock.stamp(max(now, clearedAt))
     }
 
     /// Whether this device takes the relayed day: only for the current partner, and

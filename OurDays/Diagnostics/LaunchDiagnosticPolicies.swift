@@ -72,6 +72,14 @@ enum ShareCalLaunchDiagnosticPolicy {
     /// Reinstall smoke: on a fresh install, run the 「继续使用现有 iCloud 数据」 path
     /// (restore identity from the private zone + forced sync) and log what came back.
     static let recoverExistingICloudDataArgument = "-ShareCalRecoverExistingICloudData"
+    /// Smoke setup: the two test accounts are reused by every run, so comments,
+    /// invitations and half-finished test events pile up. This deletes every comment and
+    /// invitation record from MY private zone and the leftover smoke events from the
+    /// ShareCal calendar. DEBUG builds only; run it on both simulators before pairing.
+    static let purgeSmokeTestDataArgument = "-ShareCalPurgeSmokeTestData"
+    /// Titles the smoke script gives its throwaway events (`<prefix><random number>`). A
+    /// run that fails halfway never reaches its own cleanup, so the purge removes them.
+    static let leftoverSmokeEventTitlePrefixes = ["Own Comment Event ", "Series Comment Event "]
     /// Common prefix for the new diagnostics' log markers.
     static let diagnosticLogPrefix = "ShareCalDiag"
 
@@ -169,6 +177,21 @@ enum ShareCalLaunchDiagnosticPolicy {
 
     static func eventCommentOccurrence(arguments: [String]) -> Int? {
         value(after: eventCommentOccurrenceArgument, arguments: arguments).flatMap { Int($0) }.map { max($0, 0) }
+    }
+
+    static func shouldPurgeSmokeTestData(arguments: [String]) -> Bool {
+        arguments.contains(purgeSmokeTestDataArgument)
+    }
+
+    /// Only the script's numbered throwaway titles: the shared smoke event and anything a
+    /// person typed into the ShareCal calendar stay.
+    static func isLeftoverSmokeEvent(title: String?) -> Bool {
+        guard let title else { return false }
+        return leftoverSmokeEventTitlePrefixes.contains { prefix in
+            guard title.hasPrefix(prefix) else { return false }
+            let suffix = title.dropFirst(prefix.count)
+            return !suffix.isEmpty && suffix.allSatisfy(\.isNumber)
+        }
     }
 
     static func shouldRecoverExistingICloudData(arguments: [String]) -> Bool {

@@ -197,6 +197,26 @@ final class CalendarAccessService {
         return removed
     }
 
+    /// Test-harness only (`-ShareCalPurgeSmokeTestData`): removes the throwaway events an
+    /// earlier smoke run left in the ShareCal calendar, whole series included.
+    @discardableResult
+    func deleteLeftoverShareCalSmokeEvents(now: Date = .now) throws -> Int {
+        let calendar = try ensureShareCalEKCalendar()
+        let predicate = eventStore.predicateForEvents(
+            withStart: now.addingTimeInterval(-30 * 24 * 60 * 60),
+            end: now.addingTimeInterval(30 * 24 * 60 * 60),
+            calendars: [calendar]
+        )
+        var removed = 0
+        while removed < 200, let leftover = eventStore.events(matching: predicate)
+            .sorted(by: { $0.startDate < $1.startDate })
+            .first(where: { ShareCalLaunchDiagnosticPolicy.isLeftoverSmokeEvent(title: $0.title) }) {
+            try eventStore.remove(leftover, span: .futureEvents, commit: true)
+            removed += 1
+        }
+        return removed
+    }
+
     private func shareCalOccurrences(titled title: String, now: Date) throws -> [EKEvent] {
         let calendar = try ensureShareCalEKCalendar()
         let predicate = eventStore.predicateForEvents(

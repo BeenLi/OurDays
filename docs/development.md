@@ -175,6 +175,11 @@ Implementation notes (hard-won):
   Seeding works through it, but stale identity keys left there shadow real
   state (this bit us with a leftover `currentMemberID = me`). The script reads
   verification values from the app container's plist instead.
+- The two test accounts are reused by every run and their iCloud data survives an
+  uninstall, so the script first launches each side with `-ShareCalPurgeSmokeTestData`
+  (DEBUG builds only): it deletes every comment and invitation record in that account's
+  own private zone and the throwaway events (`Own Comment Event <n>`,
+  `Series Comment Event <n>`) a failed run left in the `ShareCal` calendar.
 - App console logs land in `build/dev-smoke/console/*.log` for debugging.
 - Every `[smoke +MmSSs]` line carries the time since the script started. A passing
   run is about 10 minutes after the build; most of it is the ~20 app launches that

@@ -39,17 +39,25 @@ final class SimulatorICloudSignInTests: XCTestCase {
         springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     }
 
-    /// `SIM_ICLOUD_MODE=signin` skips the sign-out (for a simulator that is already
-    /// signed out); the default `relogin` signs out first when an account is present.
+    /// `SIM_ICLOUD_MODE`:
+    /// - `signout`: sign out only. On iOS 26 the simulator restarts right after the
+    ///   sign-out goes through, which kills this runner, so the script runs sign-in as a
+    ///   second invocation once the simulator is back.
+    /// - `signin-after-signout`: sign in, and fail if an account is already there (the
+    ///   sign-out did not take, so the expired session would still be in place).
+    /// - `signin`: sign in if needed (for a simulator that is already signed out).
+    /// - `relogin` (default): both, in one go, where the simulator does not restart.
     func testReSignInToICloud() throws {
         let mode = ProcessInfo.processInfo.environment["SIM_ICLOUD_MODE"] ?? "relogin"
         settings.terminate()
         settings.launch()
+        screenBounds = settings.windows.firstMatch.frame
 
-        if mode != "signin" {
+        if mode == "signout" || mode == "relogin" {
             signOutIfSignedIn()
         }
-        signIn()
+        if mode == "signout" { return }
+        signIn(requireSignedOut: mode == "signin-after-signout")
         dump("signed-in")
     }
 
@@ -61,16 +69,16 @@ final class SimulatorICloudSignInTests: XCTestCase {
             log("No signed-in account row on the Settings root; skipping sign-out.")
             return
         }
-        accountRow.tap()
+        accountRow.tapCenter()
 
         let signOut = button(matching: ["Sign Out", "退出登录"])
         scrollUntilHittable(signOut)
-        guard signOut.isHittable else {
+        guard signOut.isOnScreen else {
             dump("no-sign-out-button")
             XCTFail("Found the account page but no Sign Out button.")
             return
         }
-        signOut.tap()
+        signOut.tapCenter()
 
         // Then a series of prompts, in an order that varies by iOS version: the
         // Find My password alert, "keep a copy of your data" with a Sign Out button,
@@ -80,7 +88,16 @@ final class SimulatorICloudSignInTests: XCTestCase {
         while Date() < deadline {
             if signInEntry().exists { log("Signed out."); return }
             if fillPasswordPromptIfShown() { continue }
-            if tapFirst(["Turn Off", "关闭"]) { continue }
+            // iOS 26 first offers "Erase This iPhone" vs "Sign Out Without Erasing"
+            // (抹掉此 iPhone / 退出登录但不抹掉). Only ever take the non-erasing one.
+            if tapSignOutWithoutErasing() { continue }
+            // …which then explains what stays on the device, with Continue / Cancel. The
+            // account page's Sign Out row stays in the tree underneath this sheet, so
+            // Continue must win over "Sign Out" below.
+            if tapFirst(["Continue", "继续"]) { continue }
+            // "Turn Off" (Find My) only inside an alert: in Chinese the sheet's X close
+            // button is also "关闭", and tapping it just dismisses the sign-out flow.
+            if tapFirst(["Turn Off", "关闭"], alertsOnly: true) { continue }
             // Keep-a-copy sheet and the final confirmation both end in "Sign Out".
             if tapFirst(["Sign Out", "退出登录"], preferAlert: true) { continue }
             if tapFirst(["Keep on My iPhone", "保留在我的 iPhone 上"], preferAlert: true) { continue }
@@ -93,11 +110,16 @@ final class SimulatorICloudSignInTests: XCTestCase {
 
     // MARK: - Sign in
 
-    private func signIn() {
+    private func signIn(requireSignedOut: Bool) {
         goToSettingsRoot()
         let entry = signInEntry()
         if !entry.waitForExistence(timeout: 10) {
             if signedInAccountRow() != nil {
+                if requireSignedOut {
+                    dump("still-signed-in")
+                    XCTFail("Still signed in after the sign-out step; the old session was not replaced.")
+                    return
+                }
                 log("Already signed in; nothing to do.")
                 return
             }
@@ -105,34 +127,48 @@ final class SimulatorICloudSignInTests: XCTestCase {
             XCTFail("Neither a sign-in entry nor an account row on the Settings root.")
             return
         }
-        entry.tap()
+        entry.tapCenter()
 
         var typedAppleID = false
+        var typedPassword = false
         let deadline = Date(timeIntervalSinceNow: 300)
         while Date() < deadline {
             if isSignedInOnRoot() { log("Signed in as \(appleID)."); return }
 
             // Some versions first ask how to sign in.
-            if tapFirst(["Sign In Manually", "手动登录"]) { continue }
+            // iOS 26: "Use Another Apple Device" / "Sign in Manually" cards (cells with
+            // identifiers, the card text is not their label).
+            let manualCell = settings.cells["AUTH_MANUAL_SIGN_IN_CELL"]
+            if manualCell.exists, manualCell.isOnScreen {
+                log("Tap \"Sign in Manually\"")
+                manualCell.tapCenter()
+                sleep(2)
+                continue
+            }
+            if tapFirst(["Sign In Manually", "Sign in Manually", "手动登录"]) { continue }
 
             if fillPasswordPromptIfShown() { continue }
 
+            // Type the password once; afterwards the field stays on screen (keyboard
+            // down) while Continue still needs a tap, which the steps below do.
             let secure = settings.secureTextFields.firstMatch
-            if secure.exists, secure.isHittable {
-                secure.tap()
+            if !typedPassword, secure.exists, secure.isOnScreen {
+                secure.tapCenter()
+                clearText(in: secure)
                 secure.typeText(password)
+                typedPassword = true
                 tapContinue()
                 sleep(3)
                 continue
             }
 
             let emailField = settings.textFields.firstMatch
-            if !typedAppleID, emailField.exists, emailField.isHittable {
-                emailField.tap()
+            if !typedAppleID, emailField.exists, emailField.isOnScreen {
+                emailField.tapCenter()
                 clearText(in: emailField)
                 emailField.typeText(appleID)
-                typedAppleID = true
                 tapContinue()
+                typedAppleID = true
                 sleep(3)
                 continue
             }
@@ -158,6 +194,8 @@ final class SimulatorICloudSignInTests: XCTestCase {
     private func signInEntry() -> XCUIElement {
         let predicate = NSPredicate(format:
             "label CONTAINS[c] 'sign in to' OR label CONTAINS '登录 iPhone' OR label CONTAINS '登录你的'"
+            // iOS 26 zh: "Apple账户、登录以访问iCloud数据、App Store、Apple服务等。"
+            + " OR label CONTAINS '登录以访问'"
             + " OR label ==[c] 'Sign In' OR label == '登录' OR label == 'Apple Account' OR label == 'Apple 账户'")
         return settings.cells.matching(predicate).firstMatch.exists
             ? settings.cells.matching(predicate).firstMatch
@@ -168,7 +206,7 @@ final class SimulatorICloudSignInTests: XCTestCase {
     /// carries the account owner's name plus "Apple Account, iCloud…".
     private func signedInAccountRow() -> XCUIElement? {
         let predicate = NSPredicate(format:
-            "(label CONTAINS 'Apple Account,' OR label CONTAINS 'iCloud' OR label CONTAINS 'Apple 账户、')"
+            "(label CONTAINS 'Apple Account,' OR label CONTAINS 'iCloud' OR label CONTAINS 'Apple 账户、' OR label CONTAINS 'Apple账户、')"
             + " AND NOT (label CONTAINS[c] 'sign in' OR label CONTAINS '登录')")
         let row = settings.cells.matching(predicate).firstMatch
         if row.waitForExistence(timeout: 3) { return row }
@@ -194,47 +232,77 @@ final class SimulatorICloudSignInTests: XCTestCase {
             guard alert.exists else { continue }
             let field = alert.secureTextFields.firstMatch
             guard field.exists else { continue }
-            field.tap()
+            field.tapCenter()
             field.typeText(password)
             for label in ["Turn Off", "关闭", "Sign In", "登录", "OK", "好", "Continue", "继续"] {
                 let b = alert.buttons[label]
-                if b.exists { b.tap(); sleep(3); return true }
+                if b.exists { b.tapCenter(); sleep(3); return true }
             }
-            alert.buttons.element(boundBy: alert.buttons.count - 1).tap()
+            alert.buttons.element(boundBy: alert.buttons.count - 1).tapCenter()
             sleep(3)
             return true
         }
         return false
     }
 
+    /// Submits the current sign-in step: with the keyboard up, its return key (labelled
+    /// "continue" on iOS 26; the sheet's own Continue button sits under the keyboard),
+    /// otherwise the visible Continue / Next / Sign In button.
     private func tapContinue() {
-        if !tapFirst(["Continue", "继续", "Next", "下一步", "Sign In", "登录"]) {
-            settings.keyboards.buttons.matching(NSPredicate(format:
-                "label IN {'Return', 'return', 'Go', 'go', 'Next', 'next', 'Continue'}")).firstMatch.tapIfExists()
+        let key = settings.keyboards.buttons.matching(NSPredicate(format:
+            "label IN[c] {'return', 'go', 'next', 'continue', 'done', '继续', '下一步', '前往', '完成'}"))
+            .firstMatch
+        if key.exists {
+            log("Tap keyboard \"\(key.label)\"")
+            key.tapCenter()
+            return
         }
+        tapFirst(["Continue", "继续", "Next", "下一步", "Sign In", "登录"])
     }
 
     /// Taps the first hittable button whose label is one of `labels`, looking in
     /// alerts / sheets first when `preferAlert` is set. Returns whether it tapped.
     @discardableResult
-    private func tapFirst(_ labels: [String], preferAlert: Bool = false) -> Bool {
+    private func tapFirst(_ labels: [String], preferAlert: Bool = false, alertsOnly: Bool = false) -> Bool {
         var scopes: [XCUIElement] = []
-        if preferAlert {
+        if preferAlert || alertsOnly {
             scopes += [settings.alerts.firstMatch, springboard.alerts.firstMatch, settings.sheets.firstMatch]
         }
-        scopes.append(settings)
+        if !alertsOnly { scopes.append(settings) }
         for scope in scopes where scope.exists {
             for label in labels {
-                let b = scope.buttons[label]
-                if b.exists, b.isHittable {
-                    log("Tap \"\(label)\"")
-                    b.tap()
-                    sleep(2)
-                    return true
+                // A label can match several buttons at once (the sign-in sheet's 继续 and
+                // the keyboard's 继续 key), and a plain `buttons[label]` then fails the
+                // test on its first frame read; take the first one on screen instead.
+                let matches = scope.buttons.matching(identifier: label)
+                for i in 0..<matches.count {
+                    let b = matches.element(boundBy: i)
+                    if b.exists, b.isOnScreen {
+                        log("Tap \"\(label)\"")
+                        b.tapCenter()
+                        sleep(2)
+                        return true
+                    }
                 }
             }
         }
         return false
+    }
+
+    /// The "sign out but keep this iPhone's data" choice on the erase-or-not sheet.
+    /// Matched by its own wording and never by anything that mentions erasing alone, so
+    /// the test cannot wipe the simulator.
+    private func tapSignOutWithoutErasing() -> Bool {
+        let b = settings.buttons.matching(NSPredicate(format:
+            "label BEGINSWITH '退出登录但' OR (label CONTAINS[c] 'sign out' AND"
+            + " (label CONTAINS[c] 'without eras' OR label CONTAINS[c] 'don\\'t erase' OR label CONTAINS[c] 'not erase'))"))
+            .firstMatch
+        guard b.exists, b.isOnScreen,
+              !(b.label.hasPrefix("抹掉") || b.label.lowercased().hasPrefix("erase")) else { return false }
+        log("Tap \"\(b.label)\"")
+        b.tapCenter()
+        sleep(2)
+        return true
     }
 
     private func button(matching labels: [String]) -> XCUIElement {
@@ -242,7 +310,7 @@ final class SimulatorICloudSignInTests: XCTestCase {
     }
 
     private func scrollUntilHittable(_ element: XCUIElement) {
-        for _ in 0..<6 where !(element.exists && element.isHittable) {
+        for _ in 0..<6 where !(element.exists && element.isOnScreen) {
             settings.swipeUp()
         }
     }
@@ -256,11 +324,11 @@ final class SimulatorICloudSignInTests: XCTestCase {
     private func goToSettingsRoot() {
         for _ in 0..<5 {
             let back = settings.navigationBars.buttons.element(boundBy: 0)
-            guard settings.navigationBars.count > 0, back.exists, back.isHittable,
+            guard settings.navigationBars.count > 0, back.exists, back.isOnScreen,
                   back.label != "Search", back.label != "搜索" else { break }
             // The root's nav bar has no back button; stop once its title shows.
             if settings.navigationBars["Settings"].exists || settings.navigationBars["设置"].exists { break }
-            back.tap()
+            back.tapCenter()
         }
     }
 
@@ -287,8 +355,31 @@ final class SimulatorICloudSignInTests: XCTestCase {
     }
 }
 
-private extension XCUIElement {
-    func tapIfExists() {
-        if exists, isHittable { tap() }
+/// The screen in Settings' coordinates, read once Settings is up.
+nonisolated(unsafe) private var screenBounds = CGRect(x: 0, y: 0, width: 402, height: 874)
+
+extension XCUIElement {
+    /// `isHittable` raises a test failure ("Activation point invalid") instead of returning
+    /// false for some Settings rows, e.g. Sign Out sitting under the home indicator on
+    /// iOS 26. Judge by the frame instead: the centre must be on screen, clear of the
+    /// status bar and the home indicator.
+    fileprivate var isOnScreen: Bool {
+        guard exists else { return false }
+        let f = frame
+        guard !f.isEmpty else { return false }
+        let center = CGPoint(x: f.midX, y: f.midY)
+        guard screenBounds.insetBy(dx: 0, dy: 24).contains(center) else { return false }
+        // A button under the on-screen keyboard is not tappable: the tap lands on a key.
+        if elementType != .key {
+            let keyboard = XCUIApplication(bundleIdentifier: "com.apple.Preferences").keyboards.firstMatch
+            if keyboard.exists, keyboard.frame.contains(center) { return false }
+        }
+        return true
+    }
+
+    /// Taps the frame's centre, which works where `tap()` trips over the same activation
+    /// point check.
+    fileprivate func tapCenter() {
+        coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 }

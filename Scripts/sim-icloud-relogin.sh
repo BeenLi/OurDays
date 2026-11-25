@@ -30,6 +30,10 @@ KEYCHAIN_SERVICE_PREFIX="OurDays smoke simulator iCloud"
 log() { printf '\033[1;35m[sim-icloud]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[sim-icloud FAILED]\033[0m %s\n' "$*" >&2; exit 1; }
 
+# XCTest logs every typeText as "Type '<text>' into …" (the first ~20 characters), which
+# would put the start of the password in the log kept on failure. Drop the text.
+redact_typing() { sed -E '/ Type .* into /s/ Type .* into / Type <redacted> into /'; }
+
 service_for() { printf '%s (%s)' "$KEYCHAIN_SERVICE_PREFIX" "$1"; }
 
 # keychain_apple_id <role>: prints the Apple ID stored for the role, or nothing.
@@ -79,39 +83,63 @@ SECRET_FILE="$WORK/secret"
 
 xcrun simctl bootstatus "$udid" -b >/dev/null
 
-# Reuse the smoke build's test products when they exist; otherwise build them with the
-# same Development-CloudKit overrides, so installing the host app never swaps the
-# simulator's OurDays for a LOCAL_SIGNING build.
-action="test-without-building"
+# Reuse the smoke build's test products when they exist; otherwise build them once with
+# the same Development-CloudKit overrides (so installing the host app never swaps the
+# simulator's OurDays for a LOCAL_SIGNING build). Both phases below then run from them.
+BUILD_FLAGS=(
+  -project "$ROOT_DIR/OurDays.xcodeproj" -scheme OurDays
+  -configuration Debug -destination "platform=iOS Simulator,id=$udid"
+  -derivedDataPath "$DERIVED"
+  CODE_SIGN_ENTITLEMENTS=OurDays/App/OurDays.entitlements
+  "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG"
+)
 if ! ls "$DERIVED"/Build/Products/*.xctestrun >/dev/null 2>&1; then
   log "No smoke build in $DERIVED yet; building the app and UI tests first..."
-  action="test"
+  xcodebuild build-for-testing "${BUILD_FLAGS[@]}" -quiet > "$WORK/build.log" 2>&1 \
+    || { tail -30 "$WORK/build.log" >&2; die "build-for-testing failed"; }
 fi
 
-log "Re-signing the $role simulator ($udid) in to iCloud as $apple_id ($mode)..."
-set +e
-TEST_RUNNER_SIM_ICLOUD_APPLE_ID="$apple_id" \
-TEST_RUNNER_SIM_ICLOUD_SECRET_FILE="$SECRET_FILE" \
-TEST_RUNNER_SIM_ICLOUD_MODE="$mode" \
-xcodebuild "$action" \
-  -project "$ROOT_DIR/OurDays.xcodeproj" -scheme OurDays \
-  -configuration Debug -destination "platform=iOS Simulator,id=$udid" \
-  -derivedDataPath "$DERIVED" -resultBundlePath "$WORK/result.xcresult" \
-  CODE_SIGN_ENTITLEMENTS=OurDays/App/OurDays.entitlements \
-  "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
-  -only-testing:OurDaysUITests/SimulatorICloudSignInTests/testReSignInToICloud \
-  > "$WORK/xcodebuild.log" 2>&1
-status=$?
-set -e
-grep -E '\[sim-icloud\]|error:|Test Case .*(passed|failed|skipped)' "$WORK/xcodebuild.log" || true
+# run_phase <mode>: drives Settings once with SIM_ICLOUD_MODE=<mode>. Sets $status; on
+# failure keeps the redacted log and the test's named screenshots (Settings screens
+# only, password fields show dots). The other attachments (the synthesized key events,
+# the screen recording, UI snapshots) are not kept: they can hold what was typed.
+run_phase() {
+  local phase_mode="$1" result="$WORK/$1.xcresult" log_file="$WORK/$1.log"
+  set +e
+  TEST_RUNNER_SIM_ICLOUD_APPLE_ID="$apple_id" \
+  TEST_RUNNER_SIM_ICLOUD_SECRET_FILE="$SECRET_FILE" \
+  TEST_RUNNER_SIM_ICLOUD_MODE="$phase_mode" \
+  xcodebuild test-without-building "${BUILD_FLAGS[@]}" -resultBundlePath "$result" \
+    -only-testing:OurDaysUITests/SimulatorICloudSignInTests/testReSignInToICloud \
+    2>&1 | redact_typing > "$log_file"
+  status=${PIPESTATUS[0]}
+  set -e
+  grep -E '\[sim-icloud\]|error:|Test Case .*(passed|failed|skipped)' "$log_file" || true
+  if [ "$status" -ne 0 ]; then
+    keep="$ROOT_DIR/.screenshots/sim-icloud-$role-$phase_mode-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$keep"
+    xcrun xcresulttool export attachments --path "$result" --output-path "$keep" >/dev/null 2>&1 || true
+    find "$keep" -type f ! -name '*.png' -delete
+    cp "$log_file" "$keep/xcodebuild.log" 2>/dev/null || true
+  fi
+}
 
-if [ "$status" -ne 0 ]; then
-  # Keep the screenshots for debugging, outside the deleted work dir. They show only
-  # Settings screens; secure fields never render the password.
-  keep="$ROOT_DIR/.screenshots/sim-icloud-$role-$(date +%Y%m%d-%H%M%S)"
-  mkdir -p "$keep"
-  xcrun xcresulttool export attachments --path "$WORK/result.xcresult" --output-path "$keep" >/dev/null 2>&1 || true
-  cp "$WORK/xcodebuild.log" "$keep/" 2>/dev/null || true
-  die "Settings automation failed (exit $status). Screenshots and log: $keep"
+if [ "$mode" = "relogin" ]; then
+  log "Signing the $role simulator ($udid) out of iCloud..."
+  run_phase signout
+  # On iOS 26 the simulator restarts as soon as the sign-out goes through, killing the
+  # test runner (so this phase "fails"), and can end up shut down. Restart it cleanly
+  # either way; the sign-in phase below then refuses to pass if the account is still there.
+  xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
+  xcrun simctl boot "$udid" >/dev/null 2>&1 || true
+  xcrun simctl bootstatus "$udid" -b >/dev/null
+  sleep 10   # let SpringBoard and Settings settle after the boot
+  signin_mode="signin-after-signout"
+else
+  signin_mode="signin"
 fi
+
+log "Signing the $role simulator ($udid) in to iCloud as $apple_id..."
+run_phase "$signin_mode"
+[ "$status" -eq 0 ] || die "Settings automation failed (exit $status). Screenshots and log: $keep"
 log "Done: the $role simulator is signed in to iCloud as $apple_id."

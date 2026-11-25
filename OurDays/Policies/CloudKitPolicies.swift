@@ -253,7 +253,8 @@ enum CloudKitSharedDatabaseImportPolicy {
                 calendarColorHex: mirror.calendarColorHex,
                 visibilityRawValue: mirror.visibilityRawValue,
                 deletedAt: mirror.deletedAt,
-                cloudKitRecordName: mirror.cloudKitRecordName
+                cloudKitRecordName: mirror.cloudKitRecordName,
+                stableKey: mirror.stableKey
             )
         }
     }

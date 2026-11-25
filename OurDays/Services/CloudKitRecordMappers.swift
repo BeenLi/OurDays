@@ -263,7 +263,8 @@ enum CloudKitForegroundQueryPolicy {
                 EventMirrorRecordMapper.Key.urlString,
                 EventMirrorRecordMapper.Key.calendarColorHex,
                 EventMirrorRecordMapper.Key.visibilityRawValue,
-                EventMirrorRecordMapper.Key.deletedAt
+                EventMirrorRecordMapper.Key.deletedAt,
+                EventMirrorRecordMapper.Key.stableKey
             ]
         case InvitationRecordMapper.recordType:
             [

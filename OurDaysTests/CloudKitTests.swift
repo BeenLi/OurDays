@@ -1467,7 +1467,8 @@ final class CloudKitBatchUpsertPolicyTests: XCTestCase {
                 EventMirrorRecordMapper.Key.urlString,
                 EventMirrorRecordMapper.Key.calendarColorHex,
                 EventMirrorRecordMapper.Key.visibilityRawValue,
-                EventMirrorRecordMapper.Key.deletedAt
+                EventMirrorRecordMapper.Key.deletedAt,
+                EventMirrorRecordMapper.Key.stableKey
             ]
         )
         XCTAssertEqual(

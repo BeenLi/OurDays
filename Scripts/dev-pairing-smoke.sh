@@ -35,7 +35,8 @@ ACCEPT_MAX_ATTEMPTS="${ACCEPT_MAX_ATTEMPTS:-4}"   # total tries per accept (1 + 
 ACCEPT_RETRY_BACKOFF="${ACCEPT_RETRY_BACKOFF:-15}" # seconds to wait between attempts
 
 log() { printf '\n\033[1;36m[smoke]\033[0m %s\n' "$*"; }
-fail() { printf '\n\033[1;31m[smoke FAILED]\033[0m %s\n' "$*"; exit 1; }
+# To stderr: steps that only wait (`wait_for_console ... >/dev/null`) must still show why they failed.
+fail() { printf '\n\033[1;31m[smoke FAILED]\033[0m %s\n' "$*" >&2; exit 1; }
 
 CONSOLE_DIR="$DERIVED/console"
 mkdir -p "$CONSOLE_DIR" 2>/dev/null || true
@@ -417,15 +418,23 @@ launch_app "$OWNER_UDID" "owner-series-comment" \
   -ShareCalSeedDailySeriesTitled "$SERIES_TITLE" \
   -ShareCalAddEventComment "$SERIES_COMMENT" -ShareCalEventCommentTitle "$SERIES_TITLE" \
   -ShareCalEventCommentOccurrence 3
-wait_for_console "$CONSOLE_LOG" "ShareCalDiag addEventComment succeeded" $DIAG_TIMEOUT \
-  "owner comments on the series' fourth occurrence" >/dev/null
+SERIES_ADD=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag addEventComment (succeeded|failed)" $DIAG_TIMEOUT "owner comments on the series' fourth occurrence")
+echo "$SERIES_ADD" | grep -q "addEventComment succeeded" || fail "owner could not comment on the series. Log: $SERIES_ADD"
+
+# The reply diag reads the partner's local copy, so the series has to be imported first.
+log "Partner: probing the series (must see the owner's comment on the fourth occurrence)..."
+launch_app "$PARTNER_UDID" "partner-series-probe0" -ShareCalProbeEventComments \
+  -ShareCalEventCommentTitle "$SERIES_TITLE" -ShareCalEventCommentOccurrence 3
+PARTNER_SERIES_PROBE0=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "partner imports the series")
+echo "$PARTNER_SERIES_PROBE0" | grep -q "$SERIES_COMMENT" \
+  || fail "partner did NOT see the owner's comment on the series' fourth occurrence. Probe: $PARTNER_SERIES_PROBE0"
 
 log "Partner: replying on the same occurrence ('$SERIES_REPLY')..."
 launch_app "$PARTNER_UDID" "partner-series-reply" \
   -ShareCalAddEventComment "$SERIES_REPLY" -ShareCalEventCommentTitle "$SERIES_TITLE" \
   -ShareCalEventCommentOccurrence 3
-wait_for_console "$CONSOLE_LOG" "ShareCalDiag addEventComment succeeded" $DIAG_TIMEOUT \
-  "partner replies on the series' fourth occurrence" >/dev/null
+SERIES_REPLY_ADD=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag addEventComment (succeeded|failed)" $DIAG_TIMEOUT "partner replies on the series' fourth occurrence")
+echo "$SERIES_REPLY_ADD" | grep -q "addEventComment succeeded" || fail "partner could not reply on the series. Log: $SERIES_REPLY_ADD"
 SERIES_KEY_BEFORE=$(series_probe "$OWNER_UDID" "owner-series-probe1" "owner before the move" | sed -n 's/.* key=//p' | tail -1 | tr -d '\r')
 [ -n "$SERIES_KEY_BEFORE" ] || fail "the series' fourth occurrence has no commented record before the move"
 

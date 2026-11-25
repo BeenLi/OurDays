@@ -206,8 +206,10 @@ enum CalendarDisplayMirrorPolicy {
         ownerMemberID: String,
         keptKeys: [String: String] = [:]
     ) -> [EventMirror] {
-        events.map { event in
-            let mirrorKey = EventMirrorKeyPolicy.mirrorKey(for: event, keptKeys: keptKeys)
+        let stableKeys = EventStableKeyPolicy.stableKeys(for: events)
+        return events.map { event in
+            let derivedKey = EventMirrorKeyPolicy.makeMirrorKey(for: event)
+            let mirrorKey = keptKeys[derivedKey] ?? derivedKey
             return EventMirror(
                 id: "\(transientIDPrefix)\(mirrorKey)",
                 ownerMemberID: ownerMemberID,
@@ -226,7 +228,8 @@ enum CalendarDisplayMirrorPolicy {
                 calendarColorHex: event.calendarColorHex,
                 visibilityRawValue: EventVisibility.fullDetails.rawValue,
                 deletedAt: nil,
-                cloudKitRecordName: nil
+                cloudKitRecordName: nil,
+                stableKey: stableKeys[derivedKey] ?? ""
             )
         }
     }
@@ -238,18 +241,37 @@ enum OwnEventTwinPolicy {
     /// same Apple ID (a Mac, which doesn't upload: `OwnEventUploadPolicy`) the same event
     /// gets a different key, so comments and red dots anchored to the uploaded copy
     /// wouldn't find it. A display mirror with no key match takes the key of the one
-    /// persisted own mirror with the same title and times; with none, or more than one
+    /// persisted own mirror with the same stable key (`EventStableKeyPolicy`), which holds
+    /// however the event was edited since; failing that (a record from a version before
+    /// stable keys), the one with the same title and times. With none, or more than one
     /// (two identical events), it keeps its own.
     static func adoptingPersistedKeys(_ display: [EventMirror], persistedOwn: [EventMirror]) -> [EventMirror] {
         let live = persistedOwn.filter {
             $0.deletedAt == nil && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
         }
         let knownKeys = Set(live.map(\.mirrorKey))
+        let byStableKey = Dictionary(
+            grouping: live.filter { !($0.stableKey ?? "").isEmpty },
+            by: { $0.stableKey ?? "" }
+        )
         let byMatch = Dictionary(grouping: live, by: matchKey(for:))
+        // A persisted key stands for one display mirror at most.
+        var taken = Set(display.map(\.mirrorKey)).intersection(knownKeys)
         for mirror in display where !knownKeys.contains(mirror.mirrorKey) {
-            guard let candidates = byMatch[matchKey(for: mirror)], candidates.count == 1 else { continue }
-            mirror.mirrorKey = candidates[0].mirrorKey
-            mirror.id = "\(CalendarDisplayMirrorPolicy.transientIDPrefix)\(candidates[0].mirrorKey)"
+            let stableKey = mirror.stableKey ?? ""
+            let candidates = stableKey.isEmpty ? nil : byStableKey[stableKey]
+            let twin: EventMirror?
+            if let candidates {
+                twin = candidates.count == 1 ? candidates[0] : nil
+            } else if let candidates = byMatch[matchKey(for: mirror)], candidates.count == 1 {
+                twin = candidates[0]
+            } else {
+                twin = nil
+            }
+            guard let twin, !taken.contains(twin.mirrorKey) else { continue }
+            taken.insert(twin.mirrorKey)
+            mirror.mirrorKey = twin.mirrorKey
+            mirror.id = "\(CalendarDisplayMirrorPolicy.transientIDPrefix)\(twin.mirrorKey)"
         }
         return display
     }

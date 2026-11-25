@@ -33,6 +33,16 @@ final class CloudKitRecordMappingTests: XCTestCase {
         XCTAssertEqual(decoded.mirrorKey, mirror.mirrorKey)
         XCTAssertEqual(decoded.title, "Planning")
         XCTAssertEqual(decoded.urlString, "https://example.com")
+        XCTAssertNil(decoded.stableKey, "a record from an older version has no stable key")
+
+        mirror.stableKey = "s1:abc"
+        XCTAssertEqual(try EventMirrorRecordMapper.eventMirror(from: EventMirrorRecordMapper.record(from: mirror, zoneID: zoneID)).stableKey, "s1:abc")
+
+        // Writing a mirror without a key never clears one another device wrote.
+        let existing = EventMirrorRecordMapper.record(from: mirror, zoneID: zoneID)
+        mirror.stableKey = nil
+        let rewritten = EventMirrorRecordMapper.record(from: mirror, zoneID: zoneID, existingRecord: existing)
+        XCTAssertEqual(rewritten[EventMirrorRecordMapper.Key.stableKey] as? String, "s1:abc")
     }
 
     func testEventMirrorRecordCanBeParentedToShareRoot() {

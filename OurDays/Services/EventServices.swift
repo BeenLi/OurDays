@@ -11,14 +11,17 @@ struct EventMirrorService {
     ) -> [EventMirror] {
         guard visibility != .hidden else { return [] }
 
-        return events
+        let shared = events
             .filter { selectedCalendarIDs.contains($0.calendarIdentifier) }
             .filter { event in
                 guard let sharingWindows else { return true }
                 return Self.isEvent(event, inside: sharingWindows)
             }
+        let stableKeys = EventStableKeyPolicy.stableKeys(for: shared)
+        return shared
             .map { event in
-                let mirrorKey = EventMirrorKeyPolicy.mirrorKey(for: event, keptKeys: keptKeys)
+                let derivedKey = EventMirrorKeyPolicy.makeMirrorKey(for: event)
+                let mirrorKey = keptKeys[derivedKey] ?? derivedKey
                 let visibleFields = Self.visibleFields(for: event, visibility: visibility)
 
                 return EventMirror(
@@ -39,7 +42,8 @@ struct EventMirrorService {
                     calendarColorHex: event.calendarColorHex,
                     visibilityRawValue: visibility.rawValue,
                     deletedAt: nil,
-                    cloudKitRecordName: mirrorKey
+                    cloudKitRecordName: mirrorKey,
+                    stableKey: stableKeys[derivedKey] ?? ""
                 )
             }
     }
@@ -163,7 +167,8 @@ struct EventMirrorService {
             calendarColorHex: mirror.calendarColorHex,
             visibilityRawValue: mirror.visibilityRawValue,
             deletedAt: deletedAt,
-            cloudKitRecordName: mirror.cloudKitRecordName ?? fallbackRecordName
+            cloudKitRecordName: mirror.cloudKitRecordName ?? fallbackRecordName,
+            stableKey: mirror.stableKey
         )
     }
 

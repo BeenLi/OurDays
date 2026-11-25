@@ -210,6 +210,7 @@ enum CloudKitMirrorSyncPolicy {
             && lhs.visibilityRawValue == rhs.visibilityRawValue
             && lhs.deletedAt == rhs.deletedAt
             && lhs.cloudKitRecordName == rhs.cloudKitRecordName
+            && lhs.stableKey == rhs.stableKey
     }
 }
 

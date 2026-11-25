@@ -62,6 +62,7 @@ Each person owns a private `CoupleSpace` zone. Every record hangs under the `cou
 - **Write path rule**: your own data goes into your private zone; responses to your partner's data (comments, invitation status, request approvals) go into your partner's shared zone.
 - **Mirrors are derived data**: your own EventMirrors are rebuilt from EventKit on every sync; SwiftData is just a cache.
 - **mirrorKey is the stable cross-device anchor**: `calendarID:eventID:occurrenceDate` is at once the SwiftData id, the CloudKit recordName and the comment thread key. Both sides generate it the same way, which is why an event can be commented on before it has synced.
+- **Step-by-step walkthrough**: [docs/sync-explainer/index.html](docs/sync-explainer/index.html) clicks through how CloudKit fields change on upload, edit, delete, comments, partner import, incremental sync and the Mac relay (Chinese; download and open in a browser, works offline).
 
 ### Record types
 
@@ -190,7 +191,7 @@ OurDays/
 ├── OurDays.xcodeproj              Schemes OurDays (everything) and OurDaysTests (unit tests only); App, unit test and UI test targets
 ├── CloudKit/ShareCalSchema.ckdb   CloudKit schema source
 ├── Scripts/                       CloudKit schema import, two-simulator pairing smoke script, App Store / TestFlight export options
-├── docs/                          Dev workflow, privacy policy, website source (docs/site), README diagram sources (docs/diagrams, *.en.* for English), review notes, design decision records (docs/plantree)
+├── docs/                          Dev workflow, privacy policy, website source (docs/site), README diagram sources (docs/diagrams, *.en.* for English), sync walkthrough (docs/sync-explainer), review notes, design decision records (docs/plantree)
 ├── .github/workflows/ios-ci.yml   CI: builds and runs all tests on a macOS runner
 └── CLAUDE.md                      Code architecture and conventions (identity model, CloudKit layout, Policy conventions)
 ```

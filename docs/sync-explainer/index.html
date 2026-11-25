@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OurDays 同步逐步讲解</title>
+</head>
+<body>
+<style>
+/* Layout: a CloudKit-dashboard-like inspector. Three lanes (my device / iCloud / other device), one step at a time, diffs marked in the margin. */
+:root{
+  --bg:#EDF0F3; --paper:#FFFFFF; --sunk:#F5F7F9; --ink:#17202A; --muted:#5A6573; --line:#D3DAE2;
+  --cloud:#1D63C9; --cloud-soft:#E3EDFB;
+  --new:#1C7C52; --new-soft:#E2F3EA; --chg:#9A6512; --chg-soft:#FBF0DC; --del:#B53A28; --del-soft:#FBE6E2;
+  --f-display:"Noto Serif SC","Songti SC",serif; --f-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif; --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F141A; --paper:#171E26; --sunk:#121820; --ink:#E4E9EF; --muted:#94A0AE; --line:#2A3440;
+  --cloud:#6FA6F5; --cloud-soft:#18283E; --new:#5CC995; --new-soft:#132C21; --chg:#E3B05A; --chg-soft:#2E2412; --del:#F08571; --del-soft:#331A16; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F141A; --paper:#171E26; --sunk:#121820; --ink:#E4E9EF; --muted:#94A0AE; --line:#2A3440;
+  --cloud:#6FA6F5; --cloud-soft:#18283E; --new:#5CC995; --new-soft:#132C21; --chg:#E3B05A; --chg-soft:#2E2412; --del:#F08571; --del-soft:#331A16; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.65;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 64px}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header h1{font-family:var(--f-display);font-weight:900;font-size:clamp(26px,4vw,38px);line-height:1.2;margin:0;text-wrap:balance}
+header p{margin:6px 0 0;color:var(--muted);max-width:68ch}
+.mono{font-family:var(--f-mono);font-size:.86em}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--sunk);border:1px solid var(--line);border-radius:4px;padding:0 4px;word-break:break-all}
+nav.chapters{display:flex;flex-wrap:wrap;gap:6px}
+nav.chapters button{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--paper);color:var(--ink);padding:6px 12px;border-radius:999px;cursor:pointer}
+nav.chapters button[aria-current="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+nav.chapters button:focus-visible,.ctrl button:focus-visible,.dots button:focus-visible{outline:2px solid var(--cloud);outline-offset:2px}
+.stage{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:18px}
+.stephead{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline}
+.stepno{font-family:var(--f-mono);font-size:13px;color:var(--muted);letter-spacing:.04em}
+.stephead h2{font-family:var(--f-display);font-weight:600;font-size:clamp(20px,2.6vw,26px);margin:0;line-height:1.3;text-wrap:balance}
+.badge{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--chg);color:var(--chg);background:var(--chg-soft);white-space:nowrap}
+.narr{max-width:80ch;display:flex;flex-direction:column;gap:8px}
+.narr p{margin:0}
+.lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.lane{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.lane.cloud{background:var(--cloud-soft);border-color:color-mix(in srgb,var(--cloud) 35%,var(--line))}
+.lanehead{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.lanehead b{font-size:13px;letter-spacing:.06em}
+.lane.cloud .lanehead b{color:var(--cloud)}
+.flow{font-size:12px;font-family:var(--f-mono);padding:1px 7px;border-radius:4px;background:var(--paper);border:1px solid var(--line);color:var(--muted)}
+.flow.on{color:var(--cloud);border-color:var(--cloud)}
+.empty{color:var(--muted);font-size:13px;font-style:italic}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.card.tomb{border-color:var(--del)}
+.card.ghost{opacity:.55}
+.chead{padding:8px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.chead .top{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.kind{font-family:var(--f-mono);font-size:11px;padding:0 5px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.kind.ck{border-color:var(--cloud);color:var(--cloud)}
+.chead .name{font-weight:700;font-size:14px}
+.chead .sub{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);word-break:break-all}
+.tag{font-size:11px;padding:0 6px;border-radius:3px}
+.tag.n{background:var(--new-soft);color:var(--new)} .tag.c{background:var(--chg-soft);color:var(--chg)} .tag.d{background:var(--del-soft);color:var(--del)}
+table.f{width:100%;border-collapse:collapse;font-family:var(--f-mono);font-size:12px}
+table.f td{padding:3px 8px;vertical-align:top;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+table.f tr:first-child td{border-top:0}
+table.f td.k{color:var(--muted);white-space:nowrap;width:1%;border-left:3px solid transparent}
+table.f td.v{word-break:break-all}
+tr.s-n td.k{border-left-color:var(--new)} tr.s-n td.v{color:var(--new);background:var(--new-soft)}
+tr.s-c td.k{border-left-color:var(--chg)} tr.s-c td.v{background:var(--chg-soft)}
+tr.s-d td.k{border-left-color:var(--del)} tr.s-d td.v{color:var(--del);background:var(--del-soft)}
+tr.s-x td{opacity:.45}
+.old{text-decoration:line-through;color:var(--muted);margin-right:6px}
+.arrow{color:var(--chg);margin-right:6px}
+.cnote{padding:8px 10px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);font-family:var(--f-body)}
+.free{padding:10px;font-size:13px;display:flex;flex-direction:column;gap:6px}
+.free pre{margin:0;font-family:var(--f-mono);font-size:12px;white-space:pre-wrap;word-break:break-all;background:var(--sunk);border:1px solid var(--line);border-radius:4px;padding:8px}
+.callout{border-left:3px solid var(--chg);background:var(--chg-soft);padding:10px 14px;border-radius:0 6px 6px 0;max-width:80ch}
+.callout.bad{border-color:var(--del);background:var(--del-soft)}
+.callout.good{border-color:var(--new);background:var(--new-soft)}
+.callout b{display:block;margin-bottom:2px}
+.refs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}
+.refs code{font-size:11.5px}
+.ctrl{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.ctrl>button{font:inherit;border:1px solid var(--ink);background:var(--ink);color:var(--bg);padding:8px 18px;border-radius:6px;cursor:pointer;min-width:110px}
+.ctrl>button.sec{background:transparent;color:var(--ink)}
+.ctrl>button:disabled{opacity:.35;cursor:default}
+.dots{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;flex:1}
+.dots button{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:var(--paper);font-family:var(--f-mono);font-size:10px;color:var(--muted);cursor:pointer;padding:0}
+.dots button.cur{background:var(--cloud);border-color:var(--cloud);color:#fff}
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-size:12.5px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:var(--c)}
+footer{font-size:12.5px;color:var(--muted);max-width:90ch}
+@media (max-width:900px){.lanes{grid-template-columns:minmax(0,1fr)}}
+@media (prefers-reduced-motion:no-preference){.stage .card{animation:in .25s ease-out}@keyframes in{from{transform:translateY(4px);opacity:.6}to{transform:none;opacity:1}}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>一条日程在 iCloud 里的一生</h1>
+    <p>按 main 分支（b00a5fa）的代码，一步步看阿力的一条日程怎么变成 CloudKit 记录、怎么被修改和删除、小雨的评论挂在哪里，以及小雨的手机和阿力自己的 Mac 怎么读这些记录。字段名都是代码里的真名，示例值是编的。</p>
+  </header>
+
+  <nav class="chapters" id="chapters" aria-label="章节"></nav>
+
+  <section class="stage" aria-live="polite">
+    <div class="stephead"><span class="stepno" id="stepno"></span><h2 id="title"></h2><span id="badge"></span></div>
+    <div class="narr" id="narr"></div>
+    <div class="lanes" id="lanes"></div>
+    <div id="callout"></div>
+    <div class="refs" id="refs"></div>
+    <div class="ctrl">
+      <button class="sec" id="prev" type="button">← 上一步</button>
+      <div class="dots" id="dots"></div>
+      <button id="next" type="button">下一步 →</button>
+    </div>
+  </section>
+
+  <div class="legend">
+    <span style="--c:var(--new)">这一步新写入的字段</span>
+    <span style="--c:var(--chg)">这一步改了的字段（划线是旧值）</span>
+    <span style="--c:var(--del)">删除标记 / 被删掉</span>
+    <span style="--c:var(--line)">没变</span>
+    <span>键盘 ← → 也能翻页</span>
+  </div>
+
+  <footer>示例人物：阿力（我，CloudKit 用户 ID <code>_7f3a…e1</code>）和小雨（对方，<code>_c29b…4d</code>）。日历 ID、事件 ID 都缩写了。时间为北京时间，云端实际存的是 UTC 时间戳。</footer>
+</div>
+
+<script>
+const ME="_7f3a…e1", PA="_c29b…4d", CAL="4B7E…C1", EID="9D2A…F0";
+const E1=1795865400, E2=1795867200;
+const K1=`${CAL}:${EID}:${E1}`, K2=`${CAL}:${EID}:${E2}`;
+const T1="2026-11-28 19:30", T1e="2026-11-28 21:30", T2="2026-11-28 20:00", T2e="2026-11-28 22:00";
+const NOW1="2026-11-24 20:05", NOW2="2026-11-25 09:12", NOW3="2026-11-26 18:40";
+const CMT="E3B1…7A";
+
+// field helper: [key, value, state, old]  state: n new, c changed, d deleted, x absent/nil
+const mirrorFields=(o={})=>{
+  const base=[
+    ["ownerMemberID",ME],["mirrorKey",K1],["sourceCalendarID",CAL],["sourceCalendarTitle","个人"],
+    ["occurrenceStartDate",T1],["startDate",T1],["endDate",T1e],["isAllDay","0"],
+    ["timeZoneIdentifier","Asia/Shanghai"],["title","看电影"],["location","万象城 IMAX"],
+    ["notes","记得带 3D 眼镜"],["urlString","nil","x"],["calendarColorHex","#34AADC"],
+    ["visibilityRawValue","fullDetails"],["deletedAt","nil","x"]];
+  return base.map(([k,v,s])=>{ if(o[k]!==undefined){const r=o[k];return [k,...r];} return [k,v,s||o._all||""]; });
+};
+const ckMirror=(name,fo,extra={})=>({kind:"CKRecord",ck:true,name:"EventMirror",sub:[`recordName = ${name}`,`zone CoupleSpace · owner 阿力`,`parent → couple-space-root`],f:fo,...extra});
+
+const lanesStd=["阿力的 iPhone（我）","iCloud","小雨的 iPhone（对方）"];
+const lanesMac=["阿力的 iPhone","iCloud · 阿力自己的库","阿力的 Mac（同一 Apple ID）"];
+
+const CH=[
+{name:"上传",steps:[
+{t:"从系统日历读出一条日程",
+ n:["每次同步，<code>SyncCoordinator.foregroundSync</code> 先算出“共享窗口”：配对那天往后，再加上对方被批准查看的历史区间。然后只在用户勾选的日历里，用 EventKit 读出窗口里的日程。","这时日程还只是内存里的 <code>CalendarSourceEvent</code>。有一个字段要记住：<code>occurrenceStartDate</code> 取的是 <code>occurrenceDate ?? startDate</code>。重复日程的某一次用“这一次原本的日期”，普通日程就是开始时间。后面改时间的故事就从这里开始。"],
+ L:[[{kind:"内存",name:"CalendarSourceEvent",sub:["EventKit 读出，不落盘"],f:[["calendarIdentifier",CAL,"n"],["eventIdentifier",EID,"n"],["occurrenceStartDate",`${T1}  ← occurrenceDate ?? startDate`,"n"],["startDate",T1,"n"],["endDate",T1e,"n"],["isAllDay","false","n"],["title","看电影","n"],["location","万象城 IMAX","n"],["notes","记得带 3D 眼镜","n"],["url","nil","x"],["calendarTitle","个人","n"],["calendarColorHex","#34AADC","n"]]}],
+    [{kind:"CKRecord",ck:true,name:"CoupleSpace",sub:["recordName = couple-space-root","zone CoupleSpace（阿力的私有库）"],f:[["ownerMemberID",ME],["…","CKShare 挂在这条根记录上"]],note:"配对时建好。zone 里所有记录都以它为 parent，所以整片分享给了小雨。"}],
+    []],
+ flow:["读 EventKit","",""],
+ refs:["CalendarAccessService.swift:269","SyncCoordinator.swift:105","CalendarSharingWindowPolicy"]},
+{t:"算出 mirrorKey 和 fingerprint，按可见程度裁剪",
+ n:["<code>EventMirrorKeyPolicy.makeMirrorKey</code> 把三段拼起来：<b>日历 ID : 事件 ID : 发生时间的秒数</b>。事件 ID 为空时用 fingerprint 顶上。这个字符串同时是本地 id、CloudKit 记录名、评论挂靠的锚点，是整个系统里最重要的一根线。","fingerprint 是“内容指纹”，下一次同步拿它判断内容有没有变。可见程度决定哪些字段上传：<code>busyOnly</code> 只传标题 “Busy”，<code>titleAndLocation</code> 传标题和地点，<code>fullDetails</code> 全传，<code>hidden</code> 整条不生成。"],
+ L:[[{kind:"计算",name:"mirrorKey",free:`<pre>"\(calendarIdentifier):\(stableEventID):\(occurrenceEpoch)"
+
+= ${K1}</pre>`},
+     {kind:"计算",name:"fingerprint",free:`<pre>eventID | calID | startEpoch | endEpoch
+| title | location | notes | url
+
+= ${EID}|${CAL}|${E1}|1795872600|看电影|万象城 IMAX|记得带 3D 眼镜|</pre>`}],
+    [],[]],
+ flow:["计算","",""],
+ refs:["CalendarSourcePolicies.swift:114","EventServices.swift:4 makeMirrors","EventServices.swift:170 visibleFields"]},
+{t:"本地先记两份：镜像和影子",
+ n:["上传前，iPhone 在 SwiftData 里写两样东西。<code>EventMirror</code> 是要发给对方的那份副本。<code>LocalEventShadow</code> 是“我上次看到这条日程是什么样”的备忘，只存在上传方本机，对方和云端都没有。","影子的 <code>lastUploadedAt</code> 这时故意留空。只有 CloudKit 确认写入成功，才盖上时间戳。这样配对之前同步过的日程，配对之后还会补传一次。"],
+ L:[[{kind:"SwiftData",name:"EventMirror",sub:[`id = ${K1}`],f:mirrorFields({_all:"n",urlString:["nil","x"],deletedAt:["nil","x"]}).concat([["cloudKitRecordName",K1,"n"]])},
+     {kind:"SwiftData",name:"LocalEventShadow",sub:[`id = ${K1}`],f:[["localEventIdentifier",EID,"n"],["calendarIdentifier",CAL,"n"],["occurrenceStartDate",T1,"n"],["fingerprint",`${EID}|…|看电影|…`,"n"],["cloudKitRecordName",K1,"n"],["lastUploadedAt","nil  ← 还没确认","x"],["isTombstone","false","n"]]}],
+    [],[]],
+ flow:["写本地","",""],
+ refs:["EventServices.swift:47 makeShadows","SyncCoordinator.swift:267","Models.swift:138"]},
+{t:"写进 iCloud",
+ n:["<code>saveMirrorsForSync</code> 先按记录名把云端已有的记录取回来，在它上面改字段再存（没有就新建），保存策略是 <code>.changedKeys</code>，非原子。记录放进阿力私有库的 <code>CoupleSpace</code> zone，parent 指向 <code>couple-space-root</code>，所以自动落进分享范围，小雨能读到。","云端 16 个字段和本地镜像一一对应。本地的 <code>id</code> 和 <code>cloudKitRecordName</code> 不是字段，它们就是记录名本身。写成功后，影子盖上 <code>lastUploadedAt</code>。"],
+ L:[[{kind:"SwiftData",name:"LocalEventShadow",sub:[`id = ${K1}`],f:[["localEventIdentifier",EID],["calendarIdentifier",CAL],["occurrenceStartDate",T1],["fingerprint",`${EID}|…|看电影|…`],["cloudKitRecordName",K1],["lastUploadedAt",NOW1,"c","nil"],["isTombstone","false"]]}],
+    [ckMirror(K1,mirrorFields({_all:"n",urlString:["nil","x"],deletedAt:["nil","x"]}),{tagN:"新建"})],
+    []],
+ flow:["上传 ↗","收到",""],
+ refs:["CloudKitCoupleSpaceService.swift:953","CloudKitRecordMappers.swift:379","SyncCoordinator.swift:429"]},
+{t:"小雨的手机拿到一份副本",
+ n:["写入会让小雨的设备收到静默推送，触发她那边的同步。她从 <code>sharedDatabase</code> 里读阿力的 zone，把记录变成本地 <code>EventMirror</code>。细节在“对方本地”一章。","注意：小雨那边没有影子。影子只属于“这条日程的主人”。"],
+ L:[[],[ckMirror(K1,mirrorFields())],
+    [{kind:"SwiftData",name:"EventMirror",sub:[`id = ${K1}`,"导入自 阿力的 zone"],f:mirrorFields({_all:"n",ownerMemberID:[`${ME}  ← 取自 zone 主人`,"n"],urlString:["nil","x"],deletedAt:["nil","x"]})}]],
+ flow:["","↘ 推送","读取"],
+ refs:["CloudKitCoupleSpaceService.swift:1482","CloudKitPolicies.swift:236"]}
+]},
+{name:"修改",steps:[
+{t:"改标题和备注，时间不动",
+ n:["阿力在系统日历里把标题改成“看《沙丘3》”，备注删掉了。下次同步算出的 mirrorKey 没变，但 fingerprint 变了。<code>CloudKitMirrorSyncPolicy.mirrorsNeedingUpload</code> 发现内容和本地旧镜像不同，就把它列入上传。","云端还是同一条记录，原地更新。小雨那边按 mirrorKey 找到原来那条，逐个字段覆盖，挂在上面的评论原封不动。"],
+ L:[[{kind:"SwiftData",name:"LocalEventShadow",sub:[`id = ${K1}`],f:[["fingerprint",`${EID}|…|看《沙丘3》|万象城 IMAX||`,"c",`${EID}|…|看电影|…|记得带 3D 眼镜|`],["lastUploadedAt",NOW2,"c",NOW1],["isTombstone","false"]]}],
+    [ckMirror(K1,mirrorFields({title:["看《沙丘3》","c","看电影"],notes:["nil","c","记得带 3D 眼镜"]}),{tagC:"原地更新"})],
+    [{kind:"SwiftData",name:"EventMirror",sub:[`id = ${K1}`],f:[["mirrorKey",K1],["title","看《沙丘3》","c","看电影"],["notes","nil","c","记得带 3D 眼镜"],["…","其余字段不变"]]}]],
+ flow:["上传 ↗","更新","读取"],
+ refs:["SyncPolicies.swift:166","Models.swift:333 EventMirrorStore.upsert"]},
+{t:"改时间：1.9 及以前的做法",
+ badge:"线上版本",
+ bad:true,
+ n:["把 19:30 挪到 20:00。普通日程的 <code>occurrenceDate</code> 就等于开始时间，于是 mirrorKey 末尾的秒数从 <code>1795865400</code> 变成 <code>1795867200</code>，成了另一把钥匙。","同步看到：旧钥匙 K1 不在本次算出的钥匙里，于是把旧影子标成墓碑，旧镜像写上 <code>deletedAt</code>；新钥匙 K2 当作一条新日程上传。云端出现两条记录，一条死的，一条新的。"],
+ L:[[{kind:"SwiftData",name:"LocalEventShadow",sub:[`id = ${K1}`],tomb:true,f:[["occurrenceStartDate",T1],["isTombstone","true","d","false"]]},
+     {kind:"SwiftData",name:"LocalEventShadow",sub:[`id = ${K2}`],f:[["occurrenceStartDate",T2,"n"],["fingerprint",`${EID}|…|${E2}|1795874400|看《沙丘3》|…`,"n"],["lastUploadedAt",NOW2,"n"],["isTombstone","false","n"]]}],
+    [ckMirror(K1,[["mirrorKey",K1],["startDate",T1],["title","看《沙丘3》"],["deletedAt",NOW2,"d","nil"],["…","其余字段保留旧值"]],{tomb:true,tagD:"墓碑"}),
+     ckMirror(K2,[["mirrorKey",K2,"n"],["occurrenceStartDate",T2,"n"],["startDate",T2,"n"],["endDate",T2e,"n"],["title","看《沙丘3》","n"],["…","其余字段同上，全是新写入"]],{tagN:"新建"})],
+    [{kind:"SwiftData",name:"EventComment",sub:[`id = ${CMT}`],f:[["eventMirrorID",`${K1}  ← 还指着旧钥匙`,"d"],["body","好呀，我订票"]],note:"挂靠的镜像已被标删除，日历里不再显示它，评论跟着看不到。"}]],
+ flow:["上传 ↗","墓碑 + 新建","读取"],
+ call:{cls:"bad",h:"这就是“挪了时间评论就没了”的根源",b:"评论的 <code>eventMirrorID</code> 是旧记录名 K1。旧记录成了墓碑，新记录 K2 上没有评论。重复日程只改其中一次不受影响，因为那一次的 <code>occurrenceDate</code> 仍是原本的日期。"},
+ refs:["CalendarAccessService.swift:269","EventServices.swift:76 deletedShadows","EventServices.swift:115 deletedMirrorTombstones","SyncCoordinator.swift:233"]},
+{t:"改时间：现在的 main（PR #65）",
+ badge:"#65、#66 已合并，未发版",
+ n:["PR #65 加了 <code>EventMirrorKeyPolicy.keptKeysForRescheduledEvents</code>：一条不重复的日程算出的钥匙本地没有，而本地恰好只有一条活着的影子（或自己的镜像）日历 ID 和事件 ID 都相同，就沿用那条的钥匙。时间字段照常更新，记录名和 <code>mirrorKey</code> 不变，评论跟着走。<code>LocalEventShadow.mirrorKey</code> 也改成直接取 <code>id</code>，不再从字段现算。","PR #66 处理整个重复系列一起挪：影子成了“花名册”，先按日历、事件 ID、发生时间查；查不到就把同一事件 ID 下新出现的几次和消失的几条按时间就近配对（距离要小于系列自己的间隔）；“将来所有日程”把系列拆成两条时，再按标题、地点、备注、链接完全相同来认。"],
+ L:[[{kind:"SwiftData",name:"LocalEventShadow",sub:[`id = ${K1}  ← 沿用`],f:[["occurrenceStartDate",T2,"c",T1],["fingerprint",`${EID}|…|${E2}|…`,"c",`${EID}|…|${E1}|…`],["isTombstone","false"]]}],
+    [ckMirror(K1,[["mirrorKey",`${K1}  ← 末尾仍是 19:30 的秒数，不跟着改`],["occurrenceStartDate",T2,"c",T1],["startDate",T2,"c",T1],["endDate",T2e,"c",T1e],["deletedAt","nil","x"],["…","其余不变"]],{tagC:"原地更新"})],
+    [{kind:"SwiftData",name:"EventComment",sub:[`id = ${CMT}`],f:[["eventMirrorID",K1,"n"],["body","好呀，我订票"]],note:"锚点还在，评论继续显示。"}]],
+ flow:["上传 ↗","更新","读取"],
+ call:{cls:"good",h:"记录名里的时间是第一次上传时的发生时间，之后不跟着改",b:"拿不准的情况（事件 ID 为空、同一事件 ID 有两条活着的旧钥匙、旧钥匙正被别的日程占用）仍用新钥匙，和 1.9 及以前一样。要知道现在几点开始，看 <code>startDate</code>。这个版本之前已经丢掉的旧记录找不回来。"},
+ refs:["PR #65 decision 0004","PR #66 decision 0005"]},
+{t:"拿不准时：不配对，直接用新钥匙",
+ badge:"main 的保守规则",
+ plain:true,
+ lanes:["① 事件 ID 为空","② 同一事件 ID 有两条活着的旧钥匙","③ 旧钥匙正被别的日程占用"],
+ n:["<code>keptKeysForRescheduledEvents</code> 只在有把握时才让新日程继承旧名字。下面三种情况它都放弃，结果和 1.9 及以前一样：用公式算出的新钥匙建一条新记录，旧记录变成墓碑，挂在旧记录上的评论就看不到了。","放弃的代价是丢评论，配错的代价是评论挂到别的日程上。后者更糟，所以拿不准时一律放弃。"],
+ L:[[{kind:"情况",name:"EventKit 没给事件 ID",free:`<pre>eventIdentifier = ""
+→ key 的中段改用 fingerprint：
+  ${CAL}:|${CAL}|${E1}|1795872600|看电影|…:${E1}</pre>`},
+     {kind:"为什么放弃",name:"没有能认出“是同一条”的线索",f:[["配对条件","按事件 ID 找旧记录，ID 为空直接跳过","d"],["花名册","影子里 localEventIdentifier 为空的条目不登记","d"]],note:"fingerprint 里有开始时间、标题、地点、备注，改其中任何一项 key 都会变。这种日程很少见。"}],
+    [{kind:"情况",name:"不重复日程，同一事件 ID 下有两条旧记录还活着",free:`<pre>新算出：${CAL}:${EID}:${E2}（20:00）
+本地活着的旧记录：
+  ${CAL}:${EID}:${E1}（19:30）
+  ${CAL}:${EID}:1795858200（17:30）</pre>`},
+     {kind:"为什么放弃",name:"不知道该继承哪一条",f:[["第 1 步 花名册","同一次匹配到不止一条 → 跳过","d"],["第 2 步 单次日程","候选必须恰好 1 条 → 两条就跳过","d"]],note:"重复系列里，两条旧记录登记在同一时间时也一样放弃。"}],
+    [{kind:"情况",name:"每周三系列整体往后推一周",free:`<pre>旧：11-25  12-02  12-09
+新：       12-02  12-09  12-16
+
+12-02、12-09 算出的 key 正好就是旧 key
+→ 它们各自保留自己的记录名
+12-16 是新的；剩下没人要的只有 11-25
+→ 相距 21 天 ≥ 7 天，不配对</pre>`},
+     {kind:"为什么放弃",name:"名字不能抢别人的",f:[["规则一","一条日程自己算出的 key 只要还活着就归它，不改名","n"],["规则二","继承来的名字不能等于任何当前日程算出的 key","n"],["结果","12-16 建新记录，11-25 成墓碑","d"]],note:"这两条规则保证不会出现两条日程用同一个记录名、互相覆盖。"}]],
+ flow:["新钥匙","新钥匙","新钥匙"],
+ refs:["CalendarSourcePolicies.swift:171 keptKeysForRescheduledEvents","CalendarSourcePolicies.swift nearestPairs","PR #65 decision 0004","PR #66 decision 0005"]}
+]},
+{name:"删除",steps:[
+{t:"在系统日历里删掉这条日程",
+ n:["下次同步，K1 不在本次读到的钥匙里（只看勾选的日历、只看同步窗口内）。<code>deletedShadows</code> 把影子标成墓碑，<code>deletedMirrorTombstones</code> 复制一份旧镜像并写上 <code>deletedAt</code>。","云端不删记录，而是把整条记录原样再存一次，只多填了 <code>deletedAt</code>，标题、备注、时间都还在。小雨那边导入后，凡是 <code>deletedAt != nil</code> 的镜像都不显示。挂在上面的评论记录也还在云端，只是没有地方显示了。"],
+ L:[[{kind:"SwiftData",name:"LocalEventShadow",sub:[`id = ${K1}`],tomb:true,f:[["isTombstone","true","d","false"],["lastUploadedAt",NOW3,"c",NOW2]]},
+     {kind:"SwiftData",name:"EventMirror",sub:[`id = ${K1}`],tomb:true,f:[["deletedAt",NOW3,"d","nil"],["…","其余字段保留"]]}],
+    [ckMirror(K1,mirrorFields({title:["看《沙丘3》",""],notes:["nil","x"],deletedAt:[NOW3,"d","nil"]}),{tomb:true,tagD:"墓碑"})],
+    [{kind:"SwiftData",name:"EventMirror",sub:[`id = ${K1}`],tomb:true,f:[["deletedAt",NOW3,"d","nil"]],note:"日历页过滤 deletedAt == nil，这条不再出现。"}]],
+ flow:["上传 ↗","只改 deletedAt","读取"],
+ refs:["EventServices.swift:76","EventServices.swift:115","CalendarTabView.swift:38 activeMirrors"]},
+{t:"真正删除记录的情况",
+ n:["1.9 及以前，只有一种情况会让 iPhone 对 CloudKit 发真正的删除（现在的 main 上还多了下面的“30 天到期”）：本地镜像的发生时间已经不在当前共享窗口里（<code>mirrorsOutsideSharingWindows</code>）。这时调用 <code>deleteMirrorsForSync</code> 删掉记录，本地的镜像和影子也一起清掉。","小雨那边下次同步时，<code>purgeStalePartnerMirrors</code> 发现本地有一条阿力的镜像不在这次拉到的列表里，就把它从本地删掉。","另有一条兜底路径：重装后第一次同步，本机还没有任何确认上传过的影子，就把云端自己的镜像当作“上一次的状态”，对不上的补发墓碑。"],
+ L:[[{kind:"SwiftData",name:"EventMirror + Shadow",sub:[`id = ${K1}`],ghost:true,f:[["（整条清除）","purge","d"]]}],
+    [{kind:"CKRecord",ck:true,name:"EventMirror",sub:[`recordName = ${K1}`],ghost:true,f:[["（记录被删除）","modifyRecords(deleting:)","d"]]}],
+    [{kind:"SwiftData",name:"EventMirror",sub:[`id = ${K1}`],ghost:true,f:[["（本地删除）","purgeStalePartnerMirrors","d"]]}]],
+ flow:["删除 ↗","删除","清理"],
+ refs:["EventServices.swift:132","CloudKitCoupleSpaceService.swift:989","SyncCoordinator.swift:938","SyncPolicies.swift:241"]},
+{t:"30 天后：墓碑真正离开云端",
+ badge:"#75 已合并，未发版",
+ n:["1.9 及以前，墓碑一旦写下就再没人清理：真删除那条路（<code>mirrorsOutsideSharingWindows</code>）只挑 <code>deletedAt == nil</code> 的活镜像，本机的墓碑行和 <code>isTombstone</code> 影子也一直留着。删掉的日程的标题、备注、地点会一直留在共享 zone 里，每次全量读取都要带上它们。","其实没有谁靠墓碑才知道“删了”。小雨的设备（<code>purgeStalePartnerMirrors</code>）和我的 Mac（<code>replaceOwnMirrors</code>）都是“这次读回来的里面没有，就从本地删掉”，记录直接消失也一样能处理。墓碑只在两种情况下有用：在日历里撤销删除时，日程能找回原来的记录和评论；另一台设备的日历还没同步过来时，它能看出这条是被删了，而不是新出现的（Mac 也上传日程之后需要，PR #73）。","PR #75 加了 <code>EventTombstonePurgePolicy</code>：墓碑保留 30 天（<code>retention = 30 × 24 × 3600</code> 秒）。到期后，上传这条日程的设备在同步最后依次删掉：我私有 zone 里 <code>eventMirrorID</code> 指向它的评论记录、这条 <code>EventMirror</code> 记录、本机的镜像行、影子行和评论行。"],
+ L:[[{kind:"SwiftData",name:"本机行（到期后删除）",sub:[`id = ${K1}`],ghost:true,f:[["EventMirror","deletedAt = 2026-11-26 18:40 → 已过 30 天","d"],["LocalEventShadow","isTombstone = true","d"],["EventComment ×2",`eventMirrorID = ${K1}`,"d"]]},
+     {kind:"规则",name:"expiredTombstones 留下不删的",free:`<pre>· 这次同步时它又出现在日历里（liveKeys）
+· 任何一份副本还活着，或删除还不到 30 天
+· deletedAt 在未来（别的设备时钟不准）
+· 不上传自己日程的设备（Mac）一概不删</pre>`}],
+    [{kind:"CKRecord",ck:true,name:"EventComment ×2",sub:["zone CoupleSpace · owner 阿力"],ghost:true,f:[["eventMirrorID",K1,"d"],["（先删）","deleteOwnZoneCommentsForSync","d"]]},
+     {kind:"CKRecord",ck:true,name:"EventMirror",sub:[`recordName = ${K1}`],ghost:true,f:[["deletedAt","2026-11-26 18:40","d"],["（后删）","deleteMirrorsForSync","d"]]}],
+    [{kind:"SwiftData",name:"EventMirror",sub:[`id = ${K1}`],ghost:true,f:[["（下次读取没有它）","purgeStalePartnerMirrors 删掉","d"]],note:"小雨本机已经同步下来的那两条评论行不删，看不到，只占一点空间。"}]],
+ flow:["2026-12-26 后同步","删评论 + 删记录","清理"],
+ call:{cls:"good",h:"清理失败也不影响同步",b:"清理放在同步最后，失败只记日志，本机行留着，下次同步再试。升级前攒下的墓碑本机都有行，升级后第一次同步就会清掉；重装后本机没有这些行，借重装对账时读自己 zone 的那一次顺带清理。CloudKit 字段不用改。"},
+ refs:["PR #75 decision 0019","SyncPolicies.swift EventTombstonePurgePolicy","SyncCoordinator.swift purgeTombstones","CloudKitCoupleSpaceService.swift deleteOwnZoneCommentsForSync"]}
+]},
+{name:"评论",steps:[
+{t:"小雨评论阿力的日程",
+ n:["评论是一条独立的 <code>EventComment</code> 记录，记录名是随机 UUID。它和日程的唯一联系是 <code>eventMirrorID</code> 这个<b>字符串</b>字段，值就是日程的记录名 K1。它不是 CloudKit 的 Reference，所以日程被删、被改名，评论不会跟着动。","写到哪里由 <code>CloudKitCommentWritePolicy</code> 决定：日程主人是阿力，不是小雨自己，所以走 <code>acceptedSharedZone</code>。小雨的设备在她接受的分享 zone 里逐个查哪一个有记录 K1，找到阿力的 zone，通过 <code>sharedDatabase</code> 把评论写进去。结果是：<b>一条日程的所有评论，都和日程住在日程主人的同一个 zone 里。</b>"],
+ L:[[],
+    [ckMirror(K1,[["mirrorKey",K1],["title","看电影"],["…",""]]),
+     {kind:"CKRecord",ck:true,name:"EventComment",sub:[`recordName = ${CMT}（UUID）`,"zone CoupleSpace · owner 阿力","parent → couple-space-root"],f:[["eventMirrorID",K1,"n"],["authorMemberID",PA,"n"],["body","好呀，我订票","n"],["createdAt","2026-11-24 21:10","n"],["editedAt","nil","x"],["deletedAt","nil","x"],["isRead","0","n"]],tagN:"新建"}],
+    [{kind:"SwiftData",name:"EventComment",sub:[`id = ${CMT}`],f:[["eventMirrorID",K1,"n"],["authorMemberID",PA,"n"],["body","好呀，我订票","n"],["createdAt","2026-11-24 21:10","n"],["isRead","false","n"],["cloudKitRecordName",CMT,"n"]]}]],
+ flow:["","收到","写入 ↖"],
+ refs:["EventServices.swift:247 CommentService","CloudKitPolicies.swift:272","CloudKitCoupleSpaceService.swift:1107","CloudKitCoupleSpaceService.swift:1678"]},
+{t:"阿力在自己的日程下面先开口",
+ n:["阿力的日程在他自己的日历里是直接从 EventKit 画出来的临时镜像，id 带 <code>display:</code> 前缀。打开详情时，<code>EventDetailCommentPolicy</code> 用 mirrorKey 当锚点：这把钥匙在上传之前就能算出来，所以还没同步也能评论。","主人是自己，评论写进自己私有库的 <code>CoupleSpace</code> zone（必要时先建 zone 和分享根）。日程不在共享窗口里（比如配对日之前）就不给输入框，只提示对方看不到。","两人一起参加的日程（邀请生成的）例外：两边各有自己的镜像，钥匙不同，所以评论挂在邀请的 id 上，按邀请发起人决定写哪个 zone。"],
+ L:[[{kind:"内存",name:"EventCommentAnchor",sub:["给 display: 镜像"],f:[["key",K1,"n"],["ownerMemberID",ME,"n"],["recordName",K1,"n"]]}],
+    [{kind:"CKRecord",ck:true,name:"EventComment",sub:["recordName = 5A0C…19（UUID）","zone CoupleSpace · owner 阿力","parent → couple-space-root"],f:[["eventMirrorID",K1,"n"],["authorMemberID",ME,"n"],["body","买爆米花吗","n"],["createdAt","2026-11-24 21:12","n"],["isRead","0","n"]],tagN:"新建"}],
+    []],
+ flow:["写入 ↗","收到",""],
+ refs:["CommentPolicies.swift:16 EventCommentAnchorPolicy","CommentPolicies.swift:69 EventDetailCommentPolicy"]},
+{t:"编辑、删除评论",
+ badge:"删除：#70 已合并，未发版 · 编辑：只有字段，没有入口",
+ n:["<b>删除</b>：在评论上左滑，只有作者本人能删（<code>CommentDeletionPolicy.canDelete</code>）。和日程一样是软删除：本地先写 <code>deletedAt</code>，再存回评论所在的那个 zone（日程主人的 zone），对方同步后就看不到了。上传失败时下次同步会补传；导入时云端的旧副本不会把本地的删除盖回去。1.9 及以前左滑只改了本地，同步又把它拉回来，对方也一直看得到。","<b>编辑</b>：数据层准备好了（<code>CommentService.edit</code> 改 <code>body</code>、写 <code>editedAt</code>，云端也有这个字段），但界面上还没有编辑入口。下面的卡片展示的是这些字段会怎么变。","评论列表的筛选条件是 <code>eventMirrorID == 锚点 && deletedAt == nil</code>，日历上的小红点也只算没删的评论。"],
+ L:[[],
+    [{kind:"CKRecord",ck:true,name:"EventComment",sub:[`recordName = ${CMT}`],f:[["eventMirrorID",K1],["authorMemberID",PA],["body","好呀，我订了 7 排","c","好呀，我订票"],["createdAt","2026-11-24 21:10"],["editedAt","2026-11-24 21:30","n"],["deletedAt","nil","x"],["isRead","0"]],tagC:"更新"}],
+    [{kind:"SwiftData",name:"EventComment",sub:[`id = ${CMT}`],f:[["body","好呀，我订了 7 排","c","好呀，我订票"],["editedAt","2026-11-24 21:30","n"]],note:"再删除时：deletedAt = 当前时间，记录保留。"}]],
+ flow:["","更新","写入 ↖"],
+ refs:["EventServices.swift:247","EventCommentsSection.swift:18","CommentPolicies.swift:96"]}
+]},
+{name:"对方本地",steps:[
+{t:"从哪里读：sharedDatabase 里阿力的 zone",
+ n:["小雨的同步先列出她接受的所有分享 zone，只留名字叫 <code>CoupleSpace</code>、且主人是当前配对对象的那一个。然后并行拉五类记录：历史请求、<code>EventMirror</code>、<code>EventComment</code>、<code>EventInvitation</code>、<code>MemberProfile</code>。现在的 main 上，这五路读同一个 zone，共用一次增量请求（见“增量同步”一章）。","评论要读两处：自己私有库（别人给自己日程的评论）和对方的分享 zone（自己和对方给对方日程的评论）。"],
+ L:[[],
+    [{kind:"小雨看到的",name:"sharedDatabase",free:`<pre>zone CoupleSpace  owner = ${ME}  ✓ 当前对象
+  EventMirror   ${K1}
+  EventComment  ${CMT}
+  MemberProfile member-profile:${ME}
+zone CoupleSpace  owner = _前任…  ✗ 跳过并退出</pre>`},
+     {kind:"小雨看到的",name:"privateDatabase",free:`<pre>zone CoupleSpace  owner = ${PA}
+  她自己的日程，以及阿力给它们的评论</pre>`}],
+    [{kind:"并行",name:"async let ×5",free:`<pre>fetchCalendarAccessRequests
+fetchSharedEventMirrors
+fetchEventComments   (private + shared)
+fetchEventInvitations
+fetchMemberProfiles</pre>`}]],
+ flow:["","↘","读取"],
+ refs:["CloudKitCoupleSpaceService.swift:1658","SyncCoordinator.swift:459","CloudKitCoupleSpaceService.swift:1573"]},
+{t:"入库前的三道处理",
+ n:["第一，<code>identifiedMirrors</code> 把每条镜像的 <code>ownerMemberID</code> 改写成 zone 的主人。记录里写的是什么不重要，zone 是谁的，日程就是谁的。第二，<code>importableMirrors</code> 丢掉 owner 是自己的那些。第三，<code>purgeStalePartnerMirrors</code> 把本地有、这次没拉到的阿力的镜像删掉。","剩下的用 <code>EventMirrorStore.upsert</code> 按 mirrorKey 合并：有就逐字段覆盖，没有就插入。墓碑也照常导入，带着 <code>deletedAt</code>。评论先过 <code>PartnerScopedDataPolicy</code>（作者必须是自己或当前对象，前任的丢掉），再按 id 合并。"],
+ L:[[],
+    [ckMirror(K1,[["ownerMemberID","（记录里写的值）"],["mirrorKey",K1],["deletedAt","nil","x"],["…",""]])],
+    [{kind:"SwiftData",name:"EventMirror",sub:[`id = ${K1}`],f:[["ownerMemberID",ME,"c","（记录里写的值）"],["mirrorKey",K1],["deletedAt","nil","x"],["cloudKitRecordName",K1]],note:"ownerMemberID 以 zone.ownerName 为准。"}]],
+ flow:["","↘","改写 + 合并"],
+ refs:["CloudKitPolicies.swift:232","CloudKitPolicies.swift:236","SyncCoordinator.swift:938","Models.swift:333","PairingPolicies.swift:437"]},
+{t:"显示出来",
+ n:["日历页对对方的镜像只做一件事：<code>deletedAt == nil</code> 的才显示，全部只读。自己的日程不读镜像，直接从 EventKit 画成 <code>display:</code> 临时镜像，再按 mirrorKey 找到持久化的那份“孪生”，评论和红点都挂到孪生的 id 上。","所以同一条日程，在阿力手机上是“EventKit 现画的 + 镜像兜底”，在小雨手机上是“纯镜像”。两边能对上评论，靠的就是那把 mirrorKey。"],
+ L:[[{kind:"显示",name:"阿力的日历",free:`<pre>EventKit 现读 → id = display:${K1}
+按 mirrorKey 找孪生 → id = ${K1}
+评论线程 key = ${K1}</pre>`}],
+    [],
+    [{kind:"显示",name:"小雨的日历",free:`<pre>EventMirror where deletedAt == nil
+id = ${K1}
+评论线程 key = ${K1}
+红点：有活着的评论 eventMirrorID == ${K1}</pre>`}]],
+ flow:["显示","","显示"],
+ refs:["CalendarTabView.swift:38","CalendarDisplayPolicies.swift:201","CalendarDisplayPolicies.swift:290 EventDetailMirrorResolutionPolicy","CommentPolicies.swift:93 EventCommentIndicatorPolicy"]}
+]},
+{name:"增量同步",lanes:["阿力的 iPhone（同步中）","iCloud · 两个 zone","这一步的代价"],steps:[
+{t:"1.9 及以前：工具是增量的，用法是全量的",
+ badge:"线上版本",
+ n:["所有“从云端批量读记录”都用 <code>CKFetchRecordZoneChangesOperation</code>。这个操作的本意是：你给它上次拿到的 <code>previousServerChangeToken</code>，它只返回那之后改过的记录和被删掉的记录 ID，最后再给一个新 token，下次接着用。","1.9 及以前把 token 写死成 <code>nil</code>，也就是“从头开始”；服务器回来的新 token 交给 <code>recordZoneChangeTokensUpdatedBlock</code>，而这个回调是空的，token 直接丢掉。所以每次同步都是全量下载。"],
+ L:[[{kind:"Swift",name:"ZoneConfiguration（1.9）",f:[["previousServerChangeToken","nil  ← 每次都从头","d"],["desiredKeys","按记录类型挑字段"]]},
+     {kind:"Swift",name:"回调（1.9）",f:[["recordWasChangedBlock","只留 record.recordType == 目标类型","c"],["recordZoneChangeTokensUpdatedBlock","{ _, _, _ in }  ← token 被丢掉","d"],["recordWithIDWasDeletedBlock","没有设置","x"]]}],
+    [{kind:"服务器",name:"zone CoupleSpace",free:`<pre>token = nil  → 返回 zone 里的每一条记录
+token = T41 → 只返回 T41 之后的变化
+              + 新 token T42</pre>`}],
+    [{kind:"代价",name:"每次都是全量",free:`<pre>记录越攒越多，每次同步下载得越多。
+没变过的记录也再下一遍。</pre>`}]],
+ flow:["发请求 ↗","全量返回",""],
+ refs:["1.9: CloudKitCoupleSpaceService.swift fetchRecords(matching:)","decision 0018 背景"]},
+{t:"1.9 及以前：一次同步把两个 zone 各扫好几遍",
+ badge:"线上版本",
+ n:["那个读取函数一次只要一种记录类型，可 zone-changes 操作不能按类型筛，服务器把整个 zone 发过来，客户端在 <code>recordWasChangedBlock</code> 里把别的类型扔掉。","一次同步要读五种记录，有的还要两个库各读一次：小雨的分享 zone 被完整扫 5 遍，自己的私有 zone 3 遍（Mac 上或重装后首次同步再多一遍）。请求是并行发出的，但同步要等最慢的那个。"],
+ L:[[{kind:"调用",name:"一次 foregroundSync 里的拉取（1.9）",free:`<pre>sharedDatabase · 小雨的 CoupleSpace
+  1 CalendarAccessRequest
+  2 EventMirror
+  3 EventComment
+  4 EventInvitation
+  5 MemberProfile
+privateDatabase · 我的 CoupleSpace
+  6 CalendarAccessRequest
+  7 EventComment
+  8 EventInvitation
+  9 EventMirror（仅 Mac / 重装后首次）</pre>`}],
+    [{kind:"服务器",name:"每一遍发回的",free:`<pre>小雨的 zone：她的全部日程 + 评论
+           + 邀请 + 请求 + 资料
+  × 5 遍，每遍只留一种
+我的 zone：同上 × 3～4 遍</pre>`}],
+    [{kind:"实测",name:"线上 iPhone",f:[["单路拉取","4 ～ 10 秒","d"],["整次同步","13 ～ 20 秒","d"]]}]],
+ flow:["8～9 个请求 ↗","每个都全量",""],
+ refs:["decision 0018 背景"]},
+{t:"现在的 main：每个 zone 一次请求，带上次的 token",
+ badge:"#74 已合并，未发版",
+ n:["PR #74 新增了 <code>ZoneChangeFeed</code>。同一次同步里对同一个 zone 的几路读取（日程、评论、邀请、请求、资料）共用一次 <code>CKFetchRecordZoneChangesOperation</code>，<code>previousServerChangeToken</code> 传上次存下的 token。服务器只回这之后改过的记录（<code>recordWasChangedBlock</code>）和被删掉的记录 ID（<code>recordWithIDWasDeletedBlock</code>），结束时给新 token。","本机为每个 zone 留一份完整快照：归档的 <code>CKRecord</code> + token，存成 Caches/ZoneChanges 下的一个 plist，按 iCloud 账号、环境、数据库、zone 分文件。这次的变化合进快照，再保存。"],
+ L:[[{kind:"本机",name:"Caches/ZoneChanges",free:`<pre>${ME}.Production.shared.${ME}.CoupleSpace.plist
+  token = T41 → T42
+  records = 94 条（合并后）
+${ME}.Production.private.….CoupleSpace.plist
+  token = T17（没变化）</pre>`}],
+    [{kind:"服务器",name:"小雨的 zone · T41 之后的变化",free:`<pre>recordWasChanged
+  EventComment E3B1…7A（刚写的评论）
+recordWithIDWasDeleted
+  （无）
+新 token = T42</pre>`}],
+    [{kind:"实测",name:"模拟器 · Development",f:[["foregroundSync 中位数","18.9 秒 → 2.9～3.9 秒","c","18.9 秒"],["每个 zone 增量读","0.07 ～ 2.7 秒","n"],["线上 iPhone","还没测","x"]],note:"数字来自 #74 的双模拟器测试，Production 真机上的 13～20 秒还没复测。"}]],
+ flow:["每 zone 1 个请求 ↗","只发变化",""],
+ refs:["ZoneChangeFeed.swift:47","ZoneChangeFeed.swift:280","ZoneChangeFeed.swift:302","decision 0018"]},
+{t:"为什么下游一行没改：增量挡在读取这一层",
+ badge:"#74 已合并，未发版",
+ n:["下游有几处把“这次没拉到”当成“已删除”：<code>purgeStalePartnerMirrors</code>（对方的日程）和 Mac 的 <code>replaceOwnMirrors</code>（自己的日程）；还有几处重传判断拿“云端这份”和本地比。如果直接把增量交给它们，只回 1 条评论的那次同步会把其余日程全当成删了。","#74 的做法是：<code>ZoneChangeFeed</code> 把变化合进快照后，<b>仍然返回整个 zone</b>。记录只有在服务器报告删除时才离开快照，没被提到的原样保留。所以下游拿到的还是完整列表，“不在列表里 = 已删除”继续成立。","有几种情况会整个重新下载：没有快照、token 被服务器拒绝（<code>changeTokenExpired</code>，包括 zone 删了重建）、快照满 7 天（<code>fullRefetchInterval</code>）、这个版本要的记录类型或字段变了（签名不同）、快照文件读不回来。有记录服务器没能给出时，这次结果照用，但不记 token，下次从旧 token 再要一遍。"],
+ L:[[{kind:"下游",name:"拿到的列表",f:[["purgeStalePartnerMirrors","完整列表，照旧比对","n"],["replaceOwnMirrors","完整列表，照旧比对","n"],["重传判断","完整列表，照旧比对","n"]]}],
+    [{kind:"快照合并",name:"ZoneChangeCachePolicy.merged",free:`<pre>快照 94 条
+ + recordWasChanged   1 条（覆盖或新增）
+ − recordWithIDWasDeleted 0 条
+ = 返回 94 条（整个 zone）</pre>`}],
+    [{kind:"两种删除",name:"现在都能传到对方",free:`<pre>墓碑：记录还在，deletedAt 有值
+  → 作为 recordWasChanged 返回
+真删除（超出共享窗口、30 天到期）
+  → 作为 recordWithIDWasDeleted 返回
+  → 从快照移除 → 下游照旧清掉</pre>`}]],
+ flow:["","合并","返回整份"],
+ refs:["CloudKitPolicies.swift:78 ZoneChangeCachePolicy","SyncCoordinator.swift purgeStalePartnerMirrors","decision 0018"]}
+]},
+{name:"Mac 接力",lanes:lanesMac,steps:[
+{t:"设置接力：一条小雨读不到的记录",
+ n:["同一 Apple ID 的 iPhone 和 Mac 之间，设置靠一条 <code>OwnSettings</code> 记录传递。它放在单独的 zone <code>OwnDevices</code> 里，不挂在分享根下面，所以小雨永远读不到。整份设置编码成 JSON 塞进 <code>payload</code> 字段。","合并按“部分”来：备注名、日历选择、默认可见程度、语言各带自己的修改时间，谁新用谁，打平时保留云端那份；“动态”上次查看时间取较大的。合并结果和云端一样就不写，免得互相推送。日历按“账户名 + 日历名”匹配，同一账户里有两个同名日历就跳过不猜。"],
+ L:[[{kind:"本机",name:"SettingsStore 快照",sub:["备注名 9:00 改过"],f:[["partnerNote.updatedAt","2026-11-24 09:00","c"],["defaultVisibility.updatedAt","2026-11-20 10:00"]]}],
+    [{kind:"CKRecord",ck:true,name:"OwnSettings",sub:["recordName = own-settings","zone OwnDevices（不分享）"],f:[["payload","BYTES，内容见下","c"],["updatedAt",NOW1,"c"]],tagC:"更新"},
+     {kind:"payload",name:"JSON（sortedKeys）",free:`<pre>{
+ "calendars": {"references":[
+   {"sourceTitle":"iCloud","title":"个人"}],
+   "updatedAt": …},
+ "defaultVisibility": {"rawValue":"fullDetails", …},
+ "language": {"rawValue":"zh-Hans", …},
+ "lastSeenActivityAt": …,
+ "partnerNote": {"partnerID":"${PA}",
+   "noteName":"小雨", "avatarOverride":null,
+   "updatedAt": "2026-11-24 09:00"}
+}</pre>`}],
+    [{kind:"本机",name:"采纳结果",f:[["noteName","小雨","c"],["选中的日历","按 (iCloud, 个人) 找到本机 ID","c"]],note:"Mac 第一次打开时看到这条记录，就跳过“保留还是删除 iCloud 数据”的提问。"}]],
+ flow:["写入 ↗","合并","读取"],
+ refs:["OwnSettingsRelayPolicies.swift:69","OwnSettingsRelayPolicies.swift:111","CloudKitRecordMappers.swift:649","SyncCoordinator.swift:707"]},
+{t:"Mac 不上传自己的日程，只读 iPhone 传的",
+ n:["EventKit 的日历 ID、事件 ID 只在读到它的那台设备上有效。Mac 算出来的 mirrorKey 和 iPhone 的不一样，要是也上传，小雨会看到每条日程两份。所以 <code>OwnEventUploadPolicy</code> 规定 Mac 不上传。","Mac 改为从自己私有库读 iPhone 传上去的镜像（<code>fetchOwnEventMirrors</code>），用 <code>replaceOwnMirrors</code> 让本地只保留云端那一份。显示时，Mac 自己 EventKit 画出的日程找不到钥匙，就按“标题 + 开始 + 结束 + 是否全天”找唯一一条云端镜像，借用它的钥匙，评论和红点就对上了。只在 iPhone 上有的日历（比如“我的 iPhone”）的日程，以只读方式显示，也能评论。"],
+ L:[[{kind:"SwiftData",name:"EventMirror",sub:[`id = ${K1}`],f:[["mirrorKey",K1],["title","看电影"]],note:"照常上传。"}],
+    [ckMirror(K1,[["mirrorKey",K1],["title","看电影"],["startDate",T1],["endDate",T1e],["isAllDay","0"]])],
+    [{kind:"显示",name:"Mac 的日历",free:`<pre>EventKit 现读 → mirrorKey = 88C0…:71FE…:${E1}
+本地没有这把钥匙
+matchKey = "看电影|${E1}|1795872600|0"
+唯一匹配 → 借用 ${K1}
+上传自己的日程：否</pre>`}]],
+ flow:["上传 ↗","","只读 ↙"],
+ refs:["SyncPolicies.swift:235","SyncCoordinator.swift:184","SyncCoordinator.swift:757","CalendarDisplayPolicies.swift:235 OwnEventTwinPolicy"]},
+{t:"stableKey：同一条日程在 iPhone 和 Mac 上的共同编号",
+ badge:"PR #72 · 未合并",
+ n:["上一步的“标题 + 时间”认亲有个弱点：只要在 Mac 上改了标题或时间，iPhone 还没重新上传前就对不上了。PR #72 给每条镜像加一个新字段 <code>stableKey</code>，用两台设备都能读到、而且相同的东西算出来。","EventKit 里每条日程有两个 ID。<code>eventIdentifier</code> 前面带着本机的日历账户 ID，iPhone 和 Mac 不一样，现在的 mirrorKey 就是用它拼的。<code>calendarItemExternalIdentifier</code> 是日历服务器给的 iCalendar UID，iCloud 和 Google 都会原样同步到每台设备。stableKey 就从这个 UID 出发：","单次日程直接用 UID；重复日程或被单独改过的那一次，UID 后面加 <code>at:&lt;发生时间&gt;</code>，全天的加 <code>day:年-月-日</code>，这样每一次发生各有一个编号；同一批里撞了号，再加日历名。最后取 SHA-256 的前 16 字节，写成 <code>s1:…</code>。读不到 UID 时写空串，老版本传的记录没有这个字段。","记录名不变，评论仍挂在 mirrorKey 上。stableKey 只是帮 Mac 找到“这是哪一条”：先按 stableKey 找唯一一条云端镜像，找不到（老记录）才退回标题 + 时间。同一个 stableKey 有两条就都不借，宁可不认也不认错。"],
+ L:[[{kind:"EventKit",name:"iPhone 读到的“看电影”",f:[["eventIdentifier","A1F0…:7q3k9d2m"],["calendarItemExternalIdentifier","7q3k9d2m@google.com"],["isRecurring","否"]]},
+     {kind:"算法",name:"EventStableKeyPolicy.base",free:`<pre>单次      UID
+重复/改过 UID + "\\nat:${E1}"
+全天重复  UID + "\\nday:2026-11-28"
+同批撞号  再加 "\\n" + 日历名
+→ "s1:" + SHA-256 前 16 字节</pre>`}],
+    [ckMirror(K1,[["mirrorKey",K1],["title","看电影"],["startDate",T1],["stableKey","s1:8d82f19c6273f6399c79763fbfe0b30e","c"]],{tagC:"新字段"}),
+     {kind:"Schema",name:"EventMirror.stableKey",f:[["类型","STRING · QUERYABLE","c"],["Production","还要部署","x"]],note:"不部署，线上版本存这条记录会失败。"}],
+    [{kind:"EventKit",name:"Mac 读到的“看电影”",f:[["eventIdentifier","5C2B…:7q3k9d2m","x"],["calendarItemExternalIdentifier","7q3k9d2m@google.com"],["stableKey","s1:8d82f19c6273f6399c79763fbfe0b30e","c"]]},
+     {kind:"显示",name:"adoptingPersistedKeys",free:`<pre>本机 mirrorKey 云端没有
+stableKey 一样的云端镜像：1 条
+→ 借用 ${K1}
+（没有 stableKey 的老记录才比标题 + 时间）</pre>`}]],
+ flow:["算出 ↗","","同样算出 ↙"],
+ refs:["decision 0016 stable-key-finds-the-same-record","CalendarSourcePolicies.swift:133 EventStableKeyPolicy（#72）","CalendarDisplayPolicies.swift:248 adoptingPersistedKeys（#72）","CloudKitRecordMappers.swift:394（#72）"]},
+{t:"真机对照：iCloud 和 Google 两边编号一样",
+ badge:"真机实测",
+ plain:true, lanes:["阿力的 iPhone · 启动诊断","逐行比对","阿力的 Mac · 启动诊断"],
+ n:["为了确认 UID 在两台设备上真的一样，#72 加了一个启动诊断，把本机读到的每次发生的 ID 和 stableKey 打到日志里。iPhone 和 Mac 用同一个 Apple ID，各跑一次，逐行比对。","这次测的是没改过的日程：单次、普通重复、全天重复。Exchange 日历还没测；在某一台上单独改过的那一次、挪过时间的重复日程，这次也没覆盖，它们要靠原始发生日期算编号。"],
+ L:[[{kind:"日志",name:"iPhone",f:[["发生次数","34（iCloud 17 + Google 17）"],["externalID","…@google.com 等"],["stableKey","s1:8d82…"],["eventID 前缀","A1F0…","x"]]}],
+    [{kind:"比对",name:"逐行结果",f:[["外部 ID","34 / 34 一样","c"],["stableKey","34 / 34 一样","c"],["eventID","前缀不同（意料之中）","x"]]}],
+    [{kind:"日志",name:"Mac",f:[["发生次数","34（iCloud 17 + Google 17）"],["externalID","…@google.com 等"],["stableKey","s1:8d82…"],["eventID 前缀","5C2B…","x"]]}]],
+ flow:["","",""],
+ call:{cls:"good",h:"Google 也对上了",b:"Mac 和 iPhone 各读到 34 次发生（iCloud 17 + Google 17），每条的外部 ID 和每次发生的 stableKey 两边完全一样，逐行比对过。只有 eventID 前缀不同，那是各自设备的本地账户 ID，在意料之中。所以没改过的单次日程、普通重复日程和全天重复日程，iCloud 和 Google 都能靠 stableKey 认成同一条。"},
+ refs:["LaunchDiagnosticPolicies.swift:188（#72）","decision 0016"]},
+{t:"昵称和头像：后改的赢",
+ n:["自己的昵称头像存在 <code>MemberProfile</code> 记录里，记录名 <code>member-profile:&lt;自己的 ID&gt;</code>，放在分享 zone 里给小雨看。两台设备都会写它，以前会来回覆盖、互相推送。","现在每台设备记着本机最后一次改的时间 <code>currentProfileUpdatedAt</code>。同步时比较：内容一样就不动；云端更新就采纳云端；本机更新才上传。还没有这个时间戳的老安装，一律听云端的，因为那是小雨已经看到的版本。"],
+ L:[[{kind:"本机",name:"昵称",f:[["displayName","阿力"],["currentProfileUpdatedAt","2026-11-23 08:00"]],note:"云端更新 → adoptCloud"}],
+    [{kind:"CKRecord",ck:true,name:"MemberProfile",sub:[`recordName = member-profile:${ME}`,"zone CoupleSpace（分享给小雨）"],f:[["ownerMemberID",ME],["displayName","力力","c","阿力"],["updatedAt","2026-11-24 11:00","c"],["avatarImage / avatarText / avatarBackground","…"]],tagC:"Mac 写的"}],
+    [{kind:"本机",name:"昵称",f:[["displayName","力力","c"],["currentProfileUpdatedAt","2026-11-24 11:00","c"]],note:"本机更新 → upload"}]],
+ flow:["采纳 ↙","","上传 ↗"],
+ refs:["PairingPolicies.swift:122 OwnMemberProfileMergePolicy","SyncCoordinator.swift:736"]},
+{t:"邀请自动撤销，只在见过日程的设备上发生",
+ n:["接受邀请会在系统日历里建一条日程。以前同步发现这条日程不在了，就把邀请改成已撤销。可 Mac 可能从来没有这条日程（iCloud 日历还没同步过来，或者它在“我的 iPhone”日历里），会把一个没人退出的邀请撤销掉。","现在每台设备在本地记一份 <code>invitationIDsWithLocalEventSeen</code>：亲眼见过日程的邀请才进名单。只有名单里的邀请，日程消失才算退出。读不了日历时什么都不判断。"],
+ L:[[{kind:"本机",name:"invitationIDsWithLocalEventSeen",f:[["INV-42","见过日程 ✓","n"]],note:"之后在 iPhone 删掉这条日程 → 撤销"}],
+    [{kind:"CKRecord",ck:true,name:"EventInvitation",sub:["recordName = INV-42"],f:[["statusRawValue","accepted"],["createdLocalEventID","…"],["updatedAt","…"]]}],
+    [{kind:"本机",name:"invitationIDsWithLocalEventSeen",f:[["INV-42","没见过","x"]],note:"日程不在 → 什么都不做"}]],
+ flow:["","",""],
+ refs:["InvitationAndAccessRequestPolicies.swift:653","SyncCoordinator.swift:273"]}
+]}
+];
+
+// flatten
+const STEPS=[]; CH.forEach((c,ci)=>c.steps.forEach((s,si)=>STEPS.push({...s,ci,si,lanes:s.lanes||c.lanes||lanesStd})));
+let cur=0;
+try{const v=parseInt(localStorage.getItem("od-walk-step"),10); if(v>=0&&v<STEPS.length) cur=v;}catch(e){}
+
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function card(c){
+  const cls=["card",c.tomb?"tomb":"",c.ghost?"ghost":""].join(" ");
+  let tag="";
+  if(c.tagN) tag=`<span class="tag n">${c.tagN}</span>`;
+  if(c.tagC) tag=`<span class="tag c">${c.tagC}</span>`;
+  if(c.tagD) tag=`<span class="tag d">${c.tagD}</span>`;
+  let h=`<div class="${cls}"><div class="chead"><div class="top"><span class="kind ${c.ck?"ck":""}">${esc(c.kind)}</span><span class="name">${esc(c.name)}</span>${tag}</div>`;
+  (c.sub||[]).forEach(s=>h+=`<div class="sub">${esc(s)}</div>`);
+  h+=`</div>`;
+  if(c.free) h+=`<div class="free">${c.free}</div>`;
+  if(c.f){
+    h+=`<table class="f">`;
+    c.f.forEach(([k,v,s,old])=>{
+      const st=s?`s-${s}`:"";
+      const ov=(s==="c"||s==="d")&&old!==undefined?`<span class="old">${esc(old)}</span><span class="arrow">→</span>`:"";
+      h+=`<tr class="${st}"><td class="k">${esc(k)}</td><td class="v">${ov}${esc(v)}</td></tr>`;
+    });
+    h+=`</table>`;
+  }
+  if(c.note) h+=`<div class="cnote">${esc(c.note)}</div>`;
+  return h+`</div>`;
+}
+function render(){
+  const s=STEPS[cur];
+  document.getElementById("chapters").innerHTML=CH.map((c,i)=>`<button type="button" data-ch="${i}" aria-current="${i===s.ci}">${i+1}. ${c.name}</button>`).join("");
+  document.getElementById("stepno").textContent=`第 ${cur+1} / ${STEPS.length} 步 · ${CH[s.ci].name}`;
+  document.getElementById("title").textContent=s.t;
+  document.getElementById("badge").innerHTML=s.badge?`<span class="badge">${s.badge}</span>`:"";
+  document.getElementById("narr").innerHTML=s.n.map(p=>`<p>${p}</p>`).join("");
+  document.getElementById("lanes").innerHTML=s.lanes.map((name,i)=>{
+    const cards=s.L[i]||[]; const fl=(s.flow||[])[i]||"";
+    return `<div class="lane ${i===1&&!s.plain?"cloud":""}"><div class="lanehead"><b>${esc(name)}</b>${fl?`<span class="flow on">${esc(fl)}</span>`:""}</div>${cards.length?cards.map(card).join(""):`<div class="empty">这一步这里没有变化</div>`}</div>`;
+  }).join("");
+  document.getElementById("callout").innerHTML=s.call?`<div class="callout ${s.call.cls}"><b>${s.call.h}</b>${s.call.b}</div>`:"";
+  document.getElementById("refs").innerHTML=`<span>代码：</span>`+s.refs.map(r=>`<code>${esc(r)}</code>`).join("");
+  document.getElementById("dots").innerHTML=STEPS.map((x,i)=>`<button type="button" data-i="${i}" class="${i===cur?"cur":""}" aria-label="第 ${i+1} 步：${esc(x.t)}" title="${esc(x.t)}">${i+1}</button>`).join("");
+  document.getElementById("prev").disabled=cur===0;
+  document.getElementById("next").disabled=cur===STEPS.length-1;
+  try{localStorage.setItem("od-walk-step",String(cur));}catch(e){}
+}
+function go(i){cur=Math.max(0,Math.min(STEPS.length-1,i));render();}
+document.getElementById("prev").onclick=()=>go(cur-1);
+document.getElementById("next").onclick=()=>go(cur+1);
+document.getElementById("dots").onclick=e=>{const b=e.target.closest("button[data-i]");if(b)go(+b.dataset.i);};
+document.getElementById("chapters").onclick=e=>{const b=e.target.closest("button[data-ch]");if(b)go(STEPS.findIndex(x=>x.ci===+b.dataset.ch));};
+document.addEventListener("keydown",e=>{if(e.target.closest("input,textarea"))return;if(e.key==="ArrowRight")go(cur+1);if(e.key==="ArrowLeft")go(cur-1);});
+render();
+</script>
+
+</body>
+</html>

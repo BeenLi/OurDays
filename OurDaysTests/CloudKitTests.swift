@@ -952,6 +952,52 @@ final class CloudKitModifyRecordResultValidatorTests: XCTestCase {
 
         XCTAssertNoThrow(try CloudKitModifyRecordResultValidator.validate(results))
     }
+
+    func testAtomicSavePrefersTheFailingRecordOverAtomicFailureBystanders() {
+        // Start Pairing saves the root and its new CKShare atomically. When the share
+        // fails, the root fails too with "Atomic failure", which hid the real reason.
+        let rootID = CKRecord.ID(recordName: "couple-space-root")
+        let shareID = CKRecord.ID(recordName: "share-1")
+        let atomicFailure = NSError(domain: CKError.errorDomain, code: CKError.Code.batchRequestFailed.rawValue)
+        let shareFailure = NSError(domain: CKError.errorDomain, code: CKError.Code.serverRejectedRequest.rawValue)
+        let results: CloudKitModifyRecordResults = (
+            saveResults: [rootID: .failure(atomicFailure), shareID: .failure(shareFailure)],
+            deleteResults: [:]
+        )
+
+        XCTAssertThrowsError(try CloudKitModifyRecordResultValidator.validate(results)) { error in
+            XCTAssertEqual((error as NSError).code, CKError.Code.serverRejectedRequest.rawValue)
+        }
+    }
+}
+
+final class CloudKitPrimaryErrorPolicyTests: XCTestCase {
+    func testUnwrapsPartialFailureToTheNonAtomicItemError() {
+        let atomicFailure = NSError(domain: CKError.errorDomain, code: CKError.Code.batchRequestFailed.rawValue)
+        let quota = NSError(domain: CKError.errorDomain, code: CKError.Code.quotaExceeded.rawValue)
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.partialFailure.rawValue,
+            userInfo: [CKPartialErrorsByItemIDKey: [
+                CKRecord.ID(recordName: "a"): atomicFailure,
+                CKRecord.ID(recordName: "b"): quota
+            ]]
+        )
+
+        XCTAssertEqual((CloudKitPrimaryErrorPolicy.primaryError(error) as NSError).code, CKError.Code.quotaExceeded.rawValue)
+    }
+
+    func testKeepsAtomicFailureWhenNothingElseIsThere() {
+        let atomicFailure = NSError(domain: CKError.errorDomain, code: CKError.Code.batchRequestFailed.rawValue)
+
+        XCTAssertEqual((CloudKitPrimaryErrorPolicy.primaryError(atomicFailure) as NSError).code, CKError.Code.batchRequestFailed.rawValue)
+    }
+
+    func testLeavesOtherErrorsAlone() {
+        let error = NSError(domain: NSCocoaErrorDomain, code: 4)
+
+        XCTAssertTrue((CloudKitPrimaryErrorPolicy.primaryError(error) as NSError) === error)
+    }
 }
 
 final class CloudKitSharingFailureMessageTests: XCTestCase {
@@ -1028,6 +1074,42 @@ final class CloudKitSharingFailureMessageTests: XCTestCase {
         )
 
         XCTAssertTrue(CloudKitSharingFailureMessage.isQuotaExceeded(error))
+    }
+
+    func testPartialFailureShowsTheRealItemReasonInsteadOfAtomicFailure() {
+        let atomicFailure = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.batchRequestFailed.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "Atomic failure"]
+        )
+        let shareFailure = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.serverRejectedRequest.rawValue,
+            userInfo: ["ServerErrorDescription": "Invalid share permission"]
+        )
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.partialFailure.rawValue,
+            userInfo: [CKPartialErrorsByItemIDKey: [
+                CKRecord.ID(recordName: "couple-space-root"): atomicFailure,
+                CKRecord.ID(recordName: "share-1"): shareFailure
+            ]]
+        )
+
+        let message = CloudKitSharingFailureMessage.userFacingMessage(for: error, environment: "Production", language: .english)
+
+        XCTAssertFalse(message.contains("Atomic failure"))
+        XCTAssertTrue(message.hasSuffix("\nCKError 15 · Invalid share permission"))
+    }
+
+    func testOtherCloudKitErrorsCarryCodeForConsoleLookup() {
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.invalidArguments.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "Bad field"]
+        )
+
+        XCTAssertEqual(CloudKitSharingFailureMessage.userFacingMessage(for: error), "Bad field\nCKError 12")
     }
 
     func testUsesLocalizedDescriptionForOtherErrors() {

@@ -176,10 +176,17 @@ final class CloudKitCoupleSpaceService {
 
     let container: CKContainer
     let zoneID: CKRecordZone.ID
+    private let zoneChanges = ZoneChangeFeed()
 
     init(container: CKContainer = CKContainer.default()) {
         self.container = container
         zoneID = CKRecordZone.ID(zoneName: Self.zoneName)
+    }
+
+    /// Lets zone reads continue from what this device already downloaded for this
+    /// iCloud account (`ZoneChangeFeed`). Without it every read downloads the whole zone.
+    func rememberZoneChanges(forAccountID accountID: String) async {
+        await zoneChanges.use(accountID: accountID)
     }
 
     var privateDatabase: CKDatabase { container.privateCloudDatabase }
@@ -598,17 +605,17 @@ final class CloudKitCoupleSpaceService {
 
             for sharedZoneID in zoneIDs {
                 eventMirrorCount += try await fetchRecords(
-                    matching: CKQuery(recordType: EventMirrorRecordMapper.recordType, predicate: NSPredicate(value: true)),
+                    recordType: EventMirrorRecordMapper.recordType,
                     in: sharedZoneID,
                     database: sharedDatabase
                 ).count
                 commentCount += try await fetchRecords(
-                    matching: CKQuery(recordType: CommentRecordMapper.recordType, predicate: NSPredicate(value: true)),
+                    recordType: CommentRecordMapper.recordType,
                     in: sharedZoneID,
                     database: sharedDatabase
                 ).count
                 let invitationRecords = try await fetchRecords(
-                    matching: CKQuery(recordType: InvitationRecordMapper.recordType, predicate: NSPredicate(value: true)),
+                    recordType: InvitationRecordMapper.recordType,
                     in: sharedZoneID,
                     database: sharedDatabase
                 )
@@ -1505,6 +1512,9 @@ final class CloudKitCoupleSpaceService {
             }
             // Best-effort cleanup of the now membership-less zone from the shared cache.
             _ = try? await sharedDatabase.modifyRecordZones(saving: [], deleting: zoneIDs)
+            for zoneID in zoneIDs {
+                await zoneChanges.forget(zoneID: zoneID, database: sharedDatabase)
+            }
             cloudKitSharingInfo("deleteAcceptedSharedZones left shares owners=\(ownerIDSet.sorted().joined(separator: ",")) shares=\(shareRecordIDs.count) zones=\(zoneIDs.count)")
         } catch {
             cloudKitSharingError("deleteAcceptedSharedZones failed owners=\(ownerIDSet.sorted().joined(separator: ",")) error=\(describeCloudKitFailure(error))")
@@ -1702,18 +1712,15 @@ final class CloudKitCoupleSpaceService {
             && CKError.Code(rawValue: nsError.code) == .unknownItem
     }
 
+    /// The zone's records of one type. The zone itself is read once per sync and only
+    /// for what changed since the last read (`ZoneChangeFeed`), whatever the type asked.
     private func fetchRecords(
         recordType: String,
         in zoneID: CKRecordZone.ID,
         database: CKDatabase
     ) async throws -> [CKRecord] {
-        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
-        return try await fetchRecords(
-            matching: query,
-            in: zoneID,
-            database: database,
-            desiredKeys: CloudKitForegroundQueryPolicy.desiredKeys(forRecordType: recordType)
-        )
+        try await zoneChanges.records(in: zoneID, database: database)
+            .filter { $0.recordType == recordType }
     }
 
     private func fetchRecords(
@@ -1754,79 +1761,6 @@ final class CloudKitCoupleSpaceService {
                 }
                 return lhs.zoneID.ownerName < rhs.zoneID.ownerName
             }
-        }
-    }
-
-    private func fetchRecords(
-        matching query: CKQuery,
-        in zoneID: CKRecordZone.ID,
-        database: CKDatabase,
-        desiredKeys: [String]? = nil
-    ) async throws -> [CKRecord] {
-        try await withCheckedThrowingContinuation { continuation in
-            var fetchedRecords: [CKRecord] = []
-            let startedAt = Date()
-            let targetRecordType = query.recordType
-
-            let config = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
-            config.previousServerChangeToken = nil
-            config.desiredKeys = desiredKeys
-
-            let operation = CKFetchRecordZoneChangesOperation(
-                recordZoneIDs: [zoneID],
-                configurationsByRecordZoneID: [zoneID: config]
-            )
-
-            operation.recordWasChangedBlock = { _, result in
-                guard case .success(let record) = result,
-                      record.recordType == targetRecordType else { return }
-                fetchedRecords.append(record)
-            }
-
-            operation.recordZoneChangeTokensUpdatedBlock = { _, _, _ in }
-
-            operation.recordZoneFetchResultBlock = { _, result in
-                if case .failure(let error) = result {
-                    cloudKitSharingError(
-                        "fetchRecords zone error recordType=\(targetRecordType) zone=\(zoneID.zoneName) owner=\(zoneID.ownerName) error=\(describeCloudKitFailure(error))"
-                    )
-                }
-            }
-
-            operation.fetchRecordZoneChangesResultBlock = { result in
-                switch result {
-                case .success:
-                    cloudKitSharingInfo(
-                        String(
-                            format: "fetchRecords recordType=%@ zone=%@ owner=%@ records=%d elapsed=%.3fs desiredKeys=%d",
-                            targetRecordType,
-                            zoneID.zoneName,
-                            zoneID.ownerName,
-                            fetchedRecords.count,
-                            Date().timeIntervalSince(startedAt),
-                            desiredKeys?.count ?? 0
-                        )
-                    )
-                    continuation.resume(returning: fetchedRecords)
-                case .failure(let error):
-                    if CloudKitRecordQueryFailurePolicy.canTreatMissingRecordTypeAsEmpty(
-                        recordType: targetRecordType,
-                        error: error
-                    ) {
-                        cloudKitSharingError(
-                            "fetchRecords missing optional recordType=\(targetRecordType) zone=\(zoneID.zoneName) owner=\(zoneID.ownerName); treating as empty"
-                        )
-                        continuation.resume(returning: [])
-                        return
-                    }
-                    cloudKitSharingError(
-                        "fetchRecords failed recordType=\(targetRecordType) zone=\(zoneID.zoneName) owner=\(zoneID.ownerName) error=\(describeCloudKitFailure(error))"
-                    )
-                    continuation.resume(throwing: error)
-                }
-            }
-
-            database.add(operation)
         }
     }
 

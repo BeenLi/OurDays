@@ -300,6 +300,19 @@ enum CloudKitForegroundQueryPolicy {
             nil
         }
     }
+
+    /// The record types a sync reads. One fetch per zone brings all of them, so the
+    /// zone is asked for the keys of every type at once.
+    static let zoneFetchRecordTypes = [
+        EventMirrorRecordMapper.recordType,
+        InvitationRecordMapper.recordType,
+        CommentRecordMapper.recordType,
+        MemberProfileRecordMapper.recordType
+    ]
+
+    static var zoneFetchDesiredKeys: [String] {
+        Set(zoneFetchRecordTypes.flatMap { desiredKeys(forRecordType: $0) ?? [] }).sorted()
+    }
 }
 
 enum CloudKitRecordQueryFailurePolicy {

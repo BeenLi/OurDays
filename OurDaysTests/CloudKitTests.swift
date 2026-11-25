@@ -1815,3 +1815,261 @@ final class OwnSettingsRecordMapperTests: XCTestCase {
         XCTAssertEqual(try OwnSettingsRecordMapper.encode(decoded), try OwnSettingsRecordMapper.encode(settings))
     }
 }
+
+final class ZoneChangeCachePolicyTests: XCTestCase {
+    private let signature = "sig"
+    private let now = Date(timeIntervalSince1970: 1_000_000)
+
+    private func snapshot(
+        records: [String: Data] = ["a": Data([1]), "b": Data([2])],
+        tokenData: Data? = Data([9]),
+        signature: String = "sig",
+        lastFullFetchAt: Date? = nil
+    ) -> ZoneChangeSnapshot {
+        ZoneChangeSnapshot(
+            signature: signature,
+            tokenData: tokenData,
+            lastFullFetchAt: lastFullFetchAt ?? now,
+            recordDataByName: records
+        )
+    }
+
+    func testWholeDownloadBecomesTheSnapshot() {
+        let merged = ZoneChangeCachePolicy.merged(
+            base: nil,
+            events: [.saved(recordName: "a", data: Data([1])), .saved(recordName: "b", data: Data([2]))],
+            tokenData: Data([7]),
+            signature: signature,
+            now: now
+        )
+
+        XCTAssertEqual(merged.recordDataByName, ["a": Data([1]), "b": Data([2])])
+        XCTAssertEqual(merged.tokenData, Data([7]))
+        XCTAssertEqual(merged.lastFullFetchAt, now)
+        XCTAssertEqual(merged.signature, signature)
+    }
+
+    /// The rule the calendar depends on: a fetch that reports nothing must leave every
+    /// record in place, or the partner's events would be purged as "no longer there".
+    func testRecordsTheFetchDidNotMentionStay() {
+        let base = snapshot()
+
+        let merged = ZoneChangeCachePolicy.merged(
+            base: base,
+            events: [],
+            tokenData: Data([10]),
+            signature: signature,
+            now: now.addingTimeInterval(60)
+        )
+
+        XCTAssertEqual(merged.recordDataByName, base.recordDataByName)
+        XCTAssertEqual(merged.tokenData, Data([10]))
+        XCTAssertEqual(merged.lastFullFetchAt, base.lastFullFetchAt)
+    }
+
+    func testOnlyRecordsTheServerReportsDeletedLeave() {
+        let merged = ZoneChangeCachePolicy.merged(
+            base: snapshot(),
+            events: [.deleted(recordName: "a"), .saved(recordName: "c", data: Data([3]))],
+            tokenData: Data([10]),
+            signature: signature,
+            now: now
+        )
+
+        XCTAssertEqual(merged.recordDataByName, ["b": Data([2]), "c": Data([3])])
+    }
+
+    func testEventsApplyInTheOrderReported() {
+        let merged = ZoneChangeCachePolicy.merged(
+            base: snapshot(),
+            events: [
+                .saved(recordName: "a", data: Data([5])),
+                .deleted(recordName: "b"),
+                .saved(recordName: "b", data: Data([6])),
+                .saved(recordName: "c", data: Data([3])),
+                .deleted(recordName: "c")
+            ],
+            tokenData: Data([10]),
+            signature: signature,
+            now: now
+        )
+
+        XCTAssertEqual(merged.recordDataByName, ["a": Data([5]), "b": Data([6])])
+    }
+
+    func testContinuesFromAFreshMatchingSnapshot() {
+        let base = snapshot()
+        XCTAssertEqual(ZoneChangeCachePolicy.resumable(base, signature: signature, now: now.addingTimeInterval(3_600)), base)
+    }
+
+    func testDownloadsWholeZoneWhenSnapshotCannotBeContinued() {
+        XCTAssertNil(ZoneChangeCachePolicy.resumable(nil, signature: signature, now: now))
+        XCTAssertNil(ZoneChangeCachePolicy.resumable(snapshot(tokenData: nil), signature: signature, now: now))
+        XCTAssertNil(ZoneChangeCachePolicy.resumable(snapshot(signature: "other keys"), signature: signature, now: now))
+
+        var olderFormat = snapshot()
+        olderFormat.format = ZoneChangeSnapshot.currentFormat - 1
+        XCTAssertNil(ZoneChangeCachePolicy.resumable(olderFormat, signature: signature, now: now))
+    }
+
+    func testDownloadsWholeZoneAgainAfterTheRefetchInterval() {
+        let base = snapshot()
+        let justInside = now.addingTimeInterval(ZoneChangeCachePolicy.fullRefetchInterval - 1)
+        let atLimit = now.addingTimeInterval(ZoneChangeCachePolicy.fullRefetchInterval)
+
+        XCTAssertNotNil(ZoneChangeCachePolicy.resumable(base, signature: signature, now: justInside))
+        XCTAssertNil(ZoneChangeCachePolicy.resumable(base, signature: signature, now: atLimit))
+        // A clock set back must not keep a snapshot alive forever.
+        XCTAssertNil(ZoneChangeCachePolicy.resumable(base, signature: signature, now: now.addingTimeInterval(-60)))
+    }
+
+    func testExpiredTokenMeansStartOver() {
+        let expired = NSError(domain: CKError.errorDomain, code: CKError.Code.changeTokenExpired.rawValue)
+        let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace")
+        let partial = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.partialFailure.rawValue,
+            userInfo: [CKPartialErrorsByItemIDKey: [zoneID: expired]]
+        )
+        let network = NSError(domain: CKError.errorDomain, code: CKError.Code.networkUnavailable.rawValue)
+
+        XCTAssertTrue(ZoneChangeCachePolicy.tokenIsUnusable(expired))
+        XCTAssertTrue(ZoneChangeCachePolicy.tokenIsUnusable(partial))
+        XCTAssertFalse(ZoneChangeCachePolicy.tokenIsUnusable(network))
+        XCTAssertFalse(ZoneChangeCachePolicy.tokenIsUnusable(NSError(domain: NSURLErrorDomain, code: CKError.Code.changeTokenExpired.rawValue)))
+    }
+
+    func testEachAccountDatabaseAndZoneHasItsOwnFile() {
+        func name(
+            account: String = "_me",
+            environment: String = "Production",
+            scope: String = "shared",
+            owner: String = "_partner"
+        ) -> String {
+            ZoneChangeCachePolicy.fileName(
+                accountID: account,
+                environment: environment,
+                databaseScope: scope,
+                zoneOwnerName: owner,
+                zoneName: "CoupleSpace"
+            )
+        }
+
+        XCTAssertEqual(name(), "_me.Production.shared._partner.CoupleSpace.plist")
+        XCTAssertEqual(
+            Set([name(), name(account: "_other"), name(environment: "Development"), name(scope: "private"), name(owner: "_ex")]).count,
+            5
+        )
+        XCTAssertEqual(name(owner: "../__defaultOwner__"), "_me.Production.shared.---__defaultOwner__.CoupleSpace.plist")
+    }
+
+    func testOneZoneFetchAsksForTheKeysOfEveryTypeASyncReads() {
+        let keys = Set(CloudKitForegroundQueryPolicy.zoneFetchDesiredKeys)
+        for recordType in [
+            EventMirrorRecordMapper.recordType,
+            InvitationRecordMapper.recordType,
+            CommentRecordMapper.recordType,
+            MemberProfileRecordMapper.recordType,
+            CalendarAccessRequestRecordMapper.transportRecordType
+        ] {
+            XCTAssertTrue(CloudKitForegroundQueryPolicy.zoneFetchRecordTypes.contains(recordType))
+            let typeKeys = CloudKitForegroundQueryPolicy.desiredKeys(forRecordType: recordType) ?? []
+            XCTAssertFalse(typeKeys.isEmpty)
+            XCTAssertTrue(keys.isSuperset(of: typeKeys))
+        }
+    }
+
+    func testSignatureChangesWithWhatIsAskedOfTheServer() {
+        let base = ZoneChangeCachePolicy.signature(recordTypes: ["B", "A"], desiredKeys: ["y", "x"])
+        XCTAssertEqual(base, ZoneChangeCachePolicy.signature(recordTypes: ["A", "B"], desiredKeys: ["x", "y"]))
+        XCTAssertNotEqual(base, ZoneChangeCachePolicy.signature(recordTypes: ["A", "B"], desiredKeys: ["x", "y", "z"]))
+        XCTAssertNotEqual(base, ZoneChangeCachePolicy.signature(recordTypes: ["A"], desiredKeys: ["x", "y"]))
+    }
+}
+
+final class ZoneChangeSnapshotStoreTests: XCTestCase {
+    private var directory: URL!
+
+    override func setUp() {
+        super.setUp()
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZoneChangeSnapshotStoreTests-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: directory)
+        super.tearDown()
+    }
+
+    /// A record read back from the snapshot must map exactly like the one the server sent.
+    func testSnapshotKeepsRecordsReadableAcrossLaunches() throws {
+        let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: "_partner")
+        let mirror = EventMirror(
+            ownerMemberID: "_partner",
+            mirrorKey: "work:event-1:1800",
+            sourceCalendarID: "work",
+            sourceCalendarTitle: "Work",
+            occurrenceStartDate: Date(timeIntervalSince1970: 1_800),
+            startDate: Date(timeIntervalSince1970: 1_800),
+            endDate: Date(timeIntervalSince1970: 3_600),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Shanghai",
+            title: "Planning",
+            location: "Cafe",
+            notes: "Bring notes",
+            urlString: "https://example.com",
+            calendarColorHex: "#3A86FF",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: "mirror-record"
+        )
+        let record = EventMirrorRecordMapper.record(from: mirror, zoneID: zoneID)
+        let data = try NSKeyedArchiver.archivedData(withRootObject: record, requiringSecureCoding: true)
+        let snapshot = ZoneChangeSnapshot(
+            signature: "sig",
+            tokenData: Data([1, 2, 3]),
+            lastFullFetchAt: Date(timeIntervalSince1970: 1_000),
+            recordDataByName: [record.recordID.recordName: data]
+        )
+        let store = ZoneChangeSnapshotStore(directory: directory)
+
+        try store.save(snapshot, fileName: "zone.plist")
+        let loaded = try XCTUnwrap(ZoneChangeSnapshotStore(directory: directory).load(fileName: "zone.plist"))
+
+        XCTAssertEqual(loaded, snapshot)
+        let loadedData = try XCTUnwrap(loaded.recordDataByName["mirror-record"])
+        let loadedRecord = try XCTUnwrap(NSKeyedUnarchiver.unarchivedObject(ofClass: CKRecord.self, from: loadedData))
+        XCTAssertEqual(loadedRecord.recordID, record.recordID)
+        XCTAssertEqual(loadedRecord.recordType, EventMirrorRecordMapper.recordType)
+        let decoded = try EventMirrorRecordMapper.eventMirror(from: loadedRecord)
+        XCTAssertEqual(decoded.mirrorKey, mirror.mirrorKey)
+        XCTAssertEqual(decoded.title, mirror.title)
+        XCTAssertEqual(decoded.startDate, mirror.startDate)
+        XCTAssertEqual(decoded.notes, mirror.notes)
+    }
+
+    func testMissingOrUnreadableFileReadsAsNoSnapshot() throws {
+        let store = ZoneChangeSnapshotStore(directory: directory)
+        XCTAssertNil(store.load(fileName: "zone.plist"))
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("not a plist".utf8).write(to: directory.appendingPathComponent("zone.plist"))
+        XCTAssertNil(store.load(fileName: "zone.plist"))
+    }
+
+    func testRemoveForgetsTheZone() throws {
+        let store = ZoneChangeSnapshotStore(directory: directory)
+        let snapshot = ZoneChangeSnapshot(
+            signature: "sig",
+            tokenData: Data([1]),
+            lastFullFetchAt: Date(timeIntervalSince1970: 1_000),
+            recordDataByName: [:]
+        )
+        try store.save(snapshot, fileName: "zone.plist")
+
+        store.remove(fileName: "zone.plist")
+
+        XCTAssertNil(store.load(fileName: "zone.plist"))
+        store.remove(fileName: "zone.plist")
+    }
+}

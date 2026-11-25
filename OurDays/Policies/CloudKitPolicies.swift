@@ -53,6 +53,113 @@ enum CloudKitZoneReadinessPolicy {
     }
 }
 
+/// What this device knows a zone holds on the server: every record as it was last
+/// fetched (archived `CKRecord`s by record name) and the change token that fetch ended
+/// on. The next fetch asks only for what changed after the token and applies it here, so
+/// the rest of the sync still reads the whole zone, without downloading it again.
+struct ZoneChangeSnapshot: Codable, Equatable {
+    static let currentFormat = 1
+
+    var format = ZoneChangeSnapshot.currentFormat
+    /// What was asked of the server (`ZoneChangeCachePolicy.signature`). A build that
+    /// asks for other keys or record types cannot continue from these records.
+    var signature: String
+    var tokenData: Data?
+    var lastFullFetchAt: Date
+    var recordDataByName: [String: Data]
+}
+
+/// One step of a zone's change feed, in the order the server reported it.
+enum ZoneChangeEvent: Equatable {
+    case saved(recordName: String, data: Data)
+    case deleted(recordName: String)
+}
+
+enum ZoneChangeCachePolicy {
+    /// A snapshot older than this is downloaded whole again. Nothing is known to make a
+    /// snapshot drift from the server; this bounds how long it could last if it did.
+    static let fullRefetchInterval: TimeInterval = 7 * 24 * 60 * 60
+
+    static func signature(recordTypes: [String], desiredKeys: [String]) -> String {
+        "types=" + recordTypes.sorted().joined(separator: ",") + "|keys=" + desiredKeys.sorted().joined(separator: ",")
+    }
+
+    /// One file per account, environment, database and zone: a token only continues the
+    /// exact zone it came from.
+    static func fileName(
+        accountID: String,
+        environment: String,
+        databaseScope: String,
+        zoneOwnerName: String,
+        zoneName: String
+    ) -> String {
+        [accountID, environment, databaseScope, zoneOwnerName, zoneName]
+            .map(sanitized)
+            .joined(separator: ".") + ".plist"
+    }
+
+    private static func sanitized(_ component: String) -> String {
+        String(component.unicodeScalars.map { scalar -> Character in
+            let isSafe = scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar) || scalar == "_")
+            return isSafe ? Character(scalar) : "-"
+        })
+    }
+
+    /// The snapshot to continue from, or nil when the zone must be downloaded whole.
+    static func resumable(_ snapshot: ZoneChangeSnapshot?, signature: String, now: Date) -> ZoneChangeSnapshot? {
+        guard let snapshot,
+              snapshot.format == ZoneChangeSnapshot.currentFormat,
+              snapshot.signature == signature,
+              snapshot.tokenData != nil else { return nil }
+        let age = now.timeIntervalSince(snapshot.lastFullFetchAt)
+        guard age >= 0, age < fullRefetchInterval else { return nil }
+        return snapshot
+    }
+
+    /// `base` nil means the events are a whole download. A record leaves the snapshot
+    /// only when the server says it was deleted; one the fetch did not mention stays.
+    static func merged(
+        base: ZoneChangeSnapshot?,
+        events: [ZoneChangeEvent],
+        tokenData: Data?,
+        signature: String,
+        now: Date
+    ) -> ZoneChangeSnapshot {
+        var snapshot = base ?? ZoneChangeSnapshot(
+            signature: signature,
+            tokenData: nil,
+            lastFullFetchAt: now,
+            recordDataByName: [:]
+        )
+        for event in events {
+            switch event {
+            case .saved(let recordName, let data):
+                snapshot.recordDataByName[recordName] = data
+            case .deleted(let recordName):
+                snapshot.recordDataByName[recordName] = nil
+            }
+        }
+        snapshot.tokenData = tokenData
+        return snapshot
+    }
+
+    /// The server no longer accepts the token (too old, or the zone was deleted and made
+    /// again): forget the snapshot and download the zone whole.
+    static func tokenIsUnusable(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == CKError.errorDomain else { return false }
+        switch CKError.Code(rawValue: nsError.code) {
+        case .changeTokenExpired:
+            return true
+        case .partialFailure:
+            let partialErrors = nsError.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error] ?? [:]
+            return partialErrors.values.contains { tokenIsUnusable($0) }
+        default:
+            return false
+        }
+    }
+}
+
 enum CloudKitShareRootState {
     case existing
     case created

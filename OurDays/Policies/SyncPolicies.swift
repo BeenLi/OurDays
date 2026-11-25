@@ -471,17 +471,25 @@ enum EventTombstonePurgePolicy {
     /// reinstall reconciliation read from my zone (this install has no local rows for
     /// tombstones made before it). A record whose event exists again (`liveKeys`) and a
     /// `deletedAt` in the future (another device's clock) are left alone.
+    ///
+    /// Every device of mine uploads (decision 0017), so each purges only the records it
+    /// looks after: ones it confirmed uploading (`confirmedKeys`), or last written from
+    /// one of its own calendars (`ownCalendarIDs`; EventKit calendar IDs are per device
+    /// and survive a reinstall). A Mac never purges the iPhone's tombstones or the reverse.
     static func expiredTombstones(
         localOwnMirrors: [EventMirror],
         cloudOwnMirrors: [EventMirror]?,
         liveKeys: Set<String>,
-        uploadsOwnEvents: Bool,
+        confirmedKeys: Set<String>,
+        ownCalendarIDs: Set<String>,
         now: Date
     ) -> [EventMirror] {
-        guard uploadsOwnEvents else { return [] }
         var expiredByKey: [String: EventMirror] = [:]
         var keptKeys = liveKeys
         for mirror in localOwnMirrors + (cloudOwnMirrors ?? []) {
+            guard confirmedKeys.contains(mirror.mirrorKey) || ownCalendarIDs.contains(mirror.sourceCalendarID) else {
+                continue
+            }
             guard let deletedAt = mirror.deletedAt,
                   now.timeIntervalSince(deletedAt) >= retention else {
                 // Live, or deleted too recently, in either copy: the record stays.

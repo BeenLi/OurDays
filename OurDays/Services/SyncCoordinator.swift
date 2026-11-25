@@ -681,7 +681,10 @@ struct SyncCoordinator {
                     localOwnMirrors: try localMirrors(ownerMemberID: settings.currentMemberID, modelContext: modelContext),
                     cloudOwnMirrors: cloudOwnMirrors,
                     liveKeys: currentMirrorKeys,
-                    uploadsOwnEvents: uploadsOwnEvents,
+                    confirmedKeys: confirmedKeys,
+                    ownCalendarIDs: calendarAccess.authorizationState().canReadEvents
+                        ? Set(calendarAccess.calendars().map(\.id))
+                        : settings.selectedCalendarIDs,
                     now: syncedAt
                 )
                 if !expiredTombstones.isEmpty {

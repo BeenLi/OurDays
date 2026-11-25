@@ -931,23 +931,36 @@ final class EventTombstonePurgePolicyTests: XCTestCase {
             ],
             cloudOwnMirrors: nil,
             liveKeys: ["live"],
-            uploadsOwnEvents: true,
+            confirmedKeys: [],
+            ownCalendarIDs: ["sharecal"],
             now: now
         )
 
         XCTAssertEqual(expired.map(\.mirrorKey), ["old"])
     }
 
-    func testDeviceThatDoesNotUploadPurgesNothing() {
+    func testDevicePurgesOnlyTheTombstonesItLooksAfter() {
+        // My other device's tombstones (written from its calendars, never confirmed here).
         let expired = EventTombstonePurgePolicy.expiredTombstones(
             localOwnMirrors: [mirror(key: "old", deletedAt: old)],
             cloudOwnMirrors: [mirror(key: "cloud-old", deletedAt: old)],
             liveKeys: [],
-            uploadsOwnEvents: false,
+            confirmedKeys: [],
+            ownCalendarIDs: ["mac-calendar"],
             now: now
         )
-
         XCTAssertTrue(expired.isEmpty)
+
+        // One it uploaded itself, though last written from the other device's calendar.
+        let confirmed = EventTombstonePurgePolicy.expiredTombstones(
+            localOwnMirrors: [mirror(key: "old", deletedAt: old)],
+            cloudOwnMirrors: [mirror(key: "cloud-old", deletedAt: old)],
+            liveKeys: [],
+            confirmedKeys: ["old"],
+            ownCalendarIDs: ["mac-calendar"],
+            now: now
+        )
+        XCTAssertEqual(confirmed.map(\.mirrorKey), ["old"])
     }
 
     func testReinstallSweepsTombstonesFoundInTheCloudOnce() {
@@ -959,7 +972,8 @@ final class EventTombstonePurgePolicyTests: XCTestCase {
                 mirror(key: "cloud-recent", deletedAt: recent)
             ],
             liveKeys: [],
-            uploadsOwnEvents: true,
+            confirmedKeys: [],
+            ownCalendarIDs: ["sharecal"],
             now: now
         )
 
@@ -980,7 +994,8 @@ final class EventTombstonePurgePolicyTests: XCTestCase {
                 mirror(key: "cloud-redeleted", deletedAt: recent)
             ],
             liveKeys: ["back"],
-            uploadsOwnEvents: true,
+            confirmedKeys: [],
+            ownCalendarIDs: ["sharecal"],
             now: now
         )
 

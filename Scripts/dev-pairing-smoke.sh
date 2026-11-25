@@ -6,6 +6,8 @@
 #   - Both simulators booted (the script boots them if needed)
 # Usage: Scripts/dev-pairing-smoke.sh [--skip-build]
 #   SKIP_ICLOUD_PRECHECK=1 skips the cloudd AuthTokenError (2011) precheck.
+#   An expired session is re-signed in automatically by Scripts/sim-icloud-relogin.sh
+#   when that simulator's Apple ID is in the Keychain (AUTO_ICLOUD_RELOGIN=0 disables).
 set -euo pipefail
 
 OWNER_UDID="${OWNER_UDID:-AF9A93BC-6151-4C6D-B5F7-E4F5053351E2}"   # iPhone 17
@@ -189,23 +191,34 @@ xcrun simctl bootstatus "$PARTNER_UDID" -b >/dev/null
 # first and fail fast with a re-login hint instead. The check is skipped when
 # cloudd has no recent activity (fresh boot). SKIP_ICLOUD_PRECHECK=1 bypasses it.
 ICLOUD_PRECHECK_WINDOW="${ICLOUD_PRECHECK_WINDOW:-15m}"
-icloud_precheck() { # icloud_precheck <udid> <label>
-  local udid="$1" label="$2" last
+icloud_precheck() { # icloud_precheck <udid> <label> <role>
+  local udid="$1" label="$2" role="$3" last
   last=$(xcrun simctl spawn "$udid" log show --last "$ICLOUD_PRECHECK_WINDOW" \
            --style compact --predicate 'process == "cloudd"' 2>/dev/null \
          | grep -E 'AuthTokenError|Finished' | tail -1 || true)
   if [ -z "$last" ]; then
     log "$label: no cloudd activity in the last $ICLOUD_PRECHECK_WINDOW, skipping iCloud token check."
   elif printf '%s' "$last" | grep -q AuthTokenError; then
-    fail "$label simulator's iCloud session has expired (cloudd: AuthTokenError 2011). Open Settings on the simulator, sign in to iCloud again, then rerun. Last line: $last"
+    # With the role's Apple ID stored in the Keychain (Scripts/sim-icloud-relogin.sh
+    # store <role>), sign out and back in through Settings automatically.
+    # AUTO_ICLOUD_RELOGIN=0 turns this off.
+    if [ "${AUTO_ICLOUD_RELOGIN:-1}" = "1" ] \
+       && security find-generic-password -s "OurDays smoke simulator iCloud ($role)" >/dev/null 2>&1; then
+      log "$label simulator's iCloud session has expired (cloudd: AuthTokenError 2011); signing it out and back in..."
+      OWNER_UDID="$OWNER_UDID" PARTNER_UDID="$PARTNER_UDID" SIM_ICLOUD_DERIVED="$DERIVED" \
+        "$ROOT_DIR/Scripts/sim-icloud-relogin.sh" "$role" \
+        || fail "$label simulator: automatic iCloud re-login failed (see above). Sign in by hand in Settings, then rerun."
+    else
+      fail "$label simulator's iCloud session has expired (cloudd: AuthTokenError 2011). Run Scripts/sim-icloud-relogin.sh $role (after a one-time 'Scripts/sim-icloud-relogin.sh store $role'), or sign in again in Settings by hand, then rerun. Last line: $last"
+    fi
   else
     log "$label: cloudd completed a CloudKit operation recently, iCloud token looks valid."
   fi
 }
 if [ "${SKIP_ICLOUD_PRECHECK:-0}" != "1" ]; then
   log "Checking simulators' iCloud tokens (cloudd log, last $ICLOUD_PRECHECK_WINDOW)..."
-  icloud_precheck "$OWNER_UDID" "Owner"
-  icloud_precheck "$PARTNER_UDID" "Partner"
+  icloud_precheck "$OWNER_UDID" "Owner" owner
+  icloud_precheck "$PARTNER_UDID" "Partner" partner
 fi
 
 # The app's success markers are info-level Logger lines; without this they are

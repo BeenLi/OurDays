@@ -11,6 +11,7 @@
 		11E1A0020000000000000001 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 11E1A0010000000000000001 /* InfoPlist.xcstrings */; };
 		11A000030000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 11A000040000000000000001 /* Assets.xcassets */; };
 		11A000070000000000000001 /* OurDaysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000080000000000000001 /* OurDaysUITests.swift */; };
+		11A0000E0000000000000099 /* SimulatorICloudSignInTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0000F0000000000000099 /* SimulatorICloudSignInTests.swift */; };
 		11A000490000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A000480000000000000001 /* Models.swift */; };
 		11A0004B0000000000000001 /* EventServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004A0000000000000001 /* EventServices.swift */; };
 		11A0004D0000000000000001 /* CloudKitCoupleSpaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */; };
@@ -111,6 +112,7 @@
 		11E1A0010000000000000001 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		11A000040000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		11A000080000000000000001 /* OurDaysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OurDaysUITests.swift; sourceTree = "<group>"; };
+		11A0000F0000000000000099 /* SimulatorICloudSignInTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorICloudSignInTests.swift; sourceTree = "<group>"; };
 		11A000130000000000000001 /* OurDays.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OurDays.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		11A000140000000000000001 /* OurDaysTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OurDaysTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		11A000150000000000000001 /* OurDaysUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OurDaysUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -246,6 +248,7 @@
 			isa = PBXGroup;
 			children = (
 				11A000080000000000000001 /* OurDaysUITests.swift */,
+				11A0000F0000000000000099 /* SimulatorICloudSignInTests.swift */,
 			);
 			path = OurDaysUITests;
 			sourceTree = "<group>";
@@ -616,6 +619,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				11A000070000000000000001 /* OurDaysUITests.swift in Sources */,
+				11A0000E0000000000000099 /* SimulatorICloudSignInTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -126,3 +126,45 @@ enum EventCommentIndicatorPolicy {
         return mirror.id
     }
 }
+
+/// Deleting a comment. A comment is a soft delete (`deletedAt`) on the comment's own
+/// CloudKit record, which lives in the event owner's zone next to the event. Only the
+/// author may delete it: the author is the one who wrote that record, so the delete goes
+/// to the same zone the comment went to. The tombstone is one-way: once a device has it,
+/// an older cloud copy without it must never bring the comment back.
+enum CommentDeletionPolicy {
+    static func canDelete(_ comment: EventComment, currentMemberID: String) -> Bool {
+        guard comment.deletedAt == nil,
+              let author = MemberIDPolicy.normalized(comment.authorMemberID),
+              let me = MemberIDPolicy.normalized(currentMemberID)
+        else { return false }
+        return author == me
+    }
+
+    /// Import merge: a local delete survives a cloud copy that hasn't caught up yet.
+    static func mergedDeletedAt(local: Date?, incoming: Date?) -> Date? {
+        local ?? incoming
+    }
+
+    /// My deletes whose cloud record still shows the comment (the one-shot upload from
+    /// the swipe failed or never ran). Self-limiting: once the server has `deletedAt`,
+    /// nothing is returned. A comment with no cloud copy never reached the partner, so
+    /// there is nothing to push.
+    static func deletionsNeedingReupload(
+        local: [EventComment],
+        cloud: [EventComment],
+        currentMemberID: String
+    ) -> [EventComment] {
+        let me = MemberIDPolicy.normalized(currentMemberID)
+        let cloudDeletedByID = Dictionary(
+            cloud.map { ($0.id, $0.deletedAt != nil) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return local.filter { comment in
+            comment.deletedAt != nil
+                && me != nil
+                && MemberIDPolicy.normalized(comment.authorMemberID) == me
+                && cloudDeletedByID[comment.id] == false
+        }
+    }
+}

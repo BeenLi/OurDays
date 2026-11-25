@@ -198,7 +198,11 @@ enum ShareCalLaunchDiagnostics {
 
     private static func acceptedInvitation(in modelContext: ModelContext) -> EventInvitation? {
         let all = (try? modelContext.fetch(FetchDescriptor<EventInvitation>())) ?? []
-        return all.first { $0.status == .accepted && $0.archivedAt == nil }
+        // The newest one, the same on both devices: accepted invitations from earlier
+        // runs pile up, and an unordered pick let the two sides open different threads.
+        return all
+            .filter { $0.status == .accepted && $0.archivedAt == nil }
+            .max { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
     }
 
     /// Owner side: create an invitation matching the owner's already-seeded smoke event

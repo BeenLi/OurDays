@@ -34,9 +34,17 @@ DIAG_TIMEOUT="${DIAG_TIMEOUT:-900}"               # invitation/comment diagnosti
 ACCEPT_MAX_ATTEMPTS="${ACCEPT_MAX_ATTEMPTS:-4}"   # total tries per accept (1 + retries)
 ACCEPT_RETRY_BACKOFF="${ACCEPT_RETRY_BACKOFF:-15}" # seconds to wait between attempts
 
-log() { printf '\n\033[1;36m[smoke]\033[0m %s\n' "$*"; }
-# To stderr: steps that only wait (`wait_for_console ... >/dev/null`) must still show why they failed.
-fail() { printf '\n\033[1;31m[smoke FAILED]\033[0m %s\n' "$*" >&2; exit 1; }
+# Every log line carries the time since the script started, so a run's output shows
+# where the minutes went. Both go to stderr: most waits run inside `$(...)`, where a
+# failure message on stdout would be swallowed by the capture.
+elapsed_stamp() { printf '+%dm%02ds' $((SECONDS / 60)) $((SECONDS % 60)); }
+log() { printf '\n\033[1;36m[smoke %s]\033[0m %s\n' "$(elapsed_stamp)" "$*" >&2; }
+fail() { printf '\n\033[1;31m[smoke FAILED %s]\033[0m %s\n' "$(elapsed_stamp)" "$*" >&2; exit 1; }
+
+# A diagnostic that gave up logs one of these and never logs its success marker, so
+# waiting out the full timeout (15 min by default) only delays the failure.
+DIAG_FAILURE_RE='ShareCalDiag [A-Za-z]+ failed|ShareCalDiag acceptInvitation none-pending|ShareCal prepare pairing share probe failed|ShareCal failed to seed calendar event'
+POLL_INTERVAL="${POLL_INTERVAL:-1}"               # seconds between console checks
 
 CONSOLE_DIR="$DERIVED/console"
 mkdir -p "$CONSOLE_DIR" 2>/dev/null || true
@@ -66,15 +74,19 @@ launch_app() { # launch_app <udid> <console-log-name> [args...]
 
 wait_for_console() { # wait_for_console <console-log> <pattern> <timeout-seconds> <description>
   local logfile="$1" pattern="$2" timeout="$3" description="$4"
-  local elapsed=0
-  until [ "$elapsed" -ge "$timeout" ]; do
+  local deadline=$((SECONDS + timeout))
+  until [ "$SECONDS" -ge "$deadline" ]; do
     if grep -qE "$pattern" "$logfile" 2>/dev/null; then
       grep -E "$pattern" "$logfile" | tail -2
       return 0
     fi
-    sleep 5; elapsed=$((elapsed + 5))
+    if grep -qE "$DIAG_FAILURE_RE" "$logfile" 2>/dev/null; then
+      grep -E "$DIAG_FAILURE_RE" "$logfile" | tail -2 >&2
+      fail "the app reported a failure while waiting for: $description (see $logfile)"
+    fi
+    sleep "$POLL_INTERVAL"
   done
-  echo "--- last console lines ($logfile) ---"; tail -5 "$logfile" 2>/dev/null
+  { echo "--- last console lines ($logfile) ---"; tail -5 "$logfile" 2>/dev/null; } >&2
   fail "timed out waiting for: $description"
 }
 
@@ -87,18 +99,20 @@ accept_share_with_retry() { # accept_share_with_retry <udid> <console-log-name> 
   local udid="$1" logname="$2" url="$3" description="$4"
   # Markers that classify a failed accept as a retryable cross-region server hiccup.
   local transient_re='http status code 5[0-9][0-9]|ServerHTTPError|rawValue: 15|15/2001'
+  # The second marker is the share-metadata fetch failing before the accept even starts.
+  local accept_failure_re='acceptShare failed|ShareCal accept share probe failed'
   local attempt=1
   while [ "$attempt" -le "$ACCEPT_MAX_ATTEMPTS" ]; do
     log "Accepting share (attempt $attempt/$ACCEPT_MAX_ATTEMPTS): $description"
     launch_app "$udid" "$logname" -ShareCalAcceptShareURL "$url"
-    local logfile="$CONSOLE_LOG" elapsed=0
-    while [ "$elapsed" -lt "$ACCEPT_TIMEOUT" ]; do
+    local logfile="$CONSOLE_LOG" deadline=$((SECONDS + ACCEPT_TIMEOUT))
+    while [ "$SECONDS" -lt "$deadline" ]; do
       if grep -qE "acceptShare succeeded" "$logfile" 2>/dev/null; then
         grep -E "acceptShare succeeded" "$logfile" | tail -1
         return 0
       fi
-      if grep -qE "acceptShare failed" "$logfile" 2>/dev/null; then
-        local failline; failline="$(grep -E "acceptShare failed" "$logfile" | tail -1)"
+      if grep -qE "$accept_failure_re" "$logfile" 2>/dev/null; then
+        local failline; failline="$(grep -E "$accept_failure_re" "$logfile" | tail -1)"
         if echo "$failline" | grep -qE "$transient_re"; then
           echo "--- transient CloudKit error (will retry) ---"; echo "$failline"
           break # break the poll loop → relaunch and retry
@@ -106,9 +120,9 @@ accept_share_with_retry() { # accept_share_with_retry <udid> <console-log-name> 
         echo "--- non-transient acceptShare failure ---"; echo "$failline"
         fail "share acceptance failed with a non-retryable error: $description"
       fi
-      sleep 5; elapsed=$((elapsed + 5))
+      sleep "$POLL_INTERVAL"
     done
-    if [ "$elapsed" -ge "$ACCEPT_TIMEOUT" ]; then
+    if [ "$SECONDS" -ge "$deadline" ]; then
       echo "--- attempt $attempt produced no success/failure marker in ${ACCEPT_TIMEOUT}s ---"
       tail -5 "$logfile" 2>/dev/null
     fi
@@ -146,14 +160,20 @@ read_default() { # read_default <udid> <key>
 # The project's Debug configuration is LOCAL_SIGNING (CloudKit disabled), so the
 # smoke build overrides entitlements + compilation conditions on the command
 # line to produce a Development-environment CloudKit build.
+# `build-for-testing` also builds the UI-test runner, so the two XCUITest steps below
+# start straight away (`test-without-building`) instead of each re-running the build.
+# With --skip-build nothing is known about the test products, so those steps fall back
+# to a plain `test`, which builds whatever is missing.
+UI_TEST_ACTION="test"
 if [ "${1:-}" != "--skip-build" ]; then
-  log "Building Debug app (Development CloudKit overrides)..."
+  log "Building Debug app and UI tests (Development CloudKit overrides)..."
   xcodebuild -project "$ROOT_DIR/OurDays.xcodeproj" -scheme OurDays \
     -configuration Debug -destination "platform=iOS Simulator,id=$OWNER_UDID" \
     -derivedDataPath "$DERIVED" \
     CODE_SIGN_ENTITLEMENTS=OurDays/App/OurDays.entitlements \
     "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG" \
-    build -quiet
+    build-for-testing -quiet
+  UI_TEST_ACTION="test-without-building"
 fi
 [ -d "$APP_PATH" ] || fail "app not found at $APP_PATH"
 
@@ -275,7 +295,7 @@ echo "Partner memberID=$PARTNER_ID partner=$PARTNER_PARTNER"
 log "Partner: verifying calendar UI renders owner's synced event (XCUITest)..."
 UI_RESULT="$DERIVED/ui-verify.xcresult"
 rm -rf "$UI_RESULT"
-TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
+TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild "$UI_TEST_ACTION" \
   -project "$ROOT_DIR/OurDays.xcodeproj" -scheme OurDays \
   -configuration Debug -destination "platform=iOS Simulator,id=$PARTNER_UDID" \
   -parallel-testing-enabled NO \
@@ -470,7 +490,7 @@ wait_for_console "$CONSOLE_LOG" "ShareCalDiag deleteSeries succeeded title=.* co
 log "Partner: verifying the joint event opens its comment thread on tap (XCUITest)..."
 JOINT_UI_RESULT="$DERIVED/joint-comment-ui.xcresult"
 rm -rf "$JOINT_UI_RESULT"
-TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild test \
+TEST_RUNNER_SHARECAL_SMOKE_UI=1 xcodebuild "$UI_TEST_ACTION" \
   -project "$ROOT_DIR/OurDays.xcodeproj" -scheme OurDays \
   -configuration Debug -destination "platform=iOS Simulator,id=$PARTNER_UDID" \
   -parallel-testing-enabled NO \

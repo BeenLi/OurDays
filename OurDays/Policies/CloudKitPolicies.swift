@@ -3,16 +3,35 @@ import Foundation
 import UIKit
 
 enum CloudKitRootLookupPolicy {
-    static func shouldCreateRootAfterLookupFailure(_ error: Error) -> Bool {
+    static let maxAttempts = 3
+
+    /// Only `unknownItem` means the root isn't there. Anything else (notably
+    /// `serverRejectedRequest`) is a failed read, not an answer.
+    static func meansRecordMissing(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == CKError.errorDomain
+            && CKError.Code(rawValue: nsError.code) == .unknownItem
+    }
+
+    static func isWorthRetrying(_ error: Error) -> Bool {
         let nsError = error as NSError
         guard nsError.domain == CKError.errorDomain else { return false }
-
         switch CKError.Code(rawValue: nsError.code) {
-        case .unknownItem, .serverRejectedRequest:
+        case .serverRejectedRequest, .serviceUnavailable, .requestRateLimited, .zoneBusy, .networkFailure, .networkUnavailable:
             return true
         default:
             return false
         }
+    }
+}
+
+/// CloudKit refuses a single request with more than 400 records (`limitExceeded`);
+/// big first syncs (one mirror per occurrence, years ahead) can pass that.
+enum CloudKitBatchSizePolicy {
+    static let maxRecordsPerRequest = 200
+
+    static func batches<Element>(_ items: [Element], size: Int = maxRecordsPerRequest) -> [[Element]] {
+        stride(from: 0, to: items.count, by: size).map { Array(items[$0..<min($0 + size, items.count)]) }
     }
 }
 
@@ -269,18 +288,68 @@ typealias CloudKitModifyRecordResults = (
 )
 
 enum CloudKitModifyRecordResultValidator {
+    /// Throws the failure that explains the operation. In an atomic save every record
+    /// that was fine fails with `batchRequestFailed` ("Atomic failure") because of the
+    /// one that wasn't, so that record's own error is preferred over the bystanders'.
     static func validate(_ results: CloudKitModifyRecordResults) throws {
+        var failures: [Error] = []
         for result in results.saveResults.values {
-            if case .failure(let error) = result {
-                throw error
-            }
+            if case .failure(let error) = result { failures.append(error) }
         }
-
         for result in results.deleteResults.values {
-            if case .failure(let error) = result {
-                throw error
-            }
+            if case .failure(let error) = result { failures.append(error) }
         }
+        if let error = CloudKitPrimaryErrorPolicy.mostSpecific(failures) {
+            throw error
+        }
+    }
+}
+
+/// Whether a failed "save root + new share" may mean the root got shared elsewhere
+/// between our read and our save (two devices on one Apple ID both tapping Start
+/// Pairing, or a retry while the first request is still running). Then the root's
+/// existing share should be reused instead of showing the error.
+enum CloudKitShareRacePolicy {
+    static func mayHaveLostShareRace(_ error: Error) -> Bool {
+        let nsError = CloudKitPrimaryErrorPolicy.primaryError(error) as NSError
+        guard nsError.domain == CKError.errorDomain else { return false }
+        switch CKError.Code(rawValue: nsError.code) {
+        case .alreadyShared, .serverRecordChanged, .serverRejectedRequest:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+/// Finds the error worth showing inside a CloudKit failure. A `partialFailure` only
+/// wraps per-item errors, and in an atomic operation most of those are
+/// `batchRequestFailed` ("Atomic failure"), which says nothing about why. The real
+/// reason is the item error that isn't one of those.
+enum CloudKitPrimaryErrorPolicy {
+    static func primaryError(_ error: Error) -> Error {
+        let nsError = error as NSError
+        guard nsError.domain == CKError.errorDomain,
+              CKError.Code(rawValue: nsError.code) == .partialFailure,
+              let itemErrors = nsError.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error],
+              !itemErrors.isEmpty else {
+            return error
+        }
+        // Sort by key so the same failure always picks the same item error.
+        let ordered = itemErrors
+            .sorted { "\($0.key)" < "\($1.key)" }
+            .map { primaryError($0.value) }
+        return mostSpecific(ordered) ?? error
+    }
+
+    static func mostSpecific(_ errors: [Error]) -> Error? {
+        errors.first { !isBatchRequestFailed($0) } ?? errors.first
+    }
+
+    static func isBatchRequestFailed(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == CKError.errorDomain
+            && CKError.Code(rawValue: nsError.code) == .batchRequestFailed
     }
 }
 
@@ -341,6 +410,7 @@ enum CloudKitSharingFailureMessage {
         environment: String = CloudKitExpectedConfigurationPolicy.containerEnvironment,
         language: AppLanguage = AppLanguagePreference.read(from: .standard)
     ) -> String {
+        let error = CloudKitPrimaryErrorPolicy.primaryError(error)
         let nsError = error as NSError
         if nsError.domain == CKError.errorDomain,
            CKError.Code(rawValue: nsError.code) == .invalidArguments,
@@ -378,6 +448,12 @@ enum CloudKitSharingFailureMessage {
             // the request id ride along so a user's screenshot is enough to look the
             // request up in CloudKit Console's logs.
             return message + "\n" + serverDetail(for: nsError)
+        }
+
+        // Any other CloudKit failure keeps CloudKit's own text and adds the code and
+        // request id, so a screenshot is enough to find it in CloudKit Console's logs.
+        if nsError.domain == CKError.errorDomain {
+            return error.localizedDescription + "\n" + serverDetail(for: nsError)
         }
 
         return error.localizedDescription

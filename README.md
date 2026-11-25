@@ -98,7 +98,7 @@ App 为四个 Tab 的标准 iOS 结构：
 
 - 第 03 步的"删除"来自 `LocalEventShadow`：它记着每条本地日程上次成功上传时的指纹，消失的日程生成带 `deletedAt` 的墓碑，移出共享时间窗的做硬删除。
 - 第 05 步只上传 shadow 判定有变化的 mirror；根记录和 `MemberProfile` 只在字段真的变了时才保存。CloudKit 的记录只要 `save` 就会触发对方的订阅推送，哪怕没改字段，所以"每次都保存"会让两台手机互相唤醒、耗尽静默推送预算。
-- 第 06 步五路请求同时发，每路都是 change token 置空的 `CKFetchRecordZoneChangesOperation`（按 zone 全量拉、客户端按记录类型过滤、只取 `desiredKeys`）；导入时 `ownerMemberID` 一律覆盖为 zone 的 ownerName。
+- 第 06 步每个 zone 只发一次 `CKFetchRecordZoneChangesOperation`，带上次的 change token，只取变化和删除（`ZoneChangeFeed`）。本机留着每个 zone 的完整快照，变化合进快照后再按记录类型分给各路导入，所以"对方没有这条了"仍是和完整列表比；记录只有服务器报告删除时才离开快照。token 失效、快照满 7 天或换了账号就整个重拉。导入时 `ownerMemberID` 一律覆盖为 zone 的 ownerName。
 - 第 07 步：Tab 里的"接受 / 拒绝 / 批准"是乐观写入、一次性上传，上传失败的决定在这里重传；之后只为四类事件（对方评论我的日程、收到邀请、邀请被回应、历史申请及回复）发本地通知。
 
 ### 同步什么时候触发
@@ -157,6 +157,7 @@ OurDays/
 │   ├── Services/                  动手的一层：I/O、持久化、同步管线；决策都问 Policies
 │   │   ├── SyncCoordinator.swift          foregroundSync：唯一的同步管线；ShareCalBackgroundSyncRunner（推送 / BGAppRefresh 入口）；通知调度
 │   │   ├── CloudKitCoupleSpaceService.swift   全部 CloudKit I/O：zone / root / share / 订阅 / 查询 / 写入
+│   │   ├── ZoneChangeFeed.swift           按 zone 增量拉取：change token + 本机 zone 快照
 │   │   ├── CloudKitRecordMappers.swift    CKRecord ↔ 模型 的纯映射（只写变化字段）、批量 upsert 与查询策略
 │   │   ├── CalendarAccessService.swift    EventKit 访问
 │   │   ├── EventServices.swift            EventMirrorService / InvitationService / CommentService：生成与变更，不含决策

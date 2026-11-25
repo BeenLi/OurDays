@@ -133,6 +133,9 @@ struct SyncCoordinator {
                     timing.mark("memberIDFetchFailed")
                 }
             }
+            if shouldRunCloudKit, let cloudKit, settings.hasSyncedMemberID {
+                await cloudKit.rememberZoneChanges(forAccountID: settings.currentMemberID)
+            }
             // Before the ShareCal fallback below: a new device takes the calendar
             // selection (and the rest) my other devices already made.
             var relayedSettings: (settings: OwnRelayedSettings, calendars: [CalendarDescriptor]?)?

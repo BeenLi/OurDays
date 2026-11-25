@@ -20,6 +20,14 @@ enum ShareCalLaunchDiagnostics {
                 NSLog("%@ purgeSmokeTestData failed: %@", diag, String(describing: error))
             }
         }
+        if ShareCalLaunchDiagnosticPolicy.shouldHardDeleteOwnTombstones(arguments: arguments) {
+            do {
+                let records = try await services.cloudKit.hardDeleteOwnTombstonesForSmoke()
+                NSLog("%@ hardDeleteOwnTombstones succeeded records=%d", diag, records)
+            } catch {
+                NSLog("%@ hardDeleteOwnTombstones failed: %@", diag, String(describing: error))
+            }
+        }
         #endif
 
         if ShareCalLaunchDiagnosticPolicy.shouldSeedCalendarEvent(arguments: arguments) {

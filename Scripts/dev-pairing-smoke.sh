@@ -582,6 +582,45 @@ echo "$PARTNER_INVITES2" | grep -q "$WITHDRAW_ID:canceled" \
   || fail "partner still does NOT see the withdrawn invitation as canceled. Probe: $PARTNER_INVITES2"
 log "Partner sees the withdrawn invitation as canceled ✓"
 
+# ---------- 11b. Incremental read: real record deletions reach the partner ----------
+# Everything above travels as changed records (a deleted event or comment is a
+# `deletedAt` write). Here the owner hard-deletes its tombstoned event records, so the
+# partner's next read gets record DELETIONS in a delta. It must drop exactly those and
+# keep every other event: the partner's list shrinks by the number deleted, not to zero.
+shared_mirror_count() { # shared_mirror_count <console-log>: the last sync's imported partner records
+  grep -E "cloudSharedMirrorsFetched count=" "$1" 2>/dev/null | tail -1 | sed -n 's/.*cloudSharedMirrorsFetched count=\([0-9]*\).*/\1/p'
+}
+log "Partner: syncing to count the owner's event records before the deletion..."
+launch_app "$PARTNER_UDID" "partner-predelete" -ShareCalForceSync
+wait_for_console "$CONSOLE_LOG" "foregroundSync finished" $SYNC_TIMEOUT "partner pre-deletion sync" >/dev/null
+MIRRORS_BEFORE=$(shared_mirror_count "$CONSOLE_LOG")
+[ -n "$MIRRORS_BEFORE" ] || fail "could not read the partner's count of owner events before the deletion"
+xcrun simctl terminate "$PARTNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
+
+log "Owner: hard-deleting its tombstoned event records from the cloud..."
+launch_app "$OWNER_UDID" "owner-hard-delete" -ShareCalHardDeleteOwnTombstones
+HARD_DELETE=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag hardDeleteOwnTombstones succeeded records=[1-9]" $DIAG_TIMEOUT \
+  "owner hard-deletes tombstoned event records (at least one)")
+log "Owner: ${HARD_DELETE##*hardDeleteOwnTombstones succeeded }"
+
+log "Partner: syncing (the delta must carry the deletions and nothing else may go)..."
+launch_app "$PARTNER_UDID" "partner-postdelete" -ShareCalForceSync
+DELETION_LINE=$(wait_for_console "$CONSOLE_LOG" "fetchZoneChanges .*scope=shared mode=delta .* deleted=[1-9]" $SYNC_TIMEOUT \
+  "partner's incremental read reports the deleted records")
+MIRRORS_DELETED=$(echo "$DELETION_LINE" | sed -n 's/.* deleted=\([0-9]*\) .*/\1/p' | tail -1)
+MIRRORS_EXPECTED=$((MIRRORS_BEFORE - MIRRORS_DELETED))
+[ "$MIRRORS_EXPECTED" -ge 1 ] \
+  || fail "the deletion left the partner no owner events to keep (before=$MIRRORS_BEFORE deleted=$MIRRORS_DELETED); the step cannot prove the rest survives"
+MIRRORS_AFTER=""
+for _ in $(seq 1 60); do
+  MIRRORS_AFTER=$(shared_mirror_count "$CONSOLE_LOG")
+  [ "$MIRRORS_AFTER" = "$MIRRORS_EXPECTED" ] && break
+  sleep 1
+done
+[ "$MIRRORS_AFTER" = "$MIRRORS_EXPECTED" ] \
+  || fail "after $MIRRORS_DELETED deletions the partner holds $MIRRORS_AFTER owner events, expected $MIRRORS_EXPECTED (before=$MIRRORS_BEFORE)"
+log "Partner dropped the $MIRRORS_DELETED deleted records and kept the other $MIRRORS_AFTER ✓"
+
 # ---------- 12. Delete & reinstall: the owner recovers everything from iCloud ----------
 # A user who deletes the app loses only the local cache + UserDefaults; every paired record
 # survives in CloudKit. This proves the 「发现旧的 iCloud 数据 → 继续使用」 path (run through
@@ -630,6 +669,12 @@ grep -qE "cloudOwnMirrorsReconciled cloud=[1-9][0-9]* tombstones=[1-9]" "$CONSOL
   || fail "the reinstall did not tombstone the event deleted while the app was gone (ghost event). Console: $(grep -E 'cloudOwnMirrorsReconciled|saveMirrorsForSync' "$CONSOLE_LOG" | tail -3)"
 log "Owner recovered pairing, nickname, partner events, comments and invitations from iCloud, and tombstoned the ghost event ✓"
 xcrun simctl terminate "$OWNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
+# UserDefaults reach the plist a moment after the app is gone; the recovery is quick
+# enough now that reading at once can see the file before that write.
+for _ in $(seq 1 30); do
+  [ "$(read_default "$OWNER_UDID" partnerShareOwnerID)" = "$PARTNER_ID" ] && break
+  sleep 1
+done
 [ "$(read_default "$OWNER_UDID" partnerShareOwnerID)" = "$PARTNER_ID" ] || fail "recovered partnerShareOwnerID was not persisted"
 
 xcrun simctl terminate "$OWNER_UDID" "$BUNDLE_ID" 2>/dev/null || true

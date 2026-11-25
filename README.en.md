@@ -98,7 +98,7 @@ A few details worth knowing:
 
 - The "deletes" in step 03 come from `LocalEventShadow`: it remembers each local event's fingerprint from its last successful upload; events that disappeared become tombstones with `deletedAt`, and events that left the shared time window are hard-deleted.
 - Step 05 uploads only mirrors the shadow marks as changed; the root record and `MemberProfile` are saved only when a field really changed. Any CloudKit `save` triggers the partner's subscription push even with no field changes, so "save every time" would make the two phones wake each other up and drain the silent push budget.
-- Step 06 sends five requests at once, each a `CKFetchRecordZoneChangesOperation` with a nil change token (full fetch per zone, client-side filtering by record type, only `desiredKeys`); on import, `ownerMemberID` is always overwritten with the zone's ownerName.
+- Step 06 sends one `CKFetchRecordZoneChangesOperation` per zone with the previous change token, so only changes and deletions come back (`ZoneChangeFeed`). The device keeps a full snapshot of each zone, merges the changes into it and then hands the records to each import by record type, so "the partner no longer has this" is still a comparison against the full list; a record leaves the snapshot only when the server reports its deletion. An expired token, a snapshot older than 7 days or another account means a whole download. On import, `ownerMemberID` is always overwritten with the zone's ownerName.
 - Step 07: accept / decline / approve in the tabs are optimistic, one-shot uploads, and failed decisions are retried here; then local notifications go out only for the four event kinds (partner comments on my event, invitation received, invitation answered, history request and reply).
 
 ### When sync runs
@@ -157,6 +157,7 @@ OurDays/
 │   ├── Services/                  The layer that acts: I/O, persistence, sync pipeline; every decision is asked of Policies
 │   │   ├── SyncCoordinator.swift          foregroundSync: the only sync pipeline; ShareCalBackgroundSyncRunner (push / BGAppRefresh entry); notification scheduling
 │   │   ├── CloudKitCoupleSpaceService.swift   All CloudKit I/O: zone / root / share / subscriptions / queries / writes
+│   │   ├── ZoneChangeFeed.swift           Incremental fetch per zone: change token + local zone snapshot
 │   │   ├── CloudKitRecordMappers.swift    Pure CKRecord ↔ model mapping (writes changed fields only), batch upsert and query strategy
 │   │   ├── CalendarAccessService.swift    EventKit access
 │   │   ├── EventServices.swift            EventMirrorService / InvitationService / CommentService: creation and mutation, no decisions

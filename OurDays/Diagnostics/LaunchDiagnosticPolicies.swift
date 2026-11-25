@@ -81,6 +81,11 @@ enum ShareCalLaunchDiagnosticPolicy {
     /// invitation record from MY private zone and the leftover smoke events from the
     /// ShareCal calendar. DEBUG builds only; run it on both simulators before pairing.
     static let purgeSmokeTestDataArgument = "-ShareCalPurgeSmokeTestData"
+    /// Smoke only: deletes every already-deleted event (tombstone) record from MY private
+    /// zone right now, without waiting out the 30 days. It is the one way the script can
+    /// make the server report real record deletions, which the partner's incremental
+    /// read must apply without losing anything else. DEBUG builds only.
+    static let hardDeleteOwnTombstonesArgument = "-ShareCalHardDeleteOwnTombstones"
     /// Titles the smoke script gives its throwaway events (`<prefix><random number>`). A
     /// run that fails halfway never reaches its own cleanup, so the purge removes them.
     static let leftoverSmokeEventTitlePrefixes = ["Own Comment Event ", "Series Comment Event "]
@@ -189,6 +194,10 @@ enum ShareCalLaunchDiagnosticPolicy {
 
     static func shouldPurgeSmokeTestData(arguments: [String]) -> Bool {
         arguments.contains(purgeSmokeTestDataArgument)
+    }
+
+    static func shouldHardDeleteOwnTombstones(arguments: [String]) -> Bool {
+        arguments.contains(hardDeleteOwnTombstonesArgument)
     }
 
     /// Only the script's numbered throwaway titles: the shared smoke event and anything a

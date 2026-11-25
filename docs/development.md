@@ -180,6 +180,11 @@ Implementation notes (hard-won):
   (DEBUG builds only): it deletes every comment and invitation record in that account's
   own private zone and the throwaway events (`Own Comment Event <n>`,
   `Series Comment Event <n>`) a failed run left in the `ShareCal` calendar.
+- A deleted event or comment is a `deletedAt` write, so it reaches the partner as a
+  changed record. Step 11b launches the owner with `-ShareCalHardDeleteOwnTombstones`
+  (DEBUG builds only) to delete its tombstoned event records for real, then checks that
+  the partner's incremental read reports those deletions and still holds every other
+  event of the owner.
 - App console logs land in `build/dev-smoke/console/*.log` for debugging.
 - Every `[smoke +MmSSs]` line carries the time since the script started. A passing
   run is about 10 minutes after the build; most of it is the ~20 app launches that

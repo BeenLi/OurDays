@@ -44,7 +44,9 @@
 		11B6B154FD1A43E9790D6C73 /* ShareCalStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B762A754D40721B13B3DD2 /* ShareCalStrings.swift */; };
 		11B3445DF1B17D597C2CFD20 /* ShareCalStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B762A754D40721B13B3DD2 /* ShareCalStrings.swift */; };
 		11B5F0C2B6888FBDB41F97D6 /* CloudKitRecordMappers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BFDB621FAA860BAFF077AB /* CloudKitRecordMappers.swift */; };
+		11B5F0C2B6888FBDB41F97D7 /* ZoneChangeFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BFDB621FAA860BAFF077AC /* ZoneChangeFeed.swift */; };
 		11BC28727AB01F162814F3DA /* CloudKitRecordMappers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BFDB621FAA860BAFF077AB /* CloudKitRecordMappers.swift */; };
+		11BC28727AB01F162814F3DB /* ZoneChangeFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BFDB621FAA860BAFF077AC /* ZoneChangeFeed.swift */; };
 		11B43AA9CEB30327D45FDBE3 /* ActivityAndNotificationPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BF234CC3F75163D1BB230D /* ActivityAndNotificationPolicies.swift */; };
 		11B5D9DBCE5A379DE6ECF48F /* ActivityAndNotificationPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BF234CC3F75163D1BB230D /* ActivityAndNotificationPolicies.swift */; };
 		11B466CC831D5D9E01B6420D /* CalendarDisplayPolicies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BAAB5D97FEB71F0922BC71 /* CalendarDisplayPolicies.swift */; };
@@ -143,6 +145,7 @@
 		11B609B2901DF1E7CD1180F5 /* WeekAgendaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekAgendaView.swift; sourceTree = "<group>"; };
 		11B762A754D40721B13B3DD2 /* ShareCalStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCalStrings.swift; sourceTree = "<group>"; };
 		11BFDB621FAA860BAFF077AB /* CloudKitRecordMappers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitRecordMappers.swift; sourceTree = "<group>"; };
+		11BFDB621FAA860BAFF077AC /* ZoneChangeFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneChangeFeed.swift; sourceTree = "<group>"; };
 		11BF234CC3F75163D1BB230D /* ActivityAndNotificationPolicies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityAndNotificationPolicies.swift; sourceTree = "<group>"; };
 		11BAAB5D97FEB71F0922BC71 /* CalendarDisplayPolicies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarDisplayPolicies.swift; sourceTree = "<group>"; };
 		11BF080607A724B79E56FC6E /* CalendarNavigationPolicies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarNavigationPolicies.swift; sourceTree = "<group>"; };
@@ -337,6 +340,7 @@
 				11B276FF0E19D22E500E7DAC /* SyncCoordinator.swift */,
 				11A0004C0000000000000001 /* CloudKitCoupleSpaceService.swift */,
 				11BFDB621FAA860BAFF077AB /* CloudKitRecordMappers.swift */,
+				11BFDB621FAA860BAFF077AC /* ZoneChangeFeed.swift */,
 				11A0004E0000000000000001 /* CalendarAccessService.swift */,
 				11A0004A0000000000000001 /* EventServices.swift */,
 				11B21571EFF6DB73CEAAB6D5 /* SettingsStore.swift */,
@@ -525,6 +529,7 @@
 				11B4C6330A93F81F6255C98E /* CloudKitPolicies.swift in Sources */,
 				11B6B154FD1A43E9790D6C73 /* ShareCalStrings.swift in Sources */,
 				11B5F0C2B6888FBDB41F97D6 /* CloudKitRecordMappers.swift in Sources */,
+				11B5F0C2B6888FBDB41F97D7 /* ZoneChangeFeed.swift in Sources */,
 				11B43AA9CEB30327D45FDBE3 /* ActivityAndNotificationPolicies.swift in Sources */,
 				11B466CC831D5D9E01B6420D /* CalendarDisplayPolicies.swift in Sources */,
 				11BB9329D944249BBD42B60E /* CalendarNavigationPolicies.swift in Sources */,
@@ -587,6 +592,7 @@
 				11BD07CF824F0D8ED6966B77 /* SyncTests.swift in Sources */,
 				11B3445DF1B17D597C2CFD20 /* ShareCalStrings.swift in Sources */,
 				11BC28727AB01F162814F3DA /* CloudKitRecordMappers.swift in Sources */,
+				11BC28727AB01F162814F3DB /* ZoneChangeFeed.swift in Sources */,
 				11B5D9DBCE5A379DE6ECF48F /* ActivityAndNotificationPolicies.swift in Sources */,
 				11BA481A8FB73857312658C9 /* CalendarDisplayPolicies.swift in Sources */,
 				11B58C85CDF113501F448FE6 /* CalendarNavigationPolicies.swift in Sources */,

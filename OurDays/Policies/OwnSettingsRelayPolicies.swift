@@ -36,12 +36,23 @@ struct OwnRelayedSettings: Codable, Equatable {
         let updatedAt: Date
     }
 
+    /// The day the pairing with `partnerID` began, as the device that saw it begin
+    /// recorded it (a date recovered from the share root is never relayed).
+    struct Pairing: Codable, Equatable {
+        let partnerID: String
+        let date: Date
+    }
+
     var partnerNote: PartnerNote?
     var calendars: Calendars?
     var defaultVisibility: Value?
     var language: Value?
     /// When the 动态 tab was last opened on any device; the later one wins.
     var lastSeenActivityAt: Date?
+    var pairing: Pairing?
+    /// When one of my devices last unpaired or switched partner; a pairing that began
+    /// before that day is over and no longer relayed. The later one wins.
+    var pairingClearedAt: Date?
 
     static let empty = OwnRelayedSettings()
 }
@@ -58,14 +69,26 @@ enum OwnSettingsRelayClock {
 enum OwnSettingsRelayMergePolicy {
     /// Part by part, the newer edit wins; on a tie the cloud copy is kept, so two devices
     /// holding the same settings never write each other back.
-    static func merge(local: OwnRelayedSettings, cloud: OwnRelayedSettings?) -> OwnRelayedSettings {
+    static func merge(
+        local: OwnRelayedSettings,
+        cloud: OwnRelayedSettings?,
+        calendar: Calendar = .current
+    ) -> OwnRelayedSettings {
         guard let cloud else { return local }
+        let clearedAt = [local.pairingClearedAt, cloud.pairingClearedAt].compactMap { $0 }.max()
         return OwnRelayedSettings(
             partnerNote: newer(local.partnerNote, cloud.partnerNote, \.updatedAt),
             calendars: newer(local.calendars, cloud.calendars, \.updatedAt),
             defaultVisibility: newer(local.defaultVisibility, cloud.defaultVisibility, \.updatedAt),
             language: newer(local.language, cloud.language, \.updatedAt),
-            lastSeenActivityAt: [local.lastSeenActivityAt, cloud.lastSeenActivityAt].compactMap { $0 }.max()
+            lastSeenActivityAt: [local.lastSeenActivityAt, cloud.lastSeenActivityAt].compactMap { $0 }.max(),
+            pairing: PairingDateRelayPolicy.merge(
+                local.pairing,
+                cloud.pairing,
+                clearedAt: clearedAt,
+                calendar: calendar
+            ),
+            pairingClearedAt: clearedAt
         )
     }
 
@@ -153,6 +176,55 @@ enum OwnSettingsRelayAdoptionPolicy {
     ) -> Set<String>? {
         let ids = CalendarSelectionRelayPolicy.localIDs(for: Set(relayed.references), calendars: calendars)
         return ids.isEmpty ? nil : ids
+    }
+}
+
+/// The pairing day follows the user to their other devices (decision 0014). A device
+/// that joins later can't know it: the first sync there would count from today, and the
+/// share root's creation date (used after a reinstall) is the day the invitation was
+/// made, which can be days before the partner accepted.
+enum PairingDateRelayPolicy {
+    /// Same partner: the earliest day any device saw wins, because a device that joined
+    /// later records the day it first synced. Different partners: the newer pairing.
+    /// A pairing that began before the last unpair is dropped.
+    static func merge(
+        _ local: OwnRelayedSettings.Pairing?,
+        _ cloud: OwnRelayedSettings.Pairing?,
+        clearedAt: Date?,
+        calendar: Calendar = .current
+    ) -> OwnRelayedSettings.Pairing? {
+        let live = [local, cloud].compactMap { $0 }.filter { isLive($0, clearedAt: clearedAt, calendar: calendar) }
+        guard let first = live.first else { return nil }
+        guard live.count == 2 else { return first }
+        let (a, b) = (live[0], live[1])
+        if MemberIDPolicy.normalized(a.partnerID) == MemberIDPolicy.normalized(b.partnerID) {
+            return a.date <= b.date ? a : b
+        }
+        return a.date >= b.date ? a : b
+    }
+
+    static func isLive(_ pairing: OwnRelayedSettings.Pairing, clearedAt: Date?, calendar: Calendar = .current) -> Bool {
+        guard let clearedAt else { return true }
+        return pairing.date >= calendar.startOfDay(for: clearedAt)
+    }
+
+    /// Whether this device takes the relayed day: only for the current partner, and
+    /// only over a day this device didn't see itself (none, recovered from the share
+    /// root, or from before the last unpair) or a later one.
+    static func adoptsPairingDate(
+        _ relayed: OwnRelayedSettings.Pairing,
+        currentPartnerID: String?,
+        localDate: Date?,
+        localDateIsRecovered: Bool,
+        clearedAt: Date?,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let currentPartnerID = MemberIDPolicy.normalized(currentPartnerID),
+              MemberIDPolicy.normalized(relayed.partnerID) == currentPartnerID,
+              isLive(relayed, clearedAt: clearedAt, calendar: calendar) else { return false }
+        guard let localDate, !localDateIsRecovered else { return true }
+        if let clearedAt, localDate < calendar.startOfDay(for: clearedAt) { return true }
+        return relayed.date < localDate
     }
 }
 

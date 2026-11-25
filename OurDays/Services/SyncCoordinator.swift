@@ -455,7 +455,7 @@ struct SyncCoordinator {
 
                 async let accessRequestsTask = cloudKit.fetchCalendarAccessRequests(sharedZoneIDs: activeSharedZoneIDs)
                 async let sharedMirrorsTask = cloudKit.fetchSharedEventMirrors(sharedZoneIDs: activeSharedZoneIDs)
-                async let commentsTask = cloudKit.fetchEventComments(sharedZoneIDs: activeSharedZoneIDs)
+                async let commentsTask = cloudKit.fetchEventCommentsByZone(sharedZoneIDs: activeSharedZoneIDs)
                 async let invitationsTask = cloudKit.fetchEventInvitations(sharedZoneIDs: activeSharedZoneIDs)
                 async let memberProfilesTask = cloudKit.fetchMemberProfiles(sharedZoneIDs: activeSharedZoneIDs)
                 if !uploadsOwnEvents {
@@ -514,7 +514,8 @@ struct SyncCoordinator {
                     )
                 }
                 try upsert(mirrors: importableSharedMirrors, modelContext: modelContext)
-                let fetchedComments = try await commentsTask
+                let fetchedCommentsByZone = try await commentsTask
+                let fetchedComments = fetchedCommentsByZone.flatMap(\.comments)
                 let cloudComments = PartnerScopedDataPolicy.scoped(
                     fetchedComments,
                     currentMemberID: settings.currentMemberID,
@@ -580,6 +581,25 @@ struct SyncCoordinator {
                     try? modelContext.save()
                 }
                 timing.mark("cloudInvitationCreationsReuploaded count=\(creationsToReupload.count)")
+
+                // Same self-heal for comment deletes: the swipe uploads `deletedAt` once;
+                // if the cloud copy still shows the comment, push the delete again to the
+                // zone the comment was read from.
+                let localCommentsForReupload = try modelContext.fetch(FetchDescriptor<EventComment>())
+                let deletionsToReupload = CommentDeletionPolicy.deletionsNeedingReupload(
+                    local: localCommentsForReupload,
+                    cloud: cloudComments,
+                    currentMemberID: settings.currentMemberID
+                )
+                let commentZoneByID = Dictionary(
+                    fetchedCommentsByZone.flatMap { zone in zone.comments.map { ($0.id, zone.zoneID) } },
+                    uniquingKeysWith: { first, _ in first }
+                )
+                for comment in deletionsToReupload {
+                    guard let zoneID = commentZoneByID[comment.id] else { continue }
+                    try await cloudKit.saveCommentForSync(comment, inFetchedZone: zoneID)
+                }
+                timing.mark("cloudCommentDeletionsReuploaded count=\(deletionsToReupload.count)")
             } else if !settings.iCloudSharingEnabled {
                 settings.partnerShareOwnerID = nil
                 settings.partnerSyncedDisplayName = nil
@@ -756,7 +776,10 @@ struct SyncCoordinator {
                 existing.body = comment.body
                 existing.createdAt = comment.createdAt
                 existing.editedAt = comment.editedAt
-                existing.deletedAt = comment.deletedAt
+                existing.deletedAt = CommentDeletionPolicy.mergedDeletedAt(
+                    local: existing.deletedAt,
+                    incoming: comment.deletedAt
+                )
                 existing.isRead = comment.isRead
                 existing.cloudKitRecordName = comment.cloudKitRecordName
             } else {

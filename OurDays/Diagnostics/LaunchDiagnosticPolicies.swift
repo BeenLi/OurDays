@@ -47,6 +47,10 @@ enum ShareCalLaunchDiagnosticPolicy {
     /// Either side: sync, then log the comment thread of the event titled by
     /// `-ShareCalEventCommentTitle` as `eventComments title=… count=N bodies=[…]`.
     static let probeEventCommentsArgument = "-ShareCalProbeEventComments"
+    /// Either side: delete my comment with this body on the event titled by
+    /// `-ShareCalEventCommentTitle`, the way the swipe does (author check, soft delete,
+    /// upload to the comment's zone), then sync.
+    static let deleteEventCommentArgument = "-ShareCalDeleteEventComment"
     /// Reinstall smoke: delete the ShareCal events with this title from the system calendar
     /// WITHOUT syncing (the automatic launch sync is throttled right after a sync), so the
     /// next install has to discover the deletion from its own cloud mirrors.
@@ -137,6 +141,10 @@ enum ShareCalLaunchDiagnosticPolicy {
 
     static func eventCommentBody(arguments: [String]) -> String? {
         value(after: addEventCommentArgument, arguments: arguments)
+    }
+
+    static func deleteEventCommentBody(arguments: [String]) -> String? {
+        value(after: deleteEventCommentArgument, arguments: arguments)
     }
 
     static func eventCommentTitle(arguments: [String]) -> String {

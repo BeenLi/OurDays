@@ -1,4 +1,5 @@
 import XCTest
+import CloudKit
 
 final class EventCommentAnchorPolicyTests: XCTestCase {
     func testInvitationAnchorUsesInvitationIdAndCreatorForSymmetricRouting() {
@@ -335,5 +336,77 @@ final class CommentServiceTests: XCTestCase {
 
         service.delete(comment)
         XCTAssertNotNil(comment.deletedAt)
+    }
+}
+
+final class CommentDeletionPolicyTests: XCTestCase {
+    private func comment(id: String, author: String, deletedAt: Date? = nil) -> EventComment {
+        EventComment(
+            id: id,
+            eventMirrorID: "mirror-1",
+            authorMemberID: author,
+            body: "hi",
+            createdAt: Date(timeIntervalSince1970: 0),
+            deletedAt: deletedAt
+        )
+    }
+
+    func testOnlyTheAuthorCanDeleteALiveComment() {
+        XCTAssertTrue(CommentDeletionPolicy.canDelete(comment(id: "c1", author: "_me"), currentMemberID: "_me"))
+        // The partner's comment on my event lives in my zone, but it is theirs to delete.
+        XCTAssertFalse(CommentDeletionPolicy.canDelete(comment(id: "c2", author: "_partner"), currentMemberID: "_me"))
+        XCTAssertFalse(
+            CommentDeletionPolicy.canDelete(
+                comment(id: "c3", author: "_me", deletedAt: Date(timeIntervalSince1970: 5)),
+                currentMemberID: "_me"
+            )
+        )
+        XCTAssertFalse(CommentDeletionPolicy.canDelete(comment(id: "c4", author: " "), currentMemberID: " "))
+    }
+
+    func testLocalDeleteSurvivesACloudCopyThatHasNotCaughtUp() {
+        let deletedAt = Date(timeIntervalSince1970: 10)
+        // The bug: import overwrote the local delete with the cloud's nil, so it came back.
+        XCTAssertEqual(CommentDeletionPolicy.mergedDeletedAt(local: deletedAt, incoming: nil), deletedAt)
+        // A delete made on the other side (or my other device) arrives through import.
+        XCTAssertEqual(CommentDeletionPolicy.mergedDeletedAt(local: nil, incoming: deletedAt), deletedAt)
+        XCTAssertNil(CommentDeletionPolicy.mergedDeletedAt(local: nil, incoming: nil))
+    }
+
+    func testReuploadsOnlyMyDeletesTheCloudStillShows() {
+        let deletedAt = Date(timeIntervalSince1970: 10)
+        let local = [
+            comment(id: "mine-pending", author: "_me", deletedAt: deletedAt),
+            comment(id: "mine-landed", author: "_me", deletedAt: deletedAt),
+            comment(id: "mine-never-uploaded", author: "_me", deletedAt: deletedAt),
+            comment(id: "mine-live", author: "_me"),
+            comment(id: "theirs-deleted", author: "_partner", deletedAt: deletedAt),
+        ]
+        let cloud = [
+            comment(id: "mine-pending", author: "_me"),
+            comment(id: "mine-landed", author: "_me", deletedAt: deletedAt),
+            comment(id: "mine-live", author: "_me"),
+            comment(id: "theirs-deleted", author: "_partner"),
+        ]
+
+        let ids = CommentDeletionPolicy.deletionsNeedingReupload(
+            local: local,
+            cloud: cloud,
+            currentMemberID: "_me"
+        ).map(\.id)
+
+        XCTAssertEqual(ids, ["mine-pending"])
+    }
+
+    func testDeletedCommentRecordCarriesDeletedAt() throws {
+        let deletedAt = Date(timeIntervalSince1970: 10)
+        let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: CKCurrentUserDefaultName)
+        let record = CommentRecordMapper.record(
+            from: comment(id: "c1", author: "_me", deletedAt: deletedAt),
+            zoneID: zoneID
+        )
+        let roundTripped = try CommentRecordMapper.comment(from: record)
+        XCTAssertEqual(roundTripped.deletedAt, deletedAt)
+        XCTAssertEqual(roundTripped.id, "c1")
     }
 }

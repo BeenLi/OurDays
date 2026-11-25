@@ -1106,6 +1106,14 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
+    /// Write an existing comment back to the zone it was fetched from (see
+    /// `fetchEventCommentsByZone`): my private zone, or the partner's shared zone.
+    @MainActor
+    func saveCommentForSync(_ comment: EventComment, inFetchedZone targetZoneID: CKRecordZone.ID) async throws {
+        let database = targetZoneID == zoneID ? privateDatabase : sharedDatabase
+        try await saveCommentsForSync([comment], in: targetZoneID, database: database)
+    }
+
     @MainActor
     private func saveInvitationsForSync(
         _ invitations: [EventInvitation],
@@ -1524,21 +1532,29 @@ final class CloudKitCoupleSpaceService {
     }
 
     func fetchEventComments(sharedZoneIDs: [CKRecordZone.ID]) async throws -> [EventComment] {
+        try await fetchEventCommentsByZone(sharedZoneIDs: sharedZoneIDs).flatMap(\.comments)
+    }
+
+    /// Comments grouped by the zone they were read from (my private zone first), so a
+    /// later write to an existing comment (a delete re-upload) goes back to that zone.
+    func fetchEventCommentsByZone(
+        sharedZoneIDs: [CKRecordZone.ID]
+    ) async throws -> [(zoneID: CKRecordZone.ID, comments: [EventComment])] {
         async let privateRecords = fetchRecords(
             recordType: CommentRecordMapper.recordType,
             in: zoneID,
             database: privateDatabase
         )
-        async let sharedRecords = fetchRecords(
+        async let sharedRecordsByZone = fetchRecordsByZone(
             recordType: CommentRecordMapper.recordType,
             in: sharedZoneIDs,
             database: sharedDatabase
         )
-        let records = try await privateRecords + sharedRecords
+        let recordsByZone = try await [(zoneID: zoneID, records: privateRecords)] + sharedRecordsByZone
 
-        cloudKitSharingInfo("fetchEventComments fetched records=\(records.count)")
-        return try records.map {
-            try CommentRecordMapper.comment(from: $0)
+        cloudKitSharingInfo("fetchEventComments fetched records=\(recordsByZone.reduce(0) { $0 + $1.records.count })")
+        return try recordsByZone.map { zone in
+            (zoneID: zone.zoneID, comments: try zone.records.map { try CommentRecordMapper.comment(from: $0) })
         }
     }
 

@@ -31,11 +31,12 @@ struct EventCommentsSection: View {
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 .swipeActions {
-                    Button(role: .destructive) {
-                        services.commentService.delete(comment)
-                        try? modelContext.save()
-                    } label: {
-                        Label(strings.deleteButton, systemImage: "trash")
+                    if CommentDeletionPolicy.canDelete(comment, currentMemberID: settings.currentMemberID) {
+                        Button(role: .destructive) {
+                            deleteComment(comment)
+                        } label: {
+                            Label(strings.deleteButton, systemImage: "trash")
+                        }
                     }
                 }
             }
@@ -90,6 +91,36 @@ struct EventCommentsSection: View {
             selfFallback: settings.strings.meTitle,
             partnerDisplayName: settings.partnerStatusDisplayName
         )
+    }
+
+    /// Soft-deletes my comment locally, then writes `deletedAt` to the same zone the
+    /// comment was saved to, so it disappears for the partner too. If this upload fails,
+    /// the next sync pushes it again (`CommentDeletionPolicy.deletionsNeedingReupload`).
+    private func deleteComment(_ comment: EventComment) {
+        services.commentService.delete(comment)
+        do {
+            try modelContext.save()
+            commentError = nil
+        } catch {
+            commentError = error.localizedDescription
+            return
+        }
+        let anchor = anchor
+        let currentMemberID = settings.currentMemberID
+        if let cloudKit = services.cloudKitIfAvailable {
+            Task {
+                do {
+                    try await cloudKit.saveCommentForSync(
+                        comment,
+                        eventOwnerMemberID: anchor.ownerMemberID,
+                        currentMemberID: currentMemberID,
+                        eventRecordName: anchor.recordName
+                    )
+                } catch {
+                    commentError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+                }
+            }
+        }
     }
 
     private func addComment() {

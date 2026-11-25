@@ -12,6 +12,9 @@ struct EventCommentsSection: View {
     @Query(sort: \EventComment.createdAt) private var comments: [EventComment]
     @State private var commentBody = ""
     @State private var commentError: String?
+    /// My comment being edited in the composer; nil while composing a new one.
+    @State private var editingComment: EventComment?
+    @FocusState private var isComposerFocused: Bool
     let anchor: EventCommentAnchor
 
     private var threadComments: [EventComment] {
@@ -25,7 +28,8 @@ struct EventCommentsSection: View {
                 EventCommentBubble(
                     comment: comment,
                     isMine: comment.authorMemberID == settings.currentMemberID,
-                    authorName: authorDisplayName(comment.authorMemberID)
+                    authorName: authorDisplayName(comment.authorMemberID),
+                    editedMark: comment.editedAt == nil ? nil : strings.commentEditedMark
                 )
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
@@ -38,11 +42,47 @@ struct EventCommentsSection: View {
                             Label(strings.deleteButton, systemImage: "trash")
                         }
                     }
+                    if CommentEditPolicy.canEdit(comment, currentMemberID: settings.currentMemberID) {
+                        Button {
+                            startEditing(comment)
+                        } label: {
+                            Label(strings.editButton, systemImage: "pencil")
+                        }
+                        .tint(OurDaysTheme.secondaryInk)
+                    }
                 }
+            }
+
+            if let editingComment {
+                HStack(spacing: 8) {
+                    Image(systemName: "pencil")
+                        .font(.caption.weight(.semibold))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(strings.editingCommentTitle)
+                            .font(.caption.weight(.semibold))
+                        Text(editingComment.body)
+                            .font(.caption)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    Button {
+                        cancelEditing()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.body)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(strings.cancelButton)
+                }
+                .foregroundStyle(OurDaysTheme.secondaryInk)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 0, trailing: 20))
             }
 
             HStack(spacing: 10) {
                 TextField(strings.addCommentPlaceholder, text: $commentBody, axis: .vertical)
+                    .focused($isComposerFocused)
                     .lineLimit(1...4)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 11)
@@ -52,18 +92,22 @@ struct EventCommentsSection: View {
                             .stroke(OurDaysTheme.border, lineWidth: 1)
                     )
                 Button {
-                    addComment()
+                    if let editingComment {
+                        saveEdit(editingComment)
+                    } else {
+                        addComment()
+                    }
                 } label: {
-                    Image(systemName: "arrow.up")
+                    Image(systemName: editingComment == nil ? "arrow.up" : "checkmark")
                         .font(.headline)
                         .foregroundStyle(OurDaysTheme.onInkFill)
                         .frame(width: 44, height: 44)
                         .background(OurDaysTheme.inkFill, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .disabled(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .opacity(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 1)
-                .accessibilityLabel(strings.addCommentPlaceholder)
+                .disabled(!canSend)
+                .opacity(canSend ? 1 : 0.35)
+                .accessibilityLabel(editingComment == nil ? strings.addCommentPlaceholder : strings.saveButton)
             }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
@@ -83,6 +127,13 @@ struct EventCommentsSection: View {
         }
     }
 
+    private var canSend: Bool {
+        if let editingComment {
+            return CommentEditPolicy.editedBody(original: editingComment.body, draft: commentBody) != nil
+        }
+        return !commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func authorDisplayName(_ authorMemberID: String) -> String {
         MemberDisplayNamePolicy.displayName(
             forMemberID: authorMemberID,
@@ -97,6 +148,9 @@ struct EventCommentsSection: View {
     /// comment was saved to, so it disappears for the partner too. If this upload fails,
     /// the next sync pushes it again (`CommentDeletionPolicy.deletionsNeedingReupload`).
     private func deleteComment(_ comment: EventComment) {
+        if editingComment?.id == comment.id {
+            cancelEditing()
+        }
         services.commentService.delete(comment)
         do {
             try modelContext.save()
@@ -105,6 +159,54 @@ struct EventCommentsSection: View {
             commentError = error.localizedDescription
             return
         }
+        let anchor = anchor
+        let currentMemberID = settings.currentMemberID
+        if let cloudKit = services.cloudKitIfAvailable {
+            Task {
+                do {
+                    try await cloudKit.saveCommentForSync(
+                        comment,
+                        eventOwnerMemberID: anchor.ownerMemberID,
+                        currentMemberID: currentMemberID,
+                        eventRecordName: anchor.recordName
+                    )
+                } catch {
+                    commentError = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+                }
+            }
+        }
+    }
+
+    private func startEditing(_ comment: EventComment) {
+        editingComment = comment
+        commentBody = comment.body
+        commentError = nil
+        isComposerFocused = true
+    }
+
+    private func cancelEditing() {
+        editingComment = nil
+        commentBody = ""
+    }
+
+    /// Saves the new body locally (`editedAt` set), then writes it to the same zone the
+    /// comment lives in, like the delete. If this upload fails, the next sync pushes it
+    /// again (`CommentEditPolicy.editsNeedingReupload`), and the import keeps the local
+    /// body until the cloud has it.
+    private func saveEdit(_ comment: EventComment) {
+        guard CommentEditPolicy.canEdit(comment, currentMemberID: settings.currentMemberID),
+              let newBody = CommentEditPolicy.editedBody(original: comment.body, draft: commentBody)
+        else { return }
+        services.commentService.edit(comment, body: newBody)
+        do {
+            try modelContext.save()
+            commentError = nil
+        } catch {
+            commentError = error.localizedDescription
+            return
+        }
+        cancelEditing()
+        isComposerFocused = false
         let anchor = anchor
         let currentMemberID = settings.currentMemberID
         if let cloudKit = services.cloudKitIfAvailable {
@@ -164,6 +266,14 @@ struct EventCommentBubble: View {
     let comment: EventComment
     let isMine: Bool
     let authorName: String
+    /// "Edited" when the author changed the body after sending; nil otherwise.
+    var editedMark: String?
+
+    private var caption: String {
+        let time = comment.createdAt.formatted(date: .omitted, time: .shortened)
+        guard let editedMark else { return "\(authorName) · \(time)" }
+        return "\(authorName) · \(time) · \(editedMark)"
+    }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
@@ -190,7 +300,7 @@ struct EventCommentBubble: View {
                         )
                     )
                     .textSelection(.enabled)
-                Text("\(authorName) · \(comment.createdAt.formatted(date: .omitted, time: .shortened))")
+                Text(caption)
                     .font(.caption2)
                     .foregroundStyle(OurDaysTheme.secondaryInk)
                     .padding(.horizontal, 6)

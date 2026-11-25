@@ -210,6 +210,7 @@ enum CloudKitMirrorSyncPolicy {
             && lhs.visibilityRawValue == rhs.visibilityRawValue
             && lhs.deletedAt == rhs.deletedAt
             && lhs.cloudKitRecordName == rhs.cloudKitRecordName
+            && lhs.stableKey == rhs.stableKey
     }
 }
 
@@ -232,9 +233,221 @@ enum CloudKitMirrorSyncPolicy {
 /// display) and its new events reach the partner through iCloud Calendar and the
 /// iPhone (pairing-sync-integrity decision 0010). The delay is until the iPhone app
 /// next syncs: EventKit changes don't wake it.
+/// Every device of mine uploads its own events (decision 0017). The iPhone always could;
+/// a Mac, whose EventKit identifiers differ from the iPhone's, uploads by first finding the
+/// iPhone's record for the same event (`OwnRecordAdoptionPolicy`).
 enum OwnEventUploadPolicy {
-    static func uploadsOwnEvents(isRunningOnMac: Bool) -> Bool {
-        !isRunningOnMac
+    /// How long a Mac's last upload makes the iPhone look for the Mac's records.
+    static let macActivityLifetime: TimeInterval = 45 * 24 * 3_600
+    /// The Mac restamps its relayed upload time at most this often (every write pushes
+    /// my other devices).
+    static let macActivityRestampInterval: TimeInterval = 24 * 3_600
+
+    /// A Mac starts records of its own only once every live record in my zone carries a
+    /// stable key: an iPhone still on an older version writes records without one, and
+    /// the Mac would then upload the same events a second time.
+    static func mayStartNewRecords(isRunningOnMac: Bool, cloudOwnMirrors: [EventMirror]?) -> Bool {
+        guard isRunningOnMac else { return true }
+        guard let cloudOwnMirrors else { return false }
+        return !cloudOwnMirrors.contains { $0.deletedAt == nil && $0.stableKey == nil }
+    }
+
+    /// Whether the iPhone asks the cloud for records a Mac made before starting new ones.
+    /// Only when a Mac uploaded lately: otherwise there is nothing to find and the query
+    /// would only slow the sync.
+    static func looksUpNewEventsInCloud(isRunningOnMac: Bool, macUploadsOwnEventsAt: Date?, now: Date) -> Bool {
+        guard !isRunningOnMac, let macUploadsOwnEventsAt else { return false }
+        return now.timeIntervalSince(macUploadsOwnEventsAt) < macActivityLifetime
+    }
+
+    /// The Mac's relayed upload time after this sync: unchanged while still fresh.
+    static func macActivityStamp(previous: Date?, now: Date) -> Date {
+        if let previous, now.timeIntervalSince(previous) < macActivityRestampInterval, previous <= now {
+            return previous
+        }
+        return OwnSettingsRelayClock.stamp(now)
+    }
+}
+
+/// Which record each of my events uses when another device of mine may have uploaded it
+/// already. The record name is the event's identity (comments hang on it) and is never
+/// derived on this device alone once another device knows the event: the stable key
+/// (`EventStableKeyPolicy`) finds that device's record, and this device takes its name.
+///
+/// - An event this device has not confirmed in the cloud yet (no uploaded shadow) takes
+///   the live record with its stable key if there is one. With only a deleted record
+///   (my other device deleted the event and this calendar hasn't caught up), it is held:
+///   neither uploaded nor kept, so the deletion isn't undone.
+/// - With no record anywhere it starts a new one, if it may (`mayStartNewRecords`); a
+///   Mac's new record names start with `mac:`. Otherwise it is held.
+/// - When two devices started a record for the same event at once, the device that sees
+///   my whole zone moves to the one that wins (not a Mac's, then the smaller name) and
+///   its own is deleted through the usual tombstone. An iPhone never needs to: its
+///   record wins over the Mac's.
+/// - Two events here with one stable key, an empty key, or a record another event here
+///   already uses: nothing is adopted.
+enum OwnRecordAdoptionPolicy {
+    static let macRecordPrefix = "mac:"
+
+    struct Result: Equatable {
+        /// `[derived key: record name]` for every event whose name isn't its derived key.
+        var keptKeys: [String: String]
+        /// Record names of events that are neither uploaded nor kept this sync, nor counted
+        /// as gone.
+        var heldKeys: Set<String>
+        /// Record names taken from another device's live record this sync: the cloud copy
+        /// stands until the event changes here.
+        var adoptedKeys: Set<String>
+    }
+
+    /// - `confirmedKeys`: live shadows this device has seen through to the cloud;
+    ///   `confirmedTombstoneKeys`: the deletions it uploaded itself. With a read of the
+    ///   whole zone, a key counts as confirmed only if its record is really there: a
+    ///   stamp alone (say, from a sync that saw no events at all) proves nothing.
+    /// - `ownCalendarIDs`: this device's calendars. A Mac yields to records written
+    ///   from another device's calendars.
+    static func resolve(
+        events: [CalendarSourceEvent],
+        stableKeys: [String: String],
+        keptKeys: [String: String],
+        confirmedKeys: Set<String>,
+        confirmedTombstoneKeys: Set<String> = [],
+        cloudOwnMirrors: [EventMirror],
+        cloudCoversWholeZone: Bool,
+        mayStartNewRecords: Bool,
+        isRunningOnMac: Bool,
+        ownCalendarIDs: Set<String> = []
+    ) -> Result {
+        let derivedKeys = events.map { EventMirrorKeyPolicy.makeMirrorKey(for: $0) }
+        let currentKeys = derivedKeys.map { keptKeys[$0] ?? $0 }
+        let eventStableKeys = derivedKeys.map { stableKeys[$0] ?? "" }
+        var stableKeyCounts: [String: Int] = [:]
+        for key in eventStableKeys where !key.isEmpty {
+            stableKeyCounts[key, default: 0] += 1
+        }
+        let cloudByStableKey = Dictionary(
+            grouping: cloudOwnMirrors.filter { !($0.stableKey ?? "").isEmpty },
+            by: { $0.stableKey ?? "" }
+        )
+        let cloudKeys = Set(cloudOwnMirrors.map(\.mirrorKey))
+        let writtenHere = isRunningOnMac
+            ? Set(cloudOwnMirrors.filter { ownCalendarIDs.contains($0.sourceCalendarID) }.map(\.mirrorKey))
+            : []
+
+        enum Proposal { case keep, adopt(String, fromCloud: Bool), hold }
+        var proposals: [Proposal] = []
+        for index in events.indices {
+            let current = currentKeys[index]
+            let stableKey = eventStableKeys[index]
+            let unique = !stableKey.isEmpty && stableKeyCounts[stableKey] == 1
+            let records = unique ? (cloudByStableKey[stableKey] ?? []) : []
+            let live = records.filter { $0.deletedAt == nil }.map(\.mirrorKey)
+            let winner = preferred(live, demoted: writtenHere)
+            let isConfirmed = confirmedKeys.contains(current) && (!cloudCoversWholeZone || cloudKeys.contains(current))
+            if isConfirmed {
+                if cloudCoversWholeZone, let winner, winner != current {
+                    proposals.append(.adopt(winner, fromCloud: false))
+                } else {
+                    proposals.append(.keep)
+                }
+                continue
+            }
+            if let winner {
+                proposals.append(winner == current ? .keep : .adopt(winner, fromCloud: true))
+            } else if confirmedTombstoneKeys.contains(current), records.contains(where: { $0.mirrorKey == current }) {
+                // This device deleted it itself and the event is back: revive its record.
+                proposals.append(.keep)
+            } else if !records.isEmpty || !mayStartNewRecords {
+                proposals.append(.hold)
+            } else if isRunningOnMac, !current.hasPrefix(macRecordPrefix) {
+                proposals.append(.adopt(macRecordPrefix + current, fromCloud: false))
+            } else {
+                proposals.append(.keep)
+            }
+        }
+
+        // A record name stands for one event: an adoption that would share one is dropped.
+        var claims: [String: Int] = [:]
+        for (index, proposal) in proposals.enumerated() {
+            switch proposal {
+            case .keep: claims[currentKeys[index], default: 0] += 1
+            case .adopt(let key, _): claims[key, default: 0] += 1
+            case .hold: break
+            }
+        }
+        var result = Result(keptKeys: keptKeys, heldKeys: [], adoptedKeys: [])
+        for (index, proposal) in proposals.enumerated() {
+            let derived = derivedKeys[index]
+            let current = currentKeys[index]
+            switch proposal {
+            case .keep:
+                continue
+            case .hold:
+                result.heldKeys.insert(current)
+            case .adopt(let key, let fromCloud):
+                guard claims[key] == 1 else {
+                    if !confirmedKeys.contains(current) && !mayStartNewRecords {
+                        result.heldKeys.insert(current)
+                    }
+                    continue
+                }
+                result.keptKeys[derived] = key
+                if fromCloud { result.adoptedKeys.insert(key) }
+            }
+        }
+        return result
+    }
+
+    /// Among live records for one event: an iPhone's before a Mac's (a `mac:` name, or on
+    /// a Mac one written from its own calendars: `demoted`), then the smaller name.
+    static func preferred(_ keys: [String], demoted: Set<String> = []) -> String? {
+        keys.min { lhs, rhs in
+            let lhsLate = lhs.hasPrefix(macRecordPrefix) || demoted.contains(lhs)
+            let rhsLate = rhs.hasPrefix(macRecordPrefix) || demoted.contains(rhs)
+            if lhsLate != rhsLate { return !lhsLate }
+            return lhs < rhs
+        }
+    }
+}
+
+/// Of the mirrors a sync would upload, the ones the cloud already holds as they are.
+/// Without a look at the cloud everything goes, as before.
+enum OwnRecordUploadFilterPolicy {
+    static func uploads(
+        _ candidates: [EventMirror],
+        cloudByKey: [String: EventMirror]?,
+        adoptedKeys: Set<String>
+    ) -> [EventMirror] {
+        guard let cloudByKey else { return candidates }
+        return candidates.filter { mirror in
+            let cloud = cloudByKey[mirror.mirrorKey]
+            if mirror.deletedAt != nil {
+                return cloud?.deletedAt == nil
+            }
+            if let cloud, hasSameContent(mirror, as: cloud) { return false }
+            // First seen here this sync: my other device's copy stands until the event
+            // changes here (this calendar may simply not have caught up yet).
+            return !adoptedKeys.contains(mirror.mirrorKey)
+        }
+    }
+
+    /// Everything the partner sees; the calendar ID is this device's own.
+    static func hasSameContent(_ lhs: EventMirror, as rhs: EventMirror) -> Bool {
+        lhs.mirrorKey == rhs.mirrorKey
+            && lhs.sourceCalendarTitle == rhs.sourceCalendarTitle
+            && lhs.occurrenceStartDate == rhs.occurrenceStartDate
+            && lhs.startDate == rhs.startDate
+            && lhs.endDate == rhs.endDate
+            && lhs.isAllDay == rhs.isAllDay
+            && lhs.timeZoneIdentifier == rhs.timeZoneIdentifier
+            && lhs.title == rhs.title
+            && lhs.location == rhs.location
+            && lhs.notes == rhs.notes
+            && lhs.urlString == rhs.urlString
+            && lhs.calendarColorHex == rhs.calendarColorHex
+            && lhs.visibilityRawValue == rhs.visibilityRawValue
+            && (lhs.deletedAt == nil) == (rhs.deletedAt == nil)
+            && lhs.stableKey == rhs.stableKey
     }
 }
 
@@ -247,6 +460,13 @@ enum OwnMirrorReconciliationPolicy {
     /// current member ID is authoritative for the user's own zone.
     static func ownedMirrors(_ mirrors: [EventMirror], currentMemberID: String) -> [EventMirror] {
         CloudKitSharedDatabaseImportPolicy.identifiedMirrors(mirrors, sharedOwnerID: currentMemberID)
+    }
+
+    /// What a Mac keeps as its own mirrors: the ones it made this sync, and for every other
+    /// record in my zone (calendars only my iPhone has, events held back) the cloud copy.
+    static func persistedOwnMirrors(generated: [EventMirror], cloud: [EventMirror]) -> [EventMirror] {
+        let generatedKeys = Set(generated.map(\.mirrorKey))
+        return generated + cloud.filter { !generatedKeys.contains($0.mirrorKey) }
     }
 }
 
@@ -269,17 +489,25 @@ enum EventTombstonePurgePolicy {
     /// reinstall reconciliation read from my zone (this install has no local rows for
     /// tombstones made before it). A record whose event exists again (`liveKeys`) and a
     /// `deletedAt` in the future (another device's clock) are left alone.
+    ///
+    /// Every device of mine uploads (decision 0017), so each purges only the records it
+    /// looks after: ones it confirmed uploading (`confirmedKeys`), or last written from
+    /// one of its own calendars (`ownCalendarIDs`; EventKit calendar IDs are per device
+    /// and survive a reinstall). A Mac never purges the iPhone's tombstones or the reverse.
     static func expiredTombstones(
         localOwnMirrors: [EventMirror],
         cloudOwnMirrors: [EventMirror]?,
         liveKeys: Set<String>,
-        uploadsOwnEvents: Bool,
+        confirmedKeys: Set<String>,
+        ownCalendarIDs: Set<String>,
         now: Date
     ) -> [EventMirror] {
-        guard uploadsOwnEvents else { return [] }
         var expiredByKey: [String: EventMirror] = [:]
         var keptKeys = liveKeys
         for mirror in localOwnMirrors + (cloudOwnMirrors ?? []) {
+            guard confirmedKeys.contains(mirror.mirrorKey) || ownCalendarIDs.contains(mirror.sourceCalendarID) else {
+                continue
+            }
             guard let deletedAt = mirror.deletedAt,
                   now.timeIntervalSince(deletedAt) >= retention else {
                 // Live, or deleted too recently, in either copy: the record stays.

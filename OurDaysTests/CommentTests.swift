@@ -410,3 +410,115 @@ final class CommentDeletionPolicyTests: XCTestCase {
         XCTAssertEqual(roundTripped.id, "c1")
     }
 }
+
+final class CommentEditPolicyTests: XCTestCase {
+    private func comment(
+        id: String,
+        author: String,
+        body: String = "hi",
+        editedAt: Date? = nil,
+        deletedAt: Date? = nil
+    ) -> EventComment {
+        EventComment(
+            id: id,
+            eventMirrorID: "mirror-1",
+            authorMemberID: author,
+            body: body,
+            createdAt: Date(timeIntervalSince1970: 0),
+            editedAt: editedAt,
+            deletedAt: deletedAt
+        )
+    }
+
+    func testOnlyTheAuthorCanEditALiveComment() {
+        XCTAssertTrue(CommentEditPolicy.canEdit(comment(id: "c1", author: "_me"), currentMemberID: "_me"))
+        XCTAssertFalse(CommentEditPolicy.canEdit(comment(id: "c2", author: "_partner"), currentMemberID: "_me"))
+        XCTAssertFalse(
+            CommentEditPolicy.canEdit(
+                comment(id: "c3", author: "_me", deletedAt: Date(timeIntervalSince1970: 5)),
+                currentMemberID: "_me"
+            )
+        )
+    }
+
+    func testEditedBodyIsTrimmedAndNilWhenEmptyOrUnchanged() {
+        XCTAssertEqual(CommentEditPolicy.editedBody(original: "hi", draft: "  hello \n"), "hello")
+        XCTAssertNil(CommentEditPolicy.editedBody(original: "hi", draft: " hi "))
+        XCTAssertNil(CommentEditPolicy.editedBody(original: "hi", draft: "   "))
+    }
+
+    func testImportKeepsALocalEditTheCloudHasNotCaughtUpWith() {
+        let editedAt = Date(timeIntervalSince1970: 100)
+        // The bug this guards: import put the cloud's old body back over my edit.
+        let pending = CommentEditPolicy.merged(
+            localBody: "new", localEditedAt: editedAt, incomingBody: "old", incomingEditedAt: nil
+        )
+        XCTAssertEqual(pending.body, "new")
+        XCTAssertEqual(pending.editedAt, editedAt)
+
+        // An edit made on the other side (or my other device) arrives through import.
+        let remote = CommentEditPolicy.merged(
+            localBody: "old", localEditedAt: nil, incomingBody: "theirs", incomingEditedAt: editedAt
+        )
+        XCTAssertEqual(remote.body, "theirs")
+        XCTAssertEqual(remote.editedAt, editedAt)
+
+        // A later edit elsewhere beats my earlier one.
+        let later = CommentEditPolicy.merged(
+            localBody: "mine",
+            localEditedAt: editedAt,
+            incomingBody: "later",
+            incomingEditedAt: editedAt.addingTimeInterval(60)
+        )
+        XCTAssertEqual(later.body, "later")
+    }
+
+    func testServerRoundingOfEditedAtDoesNotCountAsNewer() {
+        let local = Date(timeIntervalSince1970: 100.123_456)
+        let fromServer = Date(timeIntervalSince1970: 100.123)
+        XCTAssertFalse(CommentEditPolicy.isNewer(local, than: fromServer))
+        let merged = CommentEditPolicy.merged(
+            localBody: "same", localEditedAt: local, incomingBody: "same", incomingEditedAt: fromServer
+        )
+        XCTAssertEqual(merged.editedAt, fromServer)
+    }
+
+    func testReuploadsOnlyMyEditsTheCloudStillHasTheOldBodyFor() {
+        let editedAt = Date(timeIntervalSince1970: 100)
+        let local = [
+            comment(id: "mine-pending", author: "_me", body: "new", editedAt: editedAt),
+            comment(id: "mine-landed", author: "_me", body: "new", editedAt: editedAt),
+            comment(id: "mine-never-uploaded", author: "_me", body: "new", editedAt: editedAt),
+            comment(id: "mine-unedited", author: "_me"),
+            comment(id: "mine-deleted", author: "_me", editedAt: editedAt, deletedAt: editedAt),
+            comment(id: "theirs-edited", author: "_partner", body: "new", editedAt: editedAt),
+        ]
+        let cloud = [
+            comment(id: "mine-pending", author: "_me", body: "old"),
+            comment(id: "mine-landed", author: "_me", body: "new", editedAt: editedAt),
+            comment(id: "mine-unedited", author: "_me"),
+            comment(id: "mine-deleted", author: "_me"),
+            comment(id: "theirs-edited", author: "_partner", body: "old"),
+        ]
+
+        let ids = CommentEditPolicy.editsNeedingReupload(
+            local: local,
+            cloud: cloud,
+            currentMemberID: "_me"
+        ).map(\.id)
+
+        XCTAssertEqual(ids, ["mine-pending"])
+    }
+
+    func testEditedCommentRecordCarriesBodyAndEditedAt() throws {
+        let editedAt = Date(timeIntervalSince1970: 100)
+        let zoneID = CKRecordZone.ID(zoneName: "CoupleSpace", ownerName: CKCurrentUserDefaultName)
+        let record = CommentRecordMapper.record(
+            from: comment(id: "c1", author: "_me", body: "new", editedAt: editedAt),
+            zoneID: zoneID
+        )
+        let roundTripped = try CommentRecordMapper.comment(from: record)
+        XCTAssertEqual(roundTripped.body, "new")
+        XCTAssertEqual(roundTripped.editedAt, editedAt)
+    }
+}

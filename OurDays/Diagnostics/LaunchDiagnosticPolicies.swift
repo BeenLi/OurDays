@@ -51,6 +51,12 @@ enum ShareCalLaunchDiagnosticPolicy {
     /// `-ShareCalEventCommentTitle`, the way the swipe does (author check, soft delete,
     /// upload to the comment's zone), then sync.
     static let deleteEventCommentArgument = "-ShareCalDeleteEventComment"
+    /// Either side: edit my comment with this body on the event titled by
+    /// `-ShareCalEventCommentTitle` to the body after `-ShareCalEditEventCommentBody`, the
+    /// way the composer does (author check, `editedAt`, upload to the comment's zone),
+    /// then sync.
+    static let editEventCommentArgument = "-ShareCalEditEventComment"
+    static let editEventCommentBodyArgument = "-ShareCalEditEventCommentBody"
     /// Reinstall smoke: delete the ShareCal events with this title from the system calendar
     /// WITHOUT syncing (the automatic launch sync is throttled right after a sync), so the
     /// next install has to discover the deletion from its own cloud mirrors.
@@ -67,6 +73,9 @@ enum ShareCalLaunchDiagnosticPolicy {
     /// identifiers before and after.
     static let moveSeriesTitledArgument = "-ShareCalMoveSeriesTitled"
     static let moveSeriesFromOccurrenceArgument = "-ShareCalMoveSeriesFromOccurrence"
+    /// Logs the identifiers of every event whose title starts with the value, in every
+    /// calendar this device can read: for comparing them across devices (stableKey).
+    static let dumpEventIdentifiersArgument = "-ShareCalDumpEventIdentifiers"
     /// Series smoke: remove the series with this title, WITHOUT syncing.
     static let deleteSeriesTitledArgument = "-ShareCalDeleteSeriesTitled"
     /// With `-ShareCalAddEventComment` / `-ShareCalProbeEventComments`: which of the
@@ -152,6 +161,14 @@ enum ShareCalLaunchDiagnosticPolicy {
         value(after: deleteEventCommentArgument, arguments: arguments)
     }
 
+    /// The (old, new) bodies of an edit; nil unless both are given.
+    static func editEventComment(arguments: [String]) -> (from: String, to: String)? {
+        guard let from = value(after: editEventCommentArgument, arguments: arguments),
+              let to = value(after: editEventCommentBodyArgument, arguments: arguments)
+        else { return nil }
+        return (from, to)
+    }
+
     static func eventCommentTitle(arguments: [String]) -> String {
         value(after: eventCommentTitleArgument, arguments: arguments) ?? ShareCalSmokeTestEventPolicy.title
     }
@@ -178,6 +195,32 @@ enum ShareCalLaunchDiagnosticPolicy {
 
     static func moveSeriesTitle(arguments: [String]) -> String? {
         value(after: moveSeriesTitledArgument, arguments: arguments)
+    }
+
+    static func dumpEventIdentifiersTitlePrefix(arguments: [String]) -> String? {
+        value(after: dumpEventIdentifiersArgument, arguments: arguments)
+    }
+
+    /// One log line per event, in a fixed order so two devices' dumps diff cleanly.
+    static func eventIdentifierLines(_ events: [CalendarSourceEvent], titlePrefix: String) -> [String] {
+        let matching = events.filter { $0.title.hasPrefix(titlePrefix) }
+        let stableKeys = EventStableKeyPolicy.stableKeys(for: matching)
+        return matching
+            .map { event in
+                [
+                    "calendar=\(event.calendarTitle)",
+                    "title=\(event.title)",
+                    "occurrence=\(event.occurrenceEpoch)",
+                    "start=\(Int(event.startDate.timeIntervalSince1970.rounded()))",
+                    "allDay=\(event.isAllDay)",
+                    "recurring=\(event.isRecurring)",
+                    "detached=\(event.isDetached)",
+                    "external=\(event.externalIdentifier ?? "nil")",
+                    "eventID=\(event.eventIdentifier)",
+                    "stableKey=\(stableKeys[EventMirrorKeyPolicy.makeMirrorKey(for: event)] ?? "")"
+                ].joined(separator: " | ")
+            }
+            .sorted()
     }
 
     static func moveSeriesFromOccurrence(arguments: [String]) -> Int {

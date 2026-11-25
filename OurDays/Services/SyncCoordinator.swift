@@ -176,21 +176,20 @@ struct SyncCoordinator {
             timing.mark(
                 "localStateLoaded accessRequests=\(localAccessRequests.count) shadows=\(existingShadows.count) mirrors=\(existingLocalMirrors.count)"
             )
-            // On a Mac the own events stay local; the iPhone uploads them
-            // (OwnEventUploadPolicy). Its mirror keys are device-local, so
-            // uploading here too would show the partner every event twice. The
-            // Mac's persisted own mirrors are the iPhone's cloud copies instead
-            // (imported below), so comments and red dots line up with the partner's.
-            let uploadsOwnEvents = OwnEventUploadPolicy.uploadsOwnEvents(
-                isRunningOnMac: ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
-            )
-            // Reinstall: until this install has confirmed one cloud write (fresh
-            // install over existing iCloud data) there is no local previous state, so
-            // our own cloud mirrors stand in for it. Read before the keys are made, so
-            // an event moved earlier still finds the record it kept.
+            // Every device uploads its own events (decision 0017). A Mac, whose EventKit
+            // identifiers differ from the iPhone's, first finds the iPhone's record for
+            // each event by its stable key, so the partner sees every event once.
+            let isRunningOnMac = ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
+            // Until this install has confirmed one cloud write (fresh install over existing
+            // iCloud data) there is no local previous state, so our own cloud mirrors stand
+            // in for it.
+            let reconcilesWithCloud = OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(existingShadows: existingShadows)
+            // My whole zone, when this sync needs it: on a Mac every time (it finds the
+            // iPhone's records there and shows the ones from calendars it doesn't have),
+            // elsewhere after a reinstall. Read before the keys are made, so an event moved
+            // earlier still finds the record it kept.
             var cloudOwnMirrors: [EventMirror]?
-            if shouldRunCloudKit, uploadsOwnEvents, let cloudKit,
-               OwnMirrorReconciliationPolicy.shouldReconcileWithCloud(existingShadows: existingShadows) {
+            if shouldRunCloudKit, let cloudKit, isRunningOnMac || reconcilesWithCloud {
                 cloudOwnMirrors = try await cloudKit.fetchOwnEventMirrors(currentMemberID: settings.currentMemberID)
                 timing.mark("cloudOwnMirrorsFetched count=\(cloudOwnMirrors?.count ?? 0)")
             }
@@ -203,13 +202,78 @@ struct SyncCoordinator {
             let retainedShadows = existingShadows.filter { !hardDeletedMirrorKeys.contains($0.mirrorKey) }
             // An event or a whole series moved to another time keeps its records, so
             // the comments on them stay. Records about to be purged are not reused.
-            let keptKeys = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+            let localKeptKeys = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
                 sourceEvents,
                 existingShadows: retainedShadows,
-                existingMirrors: retainedLocalMirrors + (cloudOwnMirrors ?? [])
+                existingMirrors: retainedLocalMirrors + (isRunningOnMac ? [] : cloudOwnMirrors ?? [])
             )
-            if !keptKeys.isEmpty {
-                syncInfo("foregroundSync rescheduled events keep their keys count=\(keptKeys.count)")
+            if !localKeptKeys.isEmpty {
+                syncInfo("foregroundSync rescheduled events keep their keys count=\(localKeptKeys.count)")
+            }
+            let sharedEvents = EventMirrorService.sharedEvents(
+                sourceEvents,
+                selectedCalendarIDs: settings.selectedCalendarIDs,
+                sharingWindows: sharingWindows
+            )
+            let stableKeys = EventStableKeyPolicy.stableKeys(for: sharedEvents)
+            let confirmedKeys = Set(existingShadows.filter { $0.lastUploadedAt != nil }.map(\.id))
+            let confirmedLiveKeys = Set(existingShadows.filter { $0.lastUploadedAt != nil && !$0.isTombstone }.map(\.id))
+            let confirmedTombstoneKeys = confirmedKeys.subtracting(confirmedLiveKeys)
+            let ownCalendarIDs = calendarAccess.authorizationState().canReadEvents
+                ? Set(calendarAccess.calendars().map(\.id))
+                : settings.selectedCalendarIDs
+            // Before starting a record for an event it hasn't uploaded yet, the iPhone looks
+            // for one by stable key (one query, only then): while a Mac of mine uploads, or
+            // when uploaded events seem to vanish in the same sync (their identifiers
+            // changed, as after signing in to iCloud again), so they keep their records.
+            var cloudCopies = cloudOwnMirrors
+            let provisionalKeys = Set(sharedEvents.map { event in
+                let derivedKey = EventMirrorKeyPolicy.makeMirrorKey(for: event)
+                return localKeptKeys[derivedKey] ?? derivedKey
+            })
+            let uploadedEventsVanish = !confirmedLiveKeys.subtracting(provisionalKeys).isEmpty
+            if cloudCopies == nil, shouldRunCloudKit, let cloudKit, !isRunningOnMac,
+               uploadedEventsVanish || OwnEventUploadPolicy.looksUpNewEventsInCloud(
+                   isRunningOnMac: isRunningOnMac,
+                   macUploadsOwnEventsAt: settings.macUploadsOwnEventsAt,
+                   now: syncedAt
+               ) {
+                let newEventStableKeys = Set(sharedEvents.compactMap { event -> String? in
+                    let derivedKey = EventMirrorKeyPolicy.makeMirrorKey(for: event)
+                    guard !confirmedLiveKeys.contains(localKeptKeys[derivedKey] ?? derivedKey) else { return nil }
+                    return stableKeys[derivedKey]
+                }.filter { !$0.isEmpty })
+                if !newEventStableKeys.isEmpty {
+                    do {
+                        cloudCopies = try await cloudKit.fetchOwnEventMirrors(
+                            stableKeys: newEventStableKeys,
+                            currentMemberID: settings.currentMemberID
+                        )
+                        timing.mark("cloudOwnMirrorsLookedUp keys=\(newEventStableKeys.count) found=\(cloudCopies?.count ?? 0)")
+                    } catch {
+                        // As before stable keys: start the records; a Mac moves to them.
+                        syncInfo("foregroundSync own record lookup failed error=\(describeCloudKitFailure(error))")
+                    }
+                }
+            }
+            let adoption = OwnRecordAdoptionPolicy.resolve(
+                events: sharedEvents,
+                stableKeys: stableKeys,
+                keptKeys: localKeptKeys,
+                confirmedKeys: confirmedLiveKeys,
+                confirmedTombstoneKeys: confirmedTombstoneKeys,
+                cloudOwnMirrors: cloudCopies ?? [],
+                cloudCoversWholeZone: cloudOwnMirrors != nil,
+                mayStartNewRecords: OwnEventUploadPolicy.mayStartNewRecords(
+                    isRunningOnMac: isRunningOnMac,
+                    cloudOwnMirrors: cloudOwnMirrors
+                ),
+                isRunningOnMac: isRunningOnMac,
+                ownCalendarIDs: ownCalendarIDs
+            )
+            let keptKeys = adoption.keptKeys
+            if !adoption.adoptedKeys.isEmpty || !adoption.heldKeys.isEmpty {
+                syncInfo("foregroundSync own records adopted=\(adoption.adoptedKeys.count) held=\(adoption.heldKeys.count)")
             }
             let mirrors = eventMirrorService.makeMirrors(
                 from: sourceEvents,
@@ -218,7 +282,7 @@ struct SyncCoordinator {
                 visibility: settings.defaultVisibility,
                 sharingWindows: sharingWindows,
                 keptKeys: keptKeys
-            )
+            ).filter { !adoption.heldKeys.contains($0.mirrorKey) }
             // Shadows are recorded without an upload stamp; the stamp is set
             // only after CloudKit writes succeed, so events synced before
             // pairing still upload once a partner exists.
@@ -228,8 +292,9 @@ struct SyncCoordinator {
                 uploadedAt: nil,
                 sharingWindows: sharingWindows,
                 keptKeys: keptKeys
-            )
-            let currentMirrorKeys = Set(mirrors.map(\.mirrorKey))
+            ).filter { !adoption.heldKeys.contains($0.id) }
+            // A held event is still there: nothing of it counts as deleted.
+            let currentMirrorKeys = Set(mirrors.map(\.mirrorKey)).union(adoption.heldKeys)
             let deletedShadows = eventMirrorService.deletedShadows(
                 existingEventKeys: currentMirrorKeys,
                 shadows: retainedShadows,
@@ -264,9 +329,7 @@ struct SyncCoordinator {
                 "foregroundSync mirror upload candidates total=\(mirrorsForSync.count) changed=\(mirrorsNeedingCloudUpload.count) hardDeletes=\(hardDeletedMirrors.count)"
             )
 
-            if uploadsOwnEvents {
-                try upsert(mirrors: mirrorsForSync, modelContext: modelContext)
-            }
+            try upsert(mirrors: mirrorsForSync, modelContext: modelContext)
             try upsert(shadows: activeShadows + deletedShadows, modelContext: modelContext)
             timing.mark("localMirrorsUpserted mirrors=\(mirrorsForSync.count) shadows=\(activeShadows.count + deletedShadows.count)")
             let localInvitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
@@ -383,8 +446,10 @@ struct SyncCoordinator {
                 // while the app was gone would stay live in the cloud for the partner.
                 // Use our own cloud mirrors as that previous state instead.
                 var reconciledTombstones: [EventMirror] = []
-                let cloudHardDeletedMirrors = uploadsOwnEvents ? hardDeletedMirrors : []
-                if let cloudOwnMirrors {
+                // Only records this device has uploaded: on a Mac the persisted own mirrors
+                // also hold my other devices' records, which they purge themselves.
+                let cloudHardDeletedMirrors = hardDeletedMirrors.filter { confirmedKeys.contains($0.mirrorKey) }
+                if reconcilesWithCloud, let cloudOwnMirrors {
                     reconciledTombstones = eventMirrorService.deletedMirrorTombstones(
                         existingEventKeys: currentMirrorKeys,
                         existingMirrors: cloudOwnMirrors,
@@ -394,7 +459,15 @@ struct SyncCoordinator {
                     )
                     timing.mark("cloudOwnMirrorsReconciled cloud=\(cloudOwnMirrors.count) tombstones=\(reconciledTombstones.count)")
                 }
-                let mirrorsToUpload = uploadsOwnEvents ? mirrorsNeedingCloudUpload + reconciledTombstones : []
+                // What the cloud already holds as it is isn't written again; a record first
+                // taken from my other device this sync stands until the event changes here.
+                let mirrorsToUpload = OwnRecordUploadFilterPolicy.uploads(
+                    mirrorsNeedingCloudUpload + reconciledTombstones,
+                    cloudByKey: cloudCopies.map { copies in
+                        Dictionary(copies.map { ($0.mirrorKey, $0) }, uniquingKeysWith: { first, _ in first })
+                    },
+                    adoptedKeys: adoption.adoptedKeys
+                )
 
                 let accessRequestsNeedingCloudUpload = CalendarAccessRequestCloudUploadPolicy.requestsNeedingUpload(
                     localAccessRequests,
@@ -444,6 +517,17 @@ struct SyncCoordinator {
                 } else {
                     timing.mark("cloudWritesSkipped")
                 }
+                // Checked against the cloud with nothing to write: the events whose record
+                // the cloud holds as it is count as uploaded. Only those: a shadow with no
+                // record behind it must not pass for confirmed.
+                if !hasCloudWrites, let cloudCopies {
+                    let cloudKeys = Set(cloudCopies.map(\.mirrorKey))
+                    for shadow in activeShadows + deletedShadows
+                    where shadow.lastUploadedAt == nil && cloudKeys.contains(shadow.id) {
+                        shadow.lastUploadedAt = syncedAt
+                    }
+                    try upsert(shadows: activeShadows + deletedShadows, modelContext: modelContext)
+                }
 
                 if !resolution.sharedZoneOwnerIDsToLeave.isEmpty {
                     try await cloudKit.deleteAcceptedSharedZones(ownerIDs: resolution.sharedZoneOwnerIDsToLeave)
@@ -461,10 +545,13 @@ struct SyncCoordinator {
                 async let commentsTask = cloudKit.fetchEventCommentsByZone(sharedZoneIDs: activeSharedZoneIDs)
                 async let invitationsTask = cloudKit.fetchEventInvitations(sharedZoneIDs: activeSharedZoneIDs)
                 async let memberProfilesTask = cloudKit.fetchMemberProfiles(sharedZoneIDs: activeSharedZoneIDs)
-                if !uploadsOwnEvents {
-                    let cloudOwnMirrors = try await cloudKit.fetchOwnEventMirrors(currentMemberID: settings.currentMemberID)
-                    try replaceOwnMirrors(with: cloudOwnMirrors, modelContext: modelContext, ownerMemberID: settings.currentMemberID)
-                    timing.mark("cloudOwnMirrorsImported count=\(cloudOwnMirrors.count)")
+                if isRunningOnMac, let cloudOwnMirrors {
+                    let persisted = OwnMirrorReconciliationPolicy.persistedOwnMirrors(
+                        generated: mirrorsForSync,
+                        cloud: cloudOwnMirrors
+                    )
+                    try replaceOwnMirrors(with: persisted, modelContext: modelContext, ownerMemberID: settings.currentMemberID)
+                    timing.mark("cloudOwnMirrorsImported count=\(cloudOwnMirrors.count) persisted=\(persisted.count)")
                 }
 
                 // Import only what belongs to this pairing: a record whose other party is
@@ -585,11 +672,15 @@ struct SyncCoordinator {
                 }
                 timing.mark("cloudInvitationCreationsReuploaded count=\(creationsToReupload.count)")
 
-                // Same self-heal for comment deletes: the swipe uploads `deletedAt` once;
-                // if the cloud copy still shows the comment, push the delete again to the
-                // zone the comment was read from.
+                // Same self-heal for comment deletes and edits: the swipe / edit uploads
+                // once; if the cloud copy still shows the comment, or its older body, push
+                // it again to the zone the comment was read from.
                 let localCommentsForReupload = try modelContext.fetch(FetchDescriptor<EventComment>())
-                let deletionsToReupload = CommentDeletionPolicy.deletionsNeedingReupload(
+                let commentChangesToReupload = CommentDeletionPolicy.deletionsNeedingReupload(
+                    local: localCommentsForReupload,
+                    cloud: cloudComments,
+                    currentMemberID: settings.currentMemberID
+                ) + CommentEditPolicy.editsNeedingReupload(
                     local: localCommentsForReupload,
                     cloud: cloudComments,
                     currentMemberID: settings.currentMemberID
@@ -598,11 +689,11 @@ struct SyncCoordinator {
                     fetchedCommentsByZone.flatMap { zone in zone.comments.map { ($0.id, zone.zoneID) } },
                     uniquingKeysWith: { first, _ in first }
                 )
-                for comment in deletionsToReupload {
+                for comment in commentChangesToReupload {
                     guard let zoneID = commentZoneByID[comment.id] else { continue }
                     try await cloudKit.saveCommentForSync(comment, inFetchedZone: zoneID)
                 }
-                timing.mark("cloudCommentDeletionsReuploaded count=\(deletionsToReupload.count)")
+                timing.mark("cloudCommentChangesReuploaded count=\(commentChangesToReupload.count)")
 
                 // Deleted events leave the cloud for good once their tombstone is 30 days
                 // old (`EventTombstonePurgePolicy`). Last and best-effort: the rows stay
@@ -611,7 +702,8 @@ struct SyncCoordinator {
                     localOwnMirrors: try localMirrors(ownerMemberID: settings.currentMemberID, modelContext: modelContext),
                     cloudOwnMirrors: cloudOwnMirrors,
                     liveKeys: currentMirrorKeys,
-                    uploadsOwnEvents: uploadsOwnEvents,
+                    confirmedKeys: confirmedKeys,
+                    ownCalendarIDs: ownCalendarIDs,
                     now: syncedAt
                 )
                 if !expiredTombstones.isEmpty {
@@ -709,6 +801,10 @@ struct SyncCoordinator {
         settings: SettingsStore
     ) async -> (settings: OwnRelayedSettings, calendars: [CalendarDescriptor]?)? {
         let calendars = calendarAccess.authorizationState().canReadEvents ? calendarAccess.calendars() : nil
+        if ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac {
+            let stamp = OwnEventUploadPolicy.macActivityStamp(previous: settings.macUploadsOwnEventsAt, now: .now)
+            if settings.macUploadsOwnEventsAt != stamp { settings.macUploadsOwnEventsAt = stamp }
+        }
         do {
             let cloud = try await cloudKit.fetchOwnSettings()
             let merged = OwnSettingsRelayMergePolicy.merge(
@@ -752,8 +848,8 @@ struct SyncCoordinator {
         }
     }
 
-    /// A device that doesn't upload its own events (a Mac) keeps exactly the uploader's
-    /// cloud copies as its persisted own mirrors.
+    /// A Mac keeps its own mirrors plus the cloud copies of the rest of my records
+    /// (`OwnMirrorReconciliationPolicy.persistedOwnMirrors`).
     private func replaceOwnMirrors(
         with cloudMirrors: [EventMirror],
         modelContext: ModelContext,
@@ -806,9 +902,16 @@ struct SyncCoordinator {
             if let existing = try modelContext.fetch(descriptor).first {
                 existing.eventMirrorID = comment.eventMirrorID
                 existing.authorMemberID = comment.authorMemberID
-                existing.body = comment.body
+                // A local edit whose upload hasn't landed keeps its body (CommentEditPolicy).
+                let edit = CommentEditPolicy.merged(
+                    localBody: existing.body,
+                    localEditedAt: existing.editedAt,
+                    incomingBody: comment.body,
+                    incomingEditedAt: comment.editedAt
+                )
+                existing.body = edit.body
                 existing.createdAt = comment.createdAt
-                existing.editedAt = comment.editedAt
+                existing.editedAt = edit.editedAt
                 existing.deletedAt = CommentDeletionPolicy.mergedDeletedAt(
                     local: existing.deletedAt,
                     incoming: comment.deletedAt

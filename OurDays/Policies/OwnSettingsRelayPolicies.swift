@@ -53,6 +53,10 @@ struct OwnRelayedSettings: Codable, Equatable {
     /// When one of my devices last unpaired or switched partner; a pairing that began
     /// before that day is over and no longer relayed. The later one wins.
     var pairingClearedAt: Date?
+    /// When a Mac of mine last uploaded its own events; the later one wins. Tells the
+    /// iPhone to look for a record the Mac already made before starting one of its own
+    /// (`OwnEventUploadPolicy`).
+    var macUploadsOwnEventsAt: Date?
 
     static let empty = OwnRelayedSettings()
 }
@@ -88,7 +92,8 @@ enum OwnSettingsRelayMergePolicy {
                 clearedAt: clearedAt,
                 calendar: calendar
             ),
-            pairingClearedAt: clearedAt
+            pairingClearedAt: clearedAt,
+            macUploadsOwnEventsAt: [local.macUploadsOwnEventsAt, cloud.macUploadsOwnEventsAt].compactMap { $0 }.max()
         )
     }
 

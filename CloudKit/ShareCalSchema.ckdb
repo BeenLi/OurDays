@@ -25,7 +25,8 @@ DEFINE SCHEMA
         urlString STRING,
         calendarColorHex STRING,
         visibilityRawValue STRING,
-        deletedAt TIMESTAMP
+        deletedAt TIMESTAMP,
+        stableKey STRING QUERYABLE
     );
 
     RECORD TYPE MemberProfile (

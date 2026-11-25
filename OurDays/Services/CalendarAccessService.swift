@@ -273,7 +273,9 @@ final class CalendarAccessService {
                 location: event.location,
                 notes: event.notes,
                 url: event.url,
-                isRecurring: event.hasRecurrenceRules
+                isRecurring: event.hasRecurrenceRules,
+                externalIdentifier: event.calendarItemExternalIdentifier,
+                isDetached: event.isDetached
             )
         }
     }

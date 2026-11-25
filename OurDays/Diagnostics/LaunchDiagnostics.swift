@@ -59,6 +59,19 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
+        if let prefix = ShareCalLaunchDiagnosticPolicy.dumpEventIdentifiersTitlePrefix(arguments: arguments) {
+            let now = Date()
+            let events = services.calendarAccess.authorizedEvents(
+                from: now.addingTimeInterval(-60 * 86_400),
+                to: now.addingTimeInterval(365 * 86_400)
+            )
+            let lines = ShareCalLaunchDiagnosticPolicy.eventIdentifierLines(events, titlePrefix: prefix)
+            NSLog("%@ dumpEventIdentifiers prefix=%@ count=%d", diag, prefix, lines.count)
+            for line in lines {
+                NSLog("%@ eventIdentifiers %@", diag, line)
+            }
+        }
+
         if let title = ShareCalLaunchDiagnosticPolicy.seedDailySeriesTitle(arguments: arguments) {
             do {
                 let eventID = try services.calendarAccess.ensureShareCalDailySeries(titled: title)

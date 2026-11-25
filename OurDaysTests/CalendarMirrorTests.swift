@@ -1676,3 +1676,33 @@ final class EventStableKeyPolicyTests: XCTestCase {
         XCTAssertEqual(keys.filter { $0 == uploaded[0].mirrorKey }.count, 1)
     }
 }
+
+final class EventIdentifierDumpTests: XCTestCase {
+    func testDumpListsOnlyMatchingEventsWithTheirStableKey() {
+        func event(_ title: String, id: String) -> CalendarSourceEvent {
+            CalendarSourceEvent(
+                eventIdentifier: id,
+                calendarIdentifier: "cal",
+                calendarTitle: "Home",
+                calendarColorHex: "#3A86FF",
+                startDate: Date(timeIntervalSince1970: 1_800),
+                endDate: Date(timeIntervalSince1970: 3_600),
+                occurrenceStartDate: Date(timeIntervalSince1970: 1_800),
+                isAllDay: false,
+                timeZoneIdentifier: "Asia/Shanghai",
+                title: title,
+                location: nil,
+                notes: nil,
+                url: nil,
+                externalIdentifier: "UID-\(id)"
+            )
+        }
+        let lines = ShareCalLaunchDiagnosticPolicy.eventIdentifierLines(
+            [event("IDT plain", id: "1"), event("Dinner", id: "2")],
+            titlePrefix: "IDT"
+        )
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertTrue(lines[0].contains("external=UID-1"))
+        XCTAssertTrue(lines[0].contains("stableKey=s1:"))
+    }
+}

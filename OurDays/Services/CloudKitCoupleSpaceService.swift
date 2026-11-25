@@ -1423,6 +1423,24 @@ final class CloudKitCoupleSpaceService {
         cloudKitSharingInfo("purgeSmokeTestRecordsFromPrivateZone deleted records=\(records.count)")
         return records.count
     }
+
+    /// Test-harness only (`-ShareCalHardDeleteOwnTombstones`): deletes every tombstoned
+    /// event record from my private zone, so the partner's next read gets real record
+    /// deletions from the server. Returns how many were deleted.
+    func hardDeleteOwnTombstonesForSmoke() async throws -> Int {
+        let recordIDs = try await fetchRecords(
+            recordType: EventMirrorRecordMapper.recordType,
+            in: zoneID,
+            database: privateDatabase
+        )
+        .filter { ($0[EventMirrorRecordMapper.Key.deletedAt] as? Date) != nil }
+        .map(\.recordID)
+        for batch in CloudKitBatchSizePolicy.batches(recordIDs) {
+            _ = try await modifyRecords(saving: [], deleting: batch, savePolicy: .changedKeys, atomically: false)
+        }
+        cloudKitSharingInfo("hardDeleteOwnTombstonesForSmoke deleted records=\(recordIDs.count)")
+        return recordIDs.count
+    }
     #endif
 
     /// Best-effort read of what a fresh install can take back from its own private zone

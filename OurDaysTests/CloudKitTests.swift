@@ -1250,6 +1250,8 @@ final class ShareCalLaunchDiagnosticPolicyTests: XCTestCase {
     func testPurgeOnlyTargetsTheSmokeScriptsThrowawayEvents() {
         XCTAssertTrue(ShareCalLaunchDiagnosticPolicy.shouldPurgeSmokeTestData(arguments: ["ShareCal", "-ShareCalPurgeSmokeTestData"]))
         XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.shouldPurgeSmokeTestData(arguments: ["ShareCal"]))
+        XCTAssertTrue(ShareCalLaunchDiagnosticPolicy.shouldHardDeleteOwnTombstones(arguments: ["ShareCal", "-ShareCalHardDeleteOwnTombstones"]))
+        XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.shouldHardDeleteOwnTombstones(arguments: ["ShareCal"]))
 
         XCTAssertTrue(ShareCalLaunchDiagnosticPolicy.isLeftoverSmokeEvent(title: "Own Comment Event 19346"))
         XCTAssertTrue(ShareCalLaunchDiagnosticPolicy.isLeftoverSmokeEvent(title: "Series Comment Event 7"))

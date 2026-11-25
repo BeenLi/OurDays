@@ -286,6 +286,23 @@ enum CloudKitModifyRecordResultValidator {
     }
 }
 
+/// Whether a failed "save root + new share" may mean the root got shared elsewhere
+/// between our read and our save (two devices on one Apple ID both tapping Start
+/// Pairing, or a retry while the first request is still running). Then the root's
+/// existing share should be reused instead of showing the error.
+enum CloudKitShareRacePolicy {
+    static func mayHaveLostShareRace(_ error: Error) -> Bool {
+        let nsError = CloudKitPrimaryErrorPolicy.primaryError(error) as NSError
+        guard nsError.domain == CKError.errorDomain else { return false }
+        switch CKError.Code(rawValue: nsError.code) {
+        case .alreadyShared, .serverRecordChanged, .serverRejectedRequest:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 /// Finds the error worth showing inside a CloudKit failure. A `partialFailure` only
 /// wraps per-item errors, and in an atomic operation most of those are
 /// `batchRequestFailed` ("Atomic failure"), which says nothing about why. The real

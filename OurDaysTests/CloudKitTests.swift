@@ -971,6 +971,27 @@ final class CloudKitModifyRecordResultValidatorTests: XCTestCase {
     }
 }
 
+final class CloudKitShareRacePolicyTests: XCTestCase {
+    func testShareConflictsInsideAtomicFailureMayMeanAnotherDeviceSharedTheRoot() {
+        for code in [CKError.Code.alreadyShared, .serverRecordChanged, .serverRejectedRequest] {
+            let error = NSError(
+                domain: CKError.errorDomain,
+                code: CKError.Code.partialFailure.rawValue,
+                userInfo: [CKPartialErrorsByItemIDKey: [
+                    CKRecord.ID(recordName: "couple-space-root"): NSError(domain: CKError.errorDomain, code: CKError.Code.batchRequestFailed.rawValue),
+                    CKRecord.ID(recordName: "share-1"): NSError(domain: CKError.errorDomain, code: code.rawValue)
+                ]]
+            )
+            XCTAssertTrue(CloudKitShareRacePolicy.mayHaveLostShareRace(error), "\(code)")
+        }
+    }
+
+    func testOtherFailuresAreNotTreatedAsARace() {
+        XCTAssertFalse(CloudKitShareRacePolicy.mayHaveLostShareRace(NSError(domain: CKError.errorDomain, code: CKError.Code.quotaExceeded.rawValue)))
+        XCTAssertFalse(CloudKitShareRacePolicy.mayHaveLostShareRace(NSError(domain: NSCocoaErrorDomain, code: 4)))
+    }
+}
+
 final class CloudKitPrimaryErrorPolicyTests: XCTestCase {
     func testUnwrapsPartialFailureToTheNonAtomicItemError() {
         let atomicFailure = NSError(domain: CKError.errorDomain, code: CKError.Code.batchRequestFailed.rawValue)

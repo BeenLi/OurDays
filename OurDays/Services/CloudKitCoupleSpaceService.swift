@@ -286,8 +286,23 @@ final class CloudKitCoupleSpaceService {
             rootRecord = try await saveRootRecord(rootRecord)
         }
         cloudKitSharingInfo("prepareShare needs new share root=\(rootRecord.recordID.recordName)")
-        let share = try await saveNewShare(rootRecord: rootRecord)
-        return PreparedCloudShare(rootRecord: rootRecord, share: share, container: container)
+        do {
+            let share = try await saveNewShare(rootRecord: rootRecord)
+            return PreparedCloudShare(rootRecord: rootRecord, share: share, container: container)
+        } catch {
+            // Another device on the same Apple ID (or an earlier tap still in flight)
+            // may have shared the root between our read and our save. Its share is
+            // the one to use; only fail if the root still has none.
+            guard CloudKitShareRacePolicy.mayHaveLostShareRace(error),
+                  let latestRoot = try? await fetchRecordIfPresent(with: rootRecord.recordID),
+                  let shareReference = latestRoot.share else {
+                throw error
+            }
+            cloudKitSharingInfo("prepareShare reusing share created elsewhere share=\(shareReference.recordID.recordName)")
+            let share = try await fetchShare(with: shareReference.recordID)
+            let upgradedShare = try await ensureShareSupportsLinkInvitation(share)
+            return PreparedCloudShare(rootRecord: latestRoot, share: upgradedShare, container: container)
+        }
     }
 
     func stopSharing(ownerMemberID: String) async throws {

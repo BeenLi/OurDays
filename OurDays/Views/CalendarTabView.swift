@@ -416,12 +416,10 @@ struct CalendarTabView: View {
             ),
             persistedOwn: persistedOwn
         )
-        // On a Mac the persisted own mirrors are what the iPhone shares; the ones from
+        // On a Mac the persisted own mirrors include what the iPhone shares; the ones from
         // calendars this Mac doesn't have are shown from the cloud copy.
-        let uploadsOwnEvents = OwnEventUploadPolicy.uploadsOwnEvents(
-            isRunningOnMac: ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
-        )
-        localDisplayMirrors = uploadsOwnEvents
+        let isRunningOnMac = ProcessInfo.processInfo.isMacCatalystApp || ProcessInfo.processInfo.isiOSAppOnMac
+        localDisplayMirrors = !isRunningOnMac
             ? display
             : display + OwnEventTwinPolicy.cloudOnlyMirrors(
                 display: display,

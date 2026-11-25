@@ -62,6 +62,7 @@ App 为四个 Tab 的标准 iOS 结构：
 - **写入路径规则**：自己的数据写自己的私有 zone；针对对方数据的回应（评论、邀请状态、申请批复）写进对方的共享 zone。
 - **镜像是派生数据**：自己的 EventMirror 每次同步都从 EventKit 重建，SwiftData 只是缓存。
 - **mirrorKey 是跨设备的稳定锚点**：`日历ID:事件ID:发生时刻` 同时是 SwiftData 的 id、CloudKit 的 recordName 和评论线程的键，两端生成规则相同，所以还没同步的日程也能先被评论。
+- **逐步讲解**：[docs/sync-explainer/index.html](docs/sync-explainer/index.html) 一步步演示上传、修改、删除、评论、对方读取、增量同步和 Mac 接力时 CloudKit 字段怎么变（下载后用浏览器打开，离线可用）。
 
 ### 记录类型
 
@@ -190,7 +191,7 @@ OurDays/
 ├── OurDays.xcodeproj              scheme OurDays（全部）与 OurDaysTests（只跑单测）；App、单测、UI 测试三个 target
 ├── CloudKit/ShareCalSchema.ckdb   CloudKit schema 源文件
 ├── Scripts/                       CloudKit schema 导入、双模拟器配对冒烟脚本、App Store / TestFlight 导出配置
-├── docs/                          开发流程、隐私政策、官网源码（docs/site）、README 架构图源文件（docs/diagrams）、审核记录、设计决策记录（docs/plantree）
+├── docs/                          开发流程、隐私政策、官网源码（docs/site）、README 架构图源文件（docs/diagrams）、同步逐步讲解（docs/sync-explainer）、审核记录、设计决策记录（docs/plantree）
 ├── .github/workflows/ios-ci.yml   CI：macOS runner 构建并跑全部测试
 └── CLAUDE.md                      代码架构与约定（身份模型、CloudKit 布局、Policy 约定）
 ```

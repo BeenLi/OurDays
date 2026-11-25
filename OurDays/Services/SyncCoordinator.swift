@@ -600,6 +600,36 @@ struct SyncCoordinator {
                     try await cloudKit.saveCommentForSync(comment, inFetchedZone: zoneID)
                 }
                 timing.mark("cloudCommentDeletionsReuploaded count=\(deletionsToReupload.count)")
+
+                // Deleted events leave the cloud for good once their tombstone is 30 days
+                // old (`EventTombstonePurgePolicy`). Last and best-effort: the rows stay
+                // until the cloud delete succeeds, so a failure is retried next sync.
+                let expiredTombstones = EventTombstonePurgePolicy.expiredTombstones(
+                    localOwnMirrors: try localMirrors(ownerMemberID: settings.currentMemberID, modelContext: modelContext),
+                    cloudOwnMirrors: cloudOwnMirrors,
+                    liveKeys: currentMirrorKeys,
+                    uploadsOwnEvents: uploadsOwnEvents,
+                    now: syncedAt
+                )
+                if !expiredTombstones.isEmpty {
+                    do {
+                        let ownZoneComments = fetchedCommentsByZone
+                            .filter { $0.zoneID == cloudKit.zoneID }
+                            .flatMap(\.comments)
+                        try await cloudKit.deleteOwnZoneCommentsForSync(
+                            EventTombstonePurgePolicy.commentsToPurge(ownZoneComments, purged: expiredTombstones)
+                        )
+                        try await cloudKit.deleteMirrorsForSync(expiredTombstones)
+                        try purgeTombstones(
+                            expiredTombstones,
+                            ownerMemberID: settings.currentMemberID,
+                            modelContext: modelContext
+                        )
+                        timing.mark("cloudExpiredTombstonesPurged count=\(expiredTombstones.count)")
+                    } catch {
+                        syncInfo("foregroundSync expired tombstone purge failed; retrying next sync error=\(error.localizedDescription)")
+                    }
+                }
             } else if !settings.iCloudSharingEnabled {
                 settings.partnerShareOwnerID = nil
                 settings.partnerSyncedDisplayName = nil
@@ -868,6 +898,25 @@ struct SyncCoordinator {
         for mirror in existingMirrors where mirrorKeys.contains(mirror.mirrorKey) {
             modelContext.delete(mirror)
         }
+        try modelContext.save()
+    }
+
+    /// Removes my purged tombstones' local rows: the mirror, its shadow and its comments.
+    private func purgeTombstones(
+        _ tombstones: [EventMirror],
+        ownerMemberID: String,
+        modelContext: ModelContext
+    ) throws {
+        let mirrorKeys = Set(tombstones.map(\.mirrorKey))
+        let localComments = try modelContext.fetch(FetchDescriptor<EventComment>())
+        for comment in EventTombstonePurgePolicy.commentsToPurge(localComments, purged: tombstones) {
+            modelContext.delete(comment)
+        }
+        for mirror in try localMirrors(ownerMemberID: ownerMemberID, modelContext: modelContext)
+        where mirrorKeys.contains(mirror.mirrorKey) && mirror.deletedAt != nil {
+            modelContext.delete(mirror)
+        }
+        try purgeShadows(mirrorKeys: mirrorKeys, modelContext: modelContext)
         try modelContext.save()
     }
 

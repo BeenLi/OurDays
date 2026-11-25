@@ -249,3 +249,58 @@ enum OwnMirrorReconciliationPolicy {
         CloudKitSharedDatabaseImportPolicy.identifiedMirrors(mirrors, sharedOwnerID: currentMemberID)
     }
 }
+
+/// When the record of a deleted event finally leaves the cloud. Deleting an event only
+/// marks its `EventMirror` record (`deletedAt`, a tombstone) and nothing ever removed it,
+/// so the title, notes and place of every deleted event stayed in the shared zone and
+/// every full read of the zone carried them along.
+///
+/// Nobody learns of a deletion from the tombstone: the partner's device and my other
+/// devices drop whatever a read no longer returns (`purgeStalePartnerMirrors`,
+/// `replaceOwnMirrors`), in every released version. It is kept for a while only so that
+/// an event undeleted in Calendar finds its record and comments again, and so another
+/// device of mine whose calendar hasn't caught up can see that the event was deleted
+/// rather than new. After `retention` the uploading device deletes the record, the
+/// comments on it and its own local rows.
+enum EventTombstonePurgePolicy {
+    static let retention: TimeInterval = 30 * 24 * 3_600
+
+    /// My tombstones old enough to delete, one per record. `cloudOwnMirrors` is what a
+    /// reinstall reconciliation read from my zone (this install has no local rows for
+    /// tombstones made before it). A record whose event exists again (`liveKeys`) and a
+    /// `deletedAt` in the future (another device's clock) are left alone.
+    static func expiredTombstones(
+        localOwnMirrors: [EventMirror],
+        cloudOwnMirrors: [EventMirror]?,
+        liveKeys: Set<String>,
+        uploadsOwnEvents: Bool,
+        now: Date
+    ) -> [EventMirror] {
+        guard uploadsOwnEvents else { return [] }
+        var expiredByKey: [String: EventMirror] = [:]
+        var keptKeys = liveKeys
+        for mirror in localOwnMirrors + (cloudOwnMirrors ?? []) {
+            guard let deletedAt = mirror.deletedAt,
+                  now.timeIntervalSince(deletedAt) >= retention else {
+                // Live, or deleted too recently, in either copy: the record stays.
+                keptKeys.insert(mirror.mirrorKey)
+                continue
+            }
+            if expiredByKey[mirror.mirrorKey] == nil {
+                expiredByKey[mirror.mirrorKey] = mirror
+            }
+        }
+        return expiredByKey.keys.sorted()
+            .filter { !keptKeys.contains($0) }
+            .compactMap { expiredByKey[$0] }
+    }
+
+    /// The comment threads that hang on the purged records (`EventCommentAnchorPolicy`:
+    /// a thread is keyed by the mirror's id, which is its record name).
+    static func commentsToPurge(_ comments: [EventComment], purged: [EventMirror]) -> [EventComment] {
+        var anchors = Set(purged.map(\.id))
+        anchors.formUnion(purged.map(\.mirrorKey))
+        anchors.formUnion(purged.compactMap(\.cloudKitRecordName))
+        return comments.filter { anchors.contains($0.eventMirrorID) }
+    }
+}

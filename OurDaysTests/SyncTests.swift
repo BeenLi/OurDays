@@ -656,3 +656,110 @@ final class PairingDateRelayTests: XCTestCase {
         XCTAssertNil(phone.relayedSettingsSnapshot(calendars: nil).pairing)
     }
 }
+
+final class EventTombstonePurgePolicyTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 10_000_000)
+    private var old: Date { now.addingTimeInterval(-EventTombstonePurgePolicy.retention) }
+    private var recent: Date { now.addingTimeInterval(-EventTombstonePurgePolicy.retention + 1) }
+
+    func testPurgesOnlyTombstonesPastRetention() {
+        let expired = EventTombstonePurgePolicy.expiredTombstones(
+            localOwnMirrors: [
+                mirror(key: "live"),
+                mirror(key: "old", deletedAt: old),
+                mirror(key: "recent", deletedAt: recent),
+                mirror(key: "future", deletedAt: now.addingTimeInterval(3_600))
+            ],
+            cloudOwnMirrors: nil,
+            liveKeys: ["live"],
+            uploadsOwnEvents: true,
+            now: now
+        )
+
+        XCTAssertEqual(expired.map(\.mirrorKey), ["old"])
+    }
+
+    func testDeviceThatDoesNotUploadPurgesNothing() {
+        let expired = EventTombstonePurgePolicy.expiredTombstones(
+            localOwnMirrors: [mirror(key: "old", deletedAt: old)],
+            cloudOwnMirrors: [mirror(key: "cloud-old", deletedAt: old)],
+            liveKeys: [],
+            uploadsOwnEvents: false,
+            now: now
+        )
+
+        XCTAssertTrue(expired.isEmpty)
+    }
+
+    func testReinstallSweepsTombstonesFoundInTheCloudOnce() {
+        let expired = EventTombstonePurgePolicy.expiredTombstones(
+            localOwnMirrors: [mirror(key: "both", deletedAt: old)],
+            cloudOwnMirrors: [
+                mirror(key: "both", deletedAt: old),
+                mirror(key: "cloud-only", deletedAt: old),
+                mirror(key: "cloud-recent", deletedAt: recent)
+            ],
+            liveKeys: [],
+            uploadsOwnEvents: true,
+            now: now
+        )
+
+        XCTAssertEqual(expired.map(\.mirrorKey), ["both", "cloud-only"])
+    }
+
+    func testRecordOfAnEventThatExistsAgainStays() {
+        // The event is back in the calendar (this sync re-uploads it live), or one of
+        // the two copies still shows it live or freshly deleted.
+        let expired = EventTombstonePurgePolicy.expiredTombstones(
+            localOwnMirrors: [
+                mirror(key: "back", deletedAt: old),
+                mirror(key: "cloud-live", deletedAt: old),
+                mirror(key: "cloud-redeleted", deletedAt: old)
+            ],
+            cloudOwnMirrors: [
+                mirror(key: "cloud-live"),
+                mirror(key: "cloud-redeleted", deletedAt: recent)
+            ],
+            liveKeys: ["back"],
+            uploadsOwnEvents: true,
+            now: now
+        )
+
+        XCTAssertTrue(expired.isEmpty)
+    }
+
+    func testCommentsOfPurgedEventsGoWithThem() {
+        let comments = [
+            EventComment(eventMirrorID: "old", authorMemberID: "_me", body: "mine", createdAt: now),
+            EventComment(eventMirrorID: "old", authorMemberID: "_partner", body: "theirs", createdAt: now),
+            EventComment(eventMirrorID: "live", authorMemberID: "_partner", body: "stays", createdAt: now)
+        ]
+
+        let purged = EventTombstonePurgePolicy.commentsToPurge(comments, purged: [mirror(key: "old", deletedAt: old)])
+
+        XCTAssertEqual(purged.map(\.body), ["mine", "theirs"])
+    }
+
+    private func mirror(key: String, deletedAt: Date? = nil) -> EventMirror {
+        EventMirror(
+            id: key,
+            ownerMemberID: "_me",
+            mirrorKey: key,
+            sourceCalendarID: "sharecal",
+            sourceCalendarTitle: "ShareCal",
+            occurrenceStartDate: Date(timeIntervalSince1970: 100),
+            startDate: Date(timeIntervalSince1970: 100),
+            endDate: Date(timeIntervalSince1970: 160),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Shanghai",
+            title: "Event",
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#FF2D55",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: deletedAt,
+            cloudKitRecordName: key
+        )
+    }
+}

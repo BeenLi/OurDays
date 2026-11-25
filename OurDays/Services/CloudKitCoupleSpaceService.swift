@@ -995,6 +995,17 @@ final class CloudKitCoupleSpaceService {
         cloudKitSharingInfo("deleteMirrorsForSync succeeded count=\(recordIDs.count)")
     }
 
+    /// Deletes comment records from MY private zone (the threads of events whose
+    /// tombstones are purged, `EventTombstonePurgePolicy`).
+    func deleteOwnZoneCommentsForSync(_ comments: [EventComment]) async throws {
+        let recordIDs = CloudKitBatchUpsertPolicy.recordIDs(forComments: comments, zoneID: zoneID)
+        guard !recordIDs.isEmpty else { return }
+        for batch in CloudKitBatchSizePolicy.batches(recordIDs) {
+            _ = try await modifyRecords(saving: [], deleting: batch, savePolicy: .changedKeys, atomically: false)
+        }
+        cloudKitSharingInfo("deleteOwnZoneCommentsForSync succeeded count=\(recordIDs.count)")
+    }
+
     /// Saves my MemberProfile unless the copy in the cloud is the newer edit (made on
     /// another device of the same Apple ID); then nothing is written and that copy is
     /// returned for the caller to adopt (`OwnMemberProfileMergePolicy`).

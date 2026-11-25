@@ -9,6 +9,19 @@ enum ShareCalLaunchDiagnostics {
         modelContext: ModelContext,
         arguments: [String] = ProcessInfo.processInfo.arguments
     ) async {
+        #if DEBUG
+        // First, so nothing later in this launch works on data about to be deleted.
+        if ShareCalLaunchDiagnosticPolicy.shouldPurgeSmokeTestData(arguments: arguments) {
+            do {
+                let events = try services.calendarAccess.deleteLeftoverShareCalSmokeEvents()
+                let records = try await services.cloudKit.purgeSmokeTestRecordsFromPrivateZone()
+                NSLog("%@ purgeSmokeTestData succeeded records=%d events=%d", diag, records, events)
+            } catch {
+                NSLog("%@ purgeSmokeTestData failed: %@", diag, String(describing: error))
+            }
+        }
+        #endif
+
         if ShareCalLaunchDiagnosticPolicy.shouldSeedCalendarEvent(arguments: arguments) {
             do {
                 let eventID = try services.calendarAccess.ensureShareCalSmokeTestEvent(

@@ -1367,6 +1367,38 @@ final class CloudKitCoupleSpaceService {
         cloudKitSharingInfo("purgeExPartnerRecordsFromPrivateZone deleted records=\(recordIDs.count)")
     }
 
+    #if DEBUG
+    /// Test-harness only (`-ShareCalPurgeSmokeTestData`): deletes EVERY comment and
+    /// invitation / history-access-request record from my private zone, so a smoke run on
+    /// the reused test accounts starts without the threads of earlier runs. Event mirrors
+    /// stay: the next sync rebuilds them from the calendar. Returns how many were deleted.
+    func purgeSmokeTestRecordsFromPrivateZone() async throws -> Int {
+        let records: [CKRecord]
+        do {
+            async let comments = fetchRecords(
+                recordType: CommentRecordMapper.recordType,
+                in: zoneID,
+                database: privateDatabase
+            )
+            async let invitations = fetchRecords(
+                recordType: InvitationRecordMapper.recordType,
+                in: zoneID,
+                database: privateDatabase
+            )
+            records = try await comments + invitations
+        } catch {
+            guard CloudKitRecordQueryFailurePolicy.isMissingZone(error) else { throw error }
+            cloudKitSharingInfo("purgeSmokeTestRecordsFromPrivateZone zone missing; nothing to clean")
+            return 0
+        }
+        for batch in CloudKitBatchSizePolicy.batches(records.map(\.recordID)) {
+            _ = try await modifyRecords(saving: [], deleting: batch, savePolicy: .changedKeys, atomically: false)
+        }
+        cloudKitSharingInfo("purgeSmokeTestRecordsFromPrivateZone deleted records=\(records.count)")
+        return records.count
+    }
+    #endif
+
     /// Best-effort read of what a fresh install can take back from its own private zone
     /// (see `ExistingICloudDataRecoveryPolicy.recoveredState`). Failures are logged and
     /// yield nils: recovery must still proceed without them.

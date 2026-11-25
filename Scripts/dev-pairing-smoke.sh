@@ -215,6 +215,27 @@ for udid in "$OWNER_UDID" "$PARTNER_UDID"; do
     --subsystem com.leeberty.CoupleCalendar 2>/dev/null || true
 done
 
+# ---------- 0c. Clear what earlier runs left behind ----------
+# Both test accounts are reused by every run, and their iCloud data survives the
+# uninstall below: comments and invitations piled up (the joint thread grew by two
+# comments per run until its input field scrolled off screen), and a run that failed
+# halfway left its throwaway events in the calendar. Each side deletes the comment and
+# invitation records in its own private zone, which is where both partners' writes on
+# its events live, plus the leftover events. It runs before the reset so the pairing
+# flow starts from a fresh install that never saw the old records.
+purge_test_data() { # purge_test_data <udid> <console-log-name> <label>
+  xcrun simctl install "$1" "$APP_PATH"
+  xcrun simctl privacy "$1" grant calendar "$BUNDLE_ID" 2>/dev/null || true
+  launch_app "$1" "$2" -ShareCalPurgeSmokeTestData
+  local purged
+  purged=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag purgeSmokeTestData succeeded" $SYNC_TIMEOUT "$3 clears earlier runs' test data")
+  log "$3: ${purged##*purgeSmokeTestData succeeded }"
+  xcrun simctl terminate "$1" "$BUNDLE_ID" 2>/dev/null || true
+}
+log "Clearing comments, invitations and leftover events from earlier runs..."
+purge_test_data "$OWNER_UDID" "owner-purge" "Owner"
+purge_test_data "$PARTNER_UDID" "partner-purge" "Partner"
+
 log "Resetting app state on both simulators (uninstall + reinstall)..."
 xcrun simctl uninstall "$OWNER_UDID" "$BUNDLE_ID" 2>/dev/null || true
 xcrun simctl uninstall "$PARTNER_UDID" "$BUNDLE_ID" 2>/dev/null || true

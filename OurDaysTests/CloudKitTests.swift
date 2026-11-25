@@ -1247,6 +1247,21 @@ final class ShareCalLaunchDiagnosticPolicyTests: XCTestCase {
         XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.shouldProbeEventComments(arguments: ["ShareCal"]))
     }
 
+    func testPurgeOnlyTargetsTheSmokeScriptsThrowawayEvents() {
+        XCTAssertTrue(ShareCalLaunchDiagnosticPolicy.shouldPurgeSmokeTestData(arguments: ["ShareCal", "-ShareCalPurgeSmokeTestData"]))
+        XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.shouldPurgeSmokeTestData(arguments: ["ShareCal"]))
+
+        XCTAssertTrue(ShareCalLaunchDiagnosticPolicy.isLeftoverSmokeEvent(title: "Own Comment Event 19346"))
+        XCTAssertTrue(ShareCalLaunchDiagnosticPolicy.isLeftoverSmokeEvent(title: "Series Comment Event 7"))
+        // The shared smoke event is refreshed by every run, and anything without the
+        // script's numbered title may be a person's own event.
+        XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.isLeftoverSmokeEvent(title: ShareCalSmokeTestEventPolicy.title))
+        XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.isLeftoverSmokeEvent(title: "Own Comment Event "))
+        XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.isLeftoverSmokeEvent(title: "Own Comment Event dinner"))
+        XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.isLeftoverSmokeEvent(title: "Dinner"))
+        XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.isLeftoverSmokeEvent(title: nil))
+    }
+
     func testParsesSeriesSmokeArguments() {
         let arguments = [
             "ShareCal", "-ShareCalSeedDailySeriesTitled", "Series", "-ShareCalMoveSeriesTitled", "Series",

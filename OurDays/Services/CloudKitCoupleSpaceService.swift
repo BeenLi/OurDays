@@ -695,6 +695,109 @@ final class CloudKitCoupleSpaceService {
         return savedShare
     }
 
+    // MARK: - Start Pairing failure report
+
+    static let shareProbeZoneName = "OurDaysShareProbe"
+
+    /// Everything this device can find out about a failed Start Pairing, for the user to
+    /// send us. Never throws: each part that fails is written into the report instead.
+    func pairingShareFailureReport(for error: Error, device: PairingShareFailureReport.Device) async -> PairingShareFailureReport {
+        let account = await accountDiagnostic()
+        let zones: String
+        do {
+            let names = try await privateDatabase.allRecordZones().map(\.zoneID.zoneName).sorted()
+            zones = names.isEmpty ? "none" : names.joined(separator: ", ")
+        } catch {
+            zones = "error; \(describeCloudKitFailure(error))"
+        }
+        let rootState = await shareRootStateDescription()
+        let probeLines = account.isAccountAvailable
+            ? await shareCreationProbe()
+            : ["skipped; account \(account.accountStatus)"]
+        let report = PairingShareFailureReport(
+            createdAt: Date(),
+            environment: CloudKitExpectedConfigurationPolicy.containerEnvironment,
+            device: device,
+            accountStatus: account.accountStatus,
+            userRecordName: account.userRecordName,
+            hasUbiquityIdentity: FileManager.default.ubiquityIdentityToken != nil,
+            privateZones: zones,
+            rootState: rootState,
+            failure: describeCloudKitFailure(error),
+            probeLines: probeLines
+        )
+        cloudKitSharingInfo("pairingShareFailureReport \(report.text.replacingOccurrences(of: "\n", with: " | "))")
+        return report
+    }
+
+    private func shareRootStateDescription() async -> String {
+        let rootRecordID = CloudKitShareHierarchyPolicy.rootRecordID(zoneID: zoneID)
+        do {
+            let root = try await fetchRecord(with: rootRecordID)
+            let formatter = ISO8601DateFormatter()
+            return [
+                "exists",
+                "share=\(root.share?.recordID.recordName ?? "none")",
+                "created=\(root.creationDate.map(formatter.string(from:)) ?? "unknown")",
+                "modified=\(root.modificationDate.map(formatter.string(from:)) ?? "unknown")",
+                "changeTag=\(root.recordChangeTag ?? "none")",
+                "keys=\(root.allKeys().sorted().joined(separator: ","))"
+            ].joined(separator: " ")
+        } catch {
+            return CloudKitRootLookupPolicy.meansRecordMissing(error)
+                ? "missing"
+                : "error; \(describeCloudKitFailure(error))"
+        }
+    }
+
+    /// Tries to make shares in a throwaway zone, to tell apart the reasons a share save
+    /// can be rejected. The same link share as Start Pairing working here means the
+    /// trouble is what is in the `CoupleSpace` zone; it failing while an invite-only share
+    /// works means the account may not make link shares; both failing means the account cannot
+    /// share in this container at all. The zone is deleted afterwards.
+    func shareCreationProbe() async -> [String] {
+        let probeZoneID = CKRecordZone.ID(zoneName: Self.shareProbeZoneName)
+        var lines: [String] = []
+        // A probe zone left by an interrupted run would make these saves conflict.
+        _ = try? await privateDatabase.modifyRecordZones(saving: [], deleting: [probeZoneID])
+        do {
+            _ = try await privateDatabase.modifyRecordZones(saving: [CKRecordZone(zoneID: probeZoneID)], deleting: [])
+        } catch {
+            return ["zone: failed; \(describeCloudKitFailure(error))"]
+        }
+
+        func probeRoot(_ name: String) -> CKRecord {
+            let root = CKRecord(recordType: "CoupleSpace", recordID: CKRecord.ID(recordName: name, zoneID: probeZoneID))
+            root["createdAt"] = Date() as CKRecordValue
+            return root
+        }
+        let linkRoot = probeRoot("probe-link")
+        let linkShare = CKShare(rootRecord: linkRoot)
+        CloudKitSharePermissionPolicy.configureForLinkInvitation(linkShare)
+        let privateRoot = probeRoot("probe-private")
+        let attempts: [(label: String, records: [CKRecord])] = [
+            ("record only", [probeRoot("probe-plain")]),
+            ("link share", [linkRoot, linkShare]),
+            ("invite-only share", [privateRoot, CKShare(rootRecord: privateRoot)])
+        ]
+        for attempt in attempts {
+            let started = ContinuousClock.now
+            do {
+                _ = try await modifyRecords(saving: attempt.records, deleting: [], savePolicy: .changedKeys, atomically: true)
+                lines.append("\(attempt.label): ok \(cloudKitElapsed(since: started))")
+            } catch {
+                lines.append("\(attempt.label): failed; \(describeCloudKitFailure(error))")
+            }
+        }
+
+        do {
+            _ = try await privateDatabase.modifyRecordZones(saving: [], deleting: [probeZoneID])
+        } catch {
+            lines.append("cleanup: failed; \(describeCloudKitFailure(error))")
+        }
+        return lines
+    }
+
     private func ensureShareSupportsLinkInvitation(_ share: CKShare) async throws -> CKShare {
         let acceptedParticipantCount = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(from: share).count
         guard CloudKitSharePermissionPolicy.needsLinkInvitationUpgrade(

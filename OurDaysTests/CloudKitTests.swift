@@ -535,6 +535,65 @@ final class CloudKitAccessRequestWritePolicyTests: XCTestCase {
     }
 }
 
+final class PairingShareFailureReportTests: XCTestCase {
+    func testReportCarriesWhatIsNeededToLookTheFailureUp() {
+        let report = PairingShareFailureReport(
+            createdAt: Date(timeIntervalSince1970: 1_795_000_000),
+            environment: "Production",
+            device: .init(
+                appVersion: "2.0",
+                appBuild: "39",
+                systemName: "iOS",
+                systemVersion: "27.2.1",
+                model: "iPhone19,4",
+                localeIdentifier: "zh-Hant_CN",
+                preferredLanguages: ["zh-Hant-CN", "en-CN"],
+                timeZoneIdentifier: "Asia/Shanghai"
+            ),
+            accountStatus: "available",
+            userRecordName: "_abc",
+            hasUbiquityIdentity: true,
+            privateZones: "CoupleSpace, _defaultZone",
+            rootState: "exists share=none",
+            failure: "domain=CKErrorDomain | code=15",
+            probeLines: ["record only: ok elapsed=120ms", "link share: failed; code=15"]
+        )
+
+        let text = report.text
+        for expected in [
+            "App: 2.0 (39) Production",
+            "System: iOS 27.2.1 · iPhone19,4",
+            "zh-Hant-CN,en-CN",
+            "User Record: _abc",
+            "Root: exists share=none",
+            "Failure:\ndomain=CKErrorDomain | code=15",
+            "Share probe:\nrecord only: ok elapsed=120ms\nlink share: failed; code=15"
+        ] {
+            XCTAssertTrue(text.contains(expected), "missing \(expected) in \(text)")
+        }
+    }
+
+    func testReportWithoutProbeHasNoProbeSection() {
+        let report = PairingShareFailureReport(
+            createdAt: Date(timeIntervalSince1970: 0),
+            environment: "Production",
+            device: .init(
+                appVersion: "2.0", appBuild: "39", systemName: "iOS", systemVersion: "27.2.1", model: "iPhone19,4",
+                localeIdentifier: "en_US", preferredLanguages: ["en-US"], timeZoneIdentifier: "UTC"
+            ),
+            accountStatus: "noAccount",
+            userRecordName: nil,
+            hasUbiquityIdentity: false,
+            privateZones: "none",
+            rootState: "missing",
+            failure: "x",
+            probeLines: []
+        )
+        XCTAssertFalse(report.text.contains("Share probe:"))
+        XCTAssertTrue(report.text.contains("User Record: missing"))
+    }
+}
+
 final class CloudKitRootLookupPolicyTests: XCTestCase {
     func testOnlyUnknownItemMeansTheRootIsMissing() {
         let unknownItem = NSError(domain: CKError.errorDomain, code: CKError.Code.unknownItem.rawValue)

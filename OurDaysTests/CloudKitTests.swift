@@ -1283,6 +1283,15 @@ final class ShareCalLaunchDiagnosticPolicyTests: XCTestCase {
         XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.shouldProbeEventComments(arguments: ["ShareCal"]))
     }
 
+    func testParsesEditEventCommentOnlyWithBothBodies() {
+        let edit = ShareCalLaunchDiagnosticPolicy.editEventComment(arguments: [
+            "ShareCal", "-ShareCalEditEventComment", "old", "-ShareCalEditEventCommentBody", "new",
+        ])
+        XCTAssertEqual(edit?.from, "old")
+        XCTAssertEqual(edit?.to, "new")
+        XCTAssertNil(ShareCalLaunchDiagnosticPolicy.editEventComment(arguments: ["ShareCal", "-ShareCalEditEventComment", "old"]))
+    }
+
     func testPurgeOnlyTargetsTheSmokeScriptsThrowawayEvents() {
         XCTAssertTrue(ShareCalLaunchDiagnosticPolicy.shouldPurgeSmokeTestData(arguments: ["ShareCal", "-ShareCalPurgeSmokeTestData"]))
         XCTAssertFalse(ShareCalLaunchDiagnosticPolicy.shouldPurgeSmokeTestData(arguments: ["ShareCal"]))

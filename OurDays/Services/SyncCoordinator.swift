@@ -672,11 +672,15 @@ struct SyncCoordinator {
                 }
                 timing.mark("cloudInvitationCreationsReuploaded count=\(creationsToReupload.count)")
 
-                // Same self-heal for comment deletes: the swipe uploads `deletedAt` once;
-                // if the cloud copy still shows the comment, push the delete again to the
-                // zone the comment was read from.
+                // Same self-heal for comment deletes and edits: the swipe / edit uploads
+                // once; if the cloud copy still shows the comment, or its older body, push
+                // it again to the zone the comment was read from.
                 let localCommentsForReupload = try modelContext.fetch(FetchDescriptor<EventComment>())
-                let deletionsToReupload = CommentDeletionPolicy.deletionsNeedingReupload(
+                let commentChangesToReupload = CommentDeletionPolicy.deletionsNeedingReupload(
+                    local: localCommentsForReupload,
+                    cloud: cloudComments,
+                    currentMemberID: settings.currentMemberID
+                ) + CommentEditPolicy.editsNeedingReupload(
                     local: localCommentsForReupload,
                     cloud: cloudComments,
                     currentMemberID: settings.currentMemberID
@@ -685,11 +689,11 @@ struct SyncCoordinator {
                     fetchedCommentsByZone.flatMap { zone in zone.comments.map { ($0.id, zone.zoneID) } },
                     uniquingKeysWith: { first, _ in first }
                 )
-                for comment in deletionsToReupload {
+                for comment in commentChangesToReupload {
                     guard let zoneID = commentZoneByID[comment.id] else { continue }
                     try await cloudKit.saveCommentForSync(comment, inFetchedZone: zoneID)
                 }
-                timing.mark("cloudCommentDeletionsReuploaded count=\(deletionsToReupload.count)")
+                timing.mark("cloudCommentChangesReuploaded count=\(commentChangesToReupload.count)")
 
                 // Deleted events leave the cloud for good once their tombstone is 30 days
                 // old (`EventTombstonePurgePolicy`). Last and best-effort: the rows stay
@@ -898,9 +902,16 @@ struct SyncCoordinator {
             if let existing = try modelContext.fetch(descriptor).first {
                 existing.eventMirrorID = comment.eventMirrorID
                 existing.authorMemberID = comment.authorMemberID
-                existing.body = comment.body
+                // A local edit whose upload hasn't landed keeps its body (CommentEditPolicy).
+                let edit = CommentEditPolicy.merged(
+                    localBody: existing.body,
+                    localEditedAt: existing.editedAt,
+                    incomingBody: comment.body,
+                    incomingEditedAt: comment.editedAt
+                )
+                existing.body = edit.body
                 existing.createdAt = comment.createdAt
-                existing.editedAt = comment.editedAt
+                existing.editedAt = edit.editedAt
                 existing.deletedAt = CommentDeletionPolicy.mergedDeletedAt(
                     local: existing.deletedAt,
                     incoming: comment.deletedAt

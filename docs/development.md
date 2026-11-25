@@ -176,3 +176,11 @@ Implementation notes (hard-won):
   state (this bit us with a leftover `currentMemberID = me`). The script reads
   verification values from the app container's plist instead.
 - App console logs land in `build/dev-smoke/console/*.log` for debugging.
+- Every `[smoke +MmSSs]` line carries the time since the script started. A passing
+  run is about 10 minutes after the build; most of it is the ~20 app launches that
+  each wait 13 to 20 s for one foreground sync against Development CloudKit.
+- A diagnostic that logs `ShareCalDiag … failed` fails the run right away instead of
+  waiting out its 15-minute timeout.
+- The build lives in `build/dev-smoke` of the checkout, so a new worktree pays a full
+  clean build (about 9 minutes). To smoke-test a PR, check its branch out in a
+  worktree that has already been built rather than creating a fresh one.

@@ -409,6 +409,35 @@ PARTNER_OWN_PROBE3=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments
 echo "$PARTNER_OWN_PROBE3" | grep -q "$OWN_COMMENT" && echo "$PARTNER_OWN_PROBE3" | grep -q "$OWN_REPLY" \
   || fail "partner lost comments after the owner moved the event. Probe: $PARTNER_OWN_PROBE3"
 log "Both sides keep BOTH comments after the move ✓"
+
+# ---------- 9d. Delete: each side deletes its own comment; it disappears on BOTH sides ----------
+# A delete is a soft delete (deletedAt) written to the comment's own record in the event
+# owner's zone. The partner's reply lives in the OWNER's zone (written via the shared DB),
+# so this covers both routes; a following sync must not bring either back (decision 0005).
+log "Partner: deleting its reply ('$OWN_REPLY')..."
+launch_app "$PARTNER_UDID" "partner-own-delete" -ShareCalDeleteEventComment "$OWN_REPLY" -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag deleteEventComment succeeded .*stillDeletedAfterSync=true" $DIAG_TIMEOUT \
+  "partner deletes its reply (and it stays deleted after a sync)" >/dev/null
+
+log "Owner: probing '$OWN_EVENT_TITLE' comments (the reply must be gone, own comment kept)..."
+launch_app "$OWNER_UDID" "owner-own-probe4" -ShareCalProbeEventComments -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+OWNER_OWN_PROBE4=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "owner probes after the partner's delete")
+echo "$OWNER_OWN_PROBE4" | grep -q "$OWN_REPLY" \
+  && fail "owner still sees the partner's deleted reply ('$OWN_REPLY'). Probe: $OWNER_OWN_PROBE4"
+echo "$OWNER_OWN_PROBE4" | grep -q "$OWN_COMMENT" \
+  || fail "owner lost its own comment when the partner deleted theirs. Probe: $OWNER_OWN_PROBE4"
+
+log "Owner: deleting its own comment ('$OWN_COMMENT')..."
+launch_app "$OWNER_UDID" "owner-own-delete" -ShareCalDeleteEventComment "$OWN_COMMENT" -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag deleteEventComment succeeded .*stillDeletedAfterSync=true" $DIAG_TIMEOUT \
+  "owner deletes its comment (and it stays deleted after a sync)" >/dev/null
+
+log "Partner: probing '$OWN_EVENT_TITLE' comments (both must be gone)..."
+launch_app "$PARTNER_UDID" "partner-own-probe4" -ShareCalProbeEventComments -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+PARTNER_OWN_PROBE4=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "partner probes after both deletes")
+echo "$PARTNER_OWN_PROBE4" | grep -q "count=0" \
+  || fail "partner still sees deleted comments. Probe: $PARTNER_OWN_PROBE4"
+log "Deleted comments disappear on both sides and stay deleted after sync ✓"
 # Delete it while it is still inside the sync window, so its mirror is tombstoned
 # instead of piling up in the owner's zone run after run.
 launch_app "$OWNER_UDID" "owner-own-cleanup" -ShareCalDeleteCalendarEventTitled "$OWN_EVENT_TITLE"

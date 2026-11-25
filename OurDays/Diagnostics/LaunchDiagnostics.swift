@@ -135,6 +135,13 @@ enum ShareCalLaunchDiagnostics {
                 services: services, settings: settings, modelContext: modelContext
             )
         }
+        if let body = ShareCalLaunchDiagnosticPolicy.deleteEventCommentBody(arguments: arguments) {
+            await deleteEventComment(
+                body: body,
+                title: ShareCalLaunchDiagnosticPolicy.eventCommentTitle(arguments: arguments),
+                services: services, settings: settings, modelContext: modelContext
+            )
+        }
         if ShareCalLaunchDiagnosticPolicy.shouldProbeEventComments(arguments: arguments) {
             await probeEventComments(
                 title: ShareCalLaunchDiagnosticPolicy.eventCommentTitle(arguments: arguments),
@@ -434,6 +441,53 @@ enum ShareCalLaunchDiagnostics {
             "%@ addEventComment succeeded title=%@ anchor=%@ via=%@ body=%@",
             diag, title, anchor.key, resolution, body
         )
+    }
+
+    /// Either side: delete my comment with the given body on the persisted mirror with the
+    /// given title, exactly like the swipe in `EventCommentsSection`, then sync.
+    private static func deleteEventComment(
+        body: String, title: String, services: AppServices, settings: SettingsStore, modelContext: ModelContext
+    ) async {
+        await runForegroundSync(services: services, settings: settings, modelContext: modelContext)
+        let mirrors = (try? modelContext.fetch(FetchDescriptor<EventMirror>())) ?? []
+        guard let mirror = mirrors.first(where: {
+            $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
+        }) else {
+            NSLog("%@ deleteEventComment failed: no persisted mirror titled '%@'", diag, title)
+            return
+        }
+        let anchor = EventCommentAnchorPolicy.anchor(forMirror: mirror)
+        let comments = (try? modelContext.fetch(FetchDescriptor<EventComment>())) ?? []
+        guard let comment = comments.first(where: {
+            $0.eventMirrorID == anchor.key && $0.body == body && $0.deletedAt == nil
+        }) else {
+            NSLog("%@ deleteEventComment failed: no live comment '%@' on '%@'", diag, body, title)
+            return
+        }
+        guard CommentDeletionPolicy.canDelete(comment, currentMemberID: settings.currentMemberID) else {
+            NSLog("%@ deleteEventComment failed: not the author of '%@'", diag, body)
+            return
+        }
+        services.commentService.delete(comment)
+        do {
+            try modelContext.save()
+            if let cloudKit = services.cloudKitIfAvailable {
+                try await cloudKit.saveCommentForSync(
+                    comment,
+                    eventOwnerMemberID: anchor.ownerMemberID,
+                    currentMemberID: settings.currentMemberID,
+                    eventRecordName: anchor.recordName
+                )
+            }
+        } catch {
+            NSLog("%@ deleteEventComment failed: %@", diag, String(describing: error))
+            return
+        }
+        await runForegroundSync(services: services, settings: settings, modelContext: modelContext)
+        let stillDeleted = (try? modelContext.fetch(FetchDescriptor<EventComment>()))?
+            .first(where: { $0.id == comment.id })?.deletedAt != nil
+        NSLog("%@ deleteEventComment succeeded title=%@ body=%@ stillDeletedAfterSync=%@",
+              diag, title, body, stillDeleted ? "true" : "false")
     }
 
     /// Either side: sync, then log the thread of the persisted mirror with the given title.

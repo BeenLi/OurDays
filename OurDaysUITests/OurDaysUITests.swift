@@ -170,7 +170,15 @@ final class OurDaysUITests: XCTestCase {
         // the same EventCommentsSection that regular events use. A bare calendar screen
         // has no text field, so its presence proves the detail (and comments) opened.
         let commentField = app.textFields.firstMatch
-        let opened = commentField.waitForExistence(timeout: 15)
+        var opened = commentField.waitForExistence(timeout: 15)
+        // The smoke reuses one joint event, so its thread grows with every run; the field
+        // sits under the comments and only exists once it is scrolled into view.
+        var swipes = 0
+        while !opened && swipes < 12 {
+            app.swipeUp()
+            swipes += 1
+            opened = commentField.waitForExistence(timeout: 2)
+        }
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "joint-event-comment-thread"

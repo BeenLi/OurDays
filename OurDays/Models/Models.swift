@@ -87,6 +87,10 @@ final class EventMirror: Identifiable {
     var visibilityRawValue: String
     var deletedAt: Date?
     var cloudKitRecordName: String?
+    /// How my other devices find this record for the same event
+    /// (`EventStableKeyPolicy`). Nil on records written by versions before it; "" when
+    /// the event has no external identifier.
+    var stableKey: String?
 
     var visibility: EventVisibility {
         get { EventVisibility(rawValue: visibilityRawValue) ?? .fullDetails }
@@ -111,7 +115,8 @@ final class EventMirror: Identifiable {
         calendarColorHex: String,
         visibilityRawValue: String,
         deletedAt: Date?,
-        cloudKitRecordName: String?
+        cloudKitRecordName: String?,
+        stableKey: String? = nil
     ) {
         self.id = id
         self.ownerMemberID = ownerMemberID
@@ -131,6 +136,7 @@ final class EventMirror: Identifiable {
         self.visibilityRawValue = visibilityRawValue
         self.deletedAt = deletedAt
         self.cloudKitRecordName = cloudKitRecordName
+        self.stableKey = stableKey
     }
 }
 
@@ -352,6 +358,7 @@ enum EventMirrorStore {
             existing.visibilityRawValue = mirror.visibilityRawValue
             existing.deletedAt = mirror.deletedAt
             existing.cloudKitRecordName = mirror.cloudKitRecordName
+            existing.stableKey = mirror.stableKey
         } else {
             modelContext.insert(mirror)
         }

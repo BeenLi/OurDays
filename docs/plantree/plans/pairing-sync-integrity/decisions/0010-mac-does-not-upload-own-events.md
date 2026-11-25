@@ -1,6 +1,6 @@
 # Decision 0010 — 自己的日程只由 iPhone 上传，Mac 不上传
 
-- **日期**：2026-11-23　**状态**：Accepted　**PR**：#57
+- **日期**：2026-11-23　**状态**：Superseded by 0017　**PR**：#57
 - **范围**：`SyncCoordinator.foregroundSync` 中自己日程的上传、对账删除和硬删除；`OwnEventUploadPolicy`
 
 ## 背景（原本的工作方式）

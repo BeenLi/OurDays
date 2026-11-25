@@ -141,6 +141,11 @@ final class SettingsStore {
     var lastSeenActivityAt: Date? {
         didSet { defaults.set(lastSeenActivityAt, forKey: Key.lastSeenActivityAt) }
     }
+    /// When a Mac of mine last uploaded its own events (relayed, see
+    /// `OwnRelayedSettings.macUploadsOwnEventsAt`).
+    var macUploadsOwnEventsAt: Date? {
+        didSet { defaults.set(macUploadsOwnEventsAt, forKey: Key.macUploadsOwnEventsAt) }
+    }
     /// Local high-water mark for the last time local notifications were evaluated, so
     /// the same partner activity is never notified twice. Nil until the first sync.
     var lastNotifiedAt: Date? {
@@ -237,6 +242,7 @@ final class SettingsStore {
         )
         lastSyncAt = defaults.object(forKey: Key.lastSyncAt) as? Date
         lastSeenActivityAt = defaults.object(forKey: Key.lastSeenActivityAt) as? Date
+        macUploadsOwnEventsAt = defaults.object(forKey: Key.macUploadsOwnEventsAt) as? Date
         lastNotifiedAt = defaults.object(forKey: Key.lastNotifiedAt) as? Date
         invitationIDsWithLocalEventSeen = Set(defaults.stringArray(forKey: Key.invitationIDsWithLocalEventSeen) ?? [])
         reviewPromptedMoments = Set((defaults.stringArray(forKey: Key.reviewPromptedMoments) ?? []).compactMap(ReviewPromptMoment.init(rawValue:)))
@@ -367,6 +373,7 @@ final class SettingsStore {
             snapshot.pairing = OwnRelayedSettings.Pairing(partnerID: partnerID, date: pairingDate)
         }
         snapshot.pairingClearedAt = pairingClearedAt
+        snapshot.macUploadsOwnEventsAt = macUploadsOwnEventsAt
         return snapshot
     }
 
@@ -416,6 +423,9 @@ final class SettingsStore {
         }
         if let seen = relayed.lastSeenActivityAt, seen > (lastSeenActivityAt ?? .distantPast) {
             lastSeenActivityAt = seen
+        }
+        if let macUploads = relayed.macUploadsOwnEventsAt, macUploads > (macUploadsOwnEventsAt ?? .distantPast) {
+            macUploadsOwnEventsAt = macUploads
         }
         if let cleared = relayed.pairingClearedAt, cleared > (pairingClearedAt ?? .distantPast) {
             pairingClearedAt = cleared
@@ -555,6 +565,7 @@ final class SettingsStore {
         static let defaultVisibility = "defaultVisibility"
         static let lastSyncAt = "lastSyncAt"
         static let lastSeenActivityAt = "lastSeenActivityAt"
+        static let macUploadsOwnEventsAt = "macUploadsOwnEventsAt"
         static let lastNotifiedAt = "lastNotifiedAt"
         static let reviewPromptedMoments = "reviewPromptedMoments"
         static let invitationIDsWithLocalEventSeen = "invitationIDsWithLocalEventSeen"

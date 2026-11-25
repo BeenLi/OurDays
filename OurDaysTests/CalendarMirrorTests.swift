@@ -1476,3 +1476,233 @@ final class MovedSeriesKeyTests: XCTestCase {
         }
     }
 }
+
+final class EventStableKeyPolicyTests: XCTestCase {
+    private func event(
+        id: String = "event-1",
+        calendar: String = "phone-cal",
+        calendarTitle: String = "Home",
+        external: String? = "UID-1",
+        start: TimeInterval = 1_800,
+        occurrence: TimeInterval? = nil,
+        isAllDay: Bool = false,
+        isRecurring: Bool = false,
+        isDetached: Bool = false
+    ) -> CalendarSourceEvent {
+        CalendarSourceEvent(
+            eventIdentifier: id,
+            calendarIdentifier: calendar,
+            calendarTitle: calendarTitle,
+            calendarColorHex: "#3A86FF",
+            startDate: Date(timeIntervalSince1970: start),
+            endDate: Date(timeIntervalSince1970: start + 3_600),
+            occurrenceStartDate: Date(timeIntervalSince1970: occurrence ?? start),
+            isAllDay: isAllDay,
+            timeZoneIdentifier: "Asia/Shanghai",
+            title: "Dinner",
+            location: nil,
+            notes: nil,
+            url: nil,
+            isRecurring: isRecurring,
+            externalIdentifier: external,
+            isDetached: isDetached
+        )
+    }
+
+    private func key(_ event: CalendarSourceEvent, among others: [CalendarSourceEvent] = []) -> String? {
+        EventStableKeyPolicy.stableKeys(for: [event] + others)[EventMirrorKeyPolicy.makeMirrorKey(for: event)]
+    }
+
+    func testSameEventOnTwoDevicesGetsTheSameKey() {
+        let phone = event(id: "phone-event", calendar: "phone-cal")
+        let mac = event(id: "mac-event", calendar: "mac-cal")
+
+        XCTAssertNotEqual(EventMirrorKeyPolicy.makeMirrorKey(for: phone), EventMirrorKeyPolicy.makeMirrorKey(for: mac))
+        XCTAssertEqual(key(phone), key(mac))
+        XCTAssertTrue(key(phone)?.hasPrefix("s1:") == true)
+        XCTAssertFalse(key(phone)?.contains("UID-1") == true, "the partner can read the record; the raw ID is not in it")
+    }
+
+    func testMovedOneOffEventKeepsItsKey() {
+        XCTAssertEqual(key(event(start: 1_800)), key(event(start: 90_000)))
+    }
+
+    func testOccurrencesOfASeriesDiffer() {
+        let first = event(start: 1_800, isRecurring: true)
+        let second = event(start: 1_800 + 86_400, isRecurring: true)
+        XCTAssertNotEqual(key(first, among: [second]), key(second, among: [first]))
+    }
+
+    func testDetachedOccurrenceUsesItsOriginalDate() {
+        let moved = event(start: 5_400, occurrence: 1_800, isDetached: true)
+        let asSeenElsewhere = event(id: "mac-event", calendar: "mac-cal", start: 5_400, occurrence: 1_800, isRecurring: true)
+        XCTAssertEqual(key(moved), key(asSeenElsewhere))
+        XCTAssertNotEqual(key(moved), key(event(start: 5_400, occurrence: 5_400, isDetached: true)))
+    }
+
+    func testAllDayOccurrenceUsesTheCalendarDay() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let midnight = calendar.date(from: DateComponents(year: 2026, month: 12, day: 24))!
+        let first = event(occurrence: midnight.timeIntervalSince1970, isAllDay: true, isRecurring: true)
+        let sameDay = event(occurrence: midnight.timeIntervalSince1970 + 12 * 3_600, isAllDay: true, isRecurring: true)
+        let nextDay = event(occurrence: midnight.timeIntervalSince1970 + 86_400, isAllDay: true, isRecurring: true)
+        XCTAssertEqual(
+            EventStableKeyPolicy.base(for: first, calendar: calendar),
+            EventStableKeyPolicy.base(for: sameDay, calendar: calendar)
+        )
+        XCTAssertNotEqual(
+            EventStableKeyPolicy.base(for: first, calendar: calendar),
+            EventStableKeyPolicy.base(for: nextDay, calendar: calendar)
+        )
+    }
+
+    func testNoExternalIdentifierGivesAnEmptyKey() {
+        XCTAssertEqual(key(event(external: nil)), "")
+        XCTAssertEqual(key(event(external: "  ")), "")
+    }
+
+    func testSameInvitationInTwoCalendarsIsToldApartByCalendarTitle() {
+        let home = event(id: "a", calendar: "c1", calendarTitle: "Home")
+        let work = event(id: "b", calendar: "c2", calendarTitle: "Work")
+        let keys = EventStableKeyPolicy.stableKeys(for: [home, work])
+        XCTAssertNotEqual(keys[EventMirrorKeyPolicy.makeMirrorKey(for: home)], keys[EventMirrorKeyPolicy.makeMirrorKey(for: work)])
+        XCTAssertNotEqual(key(home, among: [work]), key(home))
+    }
+
+    func testMirrorsAndDisplayMirrorsCarryTheKey() {
+        let source = event()
+        let mirrors = EventMirrorService().makeMirrors(
+            from: [source],
+            selectedCalendarIDs: ["phone-cal"],
+            ownerMemberID: "_me",
+            visibility: .busyOnly
+        )
+        XCTAssertEqual(mirrors.map(\.stableKey), [key(source)])
+        let display = CalendarDisplayMirrorPolicy.displayMirrors(from: [source], ownerMemberID: "_me")
+        XCTAssertEqual(display.map(\.stableKey), [key(source)])
+        let tombstone = EventMirrorService().deletedMirrorTombstones(
+            existingEventKeys: [],
+            existingMirrors: mirrors,
+            selectedCalendarIDs: ["phone-cal"],
+            syncWindow: DateInterval(start: .distantPast, end: .distantFuture),
+            deletedAt: Date(timeIntervalSince1970: 9_000)
+        )
+        XCTAssertEqual(tombstone.map(\.stableKey), [key(source)])
+    }
+
+    func testAddingTheKeyUploadsTheRecordOnce() {
+        let source = event()
+        let current = EventMirrorService().makeMirrors(
+            from: [source],
+            selectedCalendarIDs: ["phone-cal"],
+            ownerMemberID: "_me",
+            visibility: .fullDetails
+        )
+        let shadows = EventMirrorService().makeShadows(
+            from: [source],
+            selectedCalendarIDs: ["phone-cal"],
+            uploadedAt: Date(timeIntervalSince1970: 2_000)
+        )
+        let before = EventMirrorService().makeMirrors(
+            from: [source],
+            selectedCalendarIDs: ["phone-cal"],
+            ownerMemberID: "_me",
+            visibility: .fullDetails
+        )
+        before[0].stableKey = nil
+
+        XCTAssertEqual(
+            CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
+                current, activeShadows: shadows, existingShadows: shadows, existingLocalMirrors: before
+            ).count,
+            1
+        )
+        XCTAssertTrue(
+            CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
+                current, activeShadows: shadows, existingShadows: shadows, existingLocalMirrors: current
+            ).isEmpty
+        )
+    }
+
+    func testMacDisplayFindsTheUploadedCopyByStableKeyAfterAnEdit() {
+        let onPhone = EventMirrorService().makeMirrors(
+            from: [event(id: "phone-event", calendar: "phone-cal")],
+            selectedCalendarIDs: ["phone-cal"],
+            ownerMemberID: "_me",
+            visibility: .fullDetails
+        )
+        // Edited on the Mac: title and time no longer match the uploaded copy.
+        let edited = CalendarSourceEvent(
+            eventIdentifier: "mac-event",
+            calendarIdentifier: "mac-cal",
+            calendarTitle: "Home",
+            calendarColorHex: "#3A86FF",
+            startDate: Date(timeIntervalSince1970: 7_200),
+            endDate: Date(timeIntervalSince1970: 10_800),
+            occurrenceStartDate: Date(timeIntervalSince1970: 7_200),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Shanghai",
+            title: "Dinner with Mum",
+            location: nil,
+            notes: nil,
+            url: nil,
+            externalIdentifier: "UID-1"
+        )
+        let display = CalendarDisplayMirrorPolicy.displayMirrors(from: [edited], ownerMemberID: "_me")
+
+        let result = OwnEventTwinPolicy.adoptingPersistedKeys(display, persistedOwn: onPhone)
+
+        XCTAssertEqual(result.map(\.mirrorKey), [onPhone[0].mirrorKey])
+    }
+
+    func testTwoDisplayMirrorsNeverTakeTheSameRecord() {
+        let uploaded = EventMirrorService().makeMirrors(
+            from: [event(id: "phone-event", calendar: "phone-cal", external: nil)],
+            selectedCalendarIDs: ["phone-cal"],
+            ownerMemberID: "_me",
+            visibility: .fullDetails
+        )
+        let display = CalendarDisplayMirrorPolicy.displayMirrors(
+            from: [
+                event(id: "m1", calendar: "mac-cal", external: nil),
+                event(id: "m2", calendar: "mac-cal-2", external: nil)
+            ],
+            ownerMemberID: "_me"
+        )
+
+        let keys = OwnEventTwinPolicy.adoptingPersistedKeys(display, persistedOwn: uploaded).map(\.mirrorKey)
+
+        XCTAssertEqual(keys.filter { $0 == uploaded[0].mirrorKey }.count, 1)
+    }
+}
+
+final class EventIdentifierDumpTests: XCTestCase {
+    func testDumpListsOnlyMatchingEventsWithTheirStableKey() {
+        func event(_ title: String, id: String) -> CalendarSourceEvent {
+            CalendarSourceEvent(
+                eventIdentifier: id,
+                calendarIdentifier: "cal",
+                calendarTitle: "Home",
+                calendarColorHex: "#3A86FF",
+                startDate: Date(timeIntervalSince1970: 1_800),
+                endDate: Date(timeIntervalSince1970: 3_600),
+                occurrenceStartDate: Date(timeIntervalSince1970: 1_800),
+                isAllDay: false,
+                timeZoneIdentifier: "Asia/Shanghai",
+                title: title,
+                location: nil,
+                notes: nil,
+                url: nil,
+                externalIdentifier: "UID-\(id)"
+            )
+        }
+        let lines = ShareCalLaunchDiagnosticPolicy.eventIdentifierLines(
+            [event("IDT plain", id: "1"), event("Dinner", id: "2")],
+            titlePrefix: "IDT"
+        )
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertTrue(lines[0].contains("external=UID-1"))
+        XCTAssertTrue(lines[0].contains("stableKey=s1:"))
+    }
+}

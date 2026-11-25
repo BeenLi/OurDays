@@ -33,6 +33,16 @@ final class CloudKitRecordMappingTests: XCTestCase {
         XCTAssertEqual(decoded.mirrorKey, mirror.mirrorKey)
         XCTAssertEqual(decoded.title, "Planning")
         XCTAssertEqual(decoded.urlString, "https://example.com")
+        XCTAssertNil(decoded.stableKey, "a record from an older version has no stable key")
+
+        mirror.stableKey = "s1:abc"
+        XCTAssertEqual(try EventMirrorRecordMapper.eventMirror(from: EventMirrorRecordMapper.record(from: mirror, zoneID: zoneID)).stableKey, "s1:abc")
+
+        // Writing a mirror without a key never clears one another device wrote.
+        let existing = EventMirrorRecordMapper.record(from: mirror, zoneID: zoneID)
+        mirror.stableKey = nil
+        let rewritten = EventMirrorRecordMapper.record(from: mirror, zoneID: zoneID, existingRecord: existing)
+        XCTAssertEqual(rewritten[EventMirrorRecordMapper.Key.stableKey] as? String, "s1:abc")
     }
 
     func testEventMirrorRecordCanBeParentedToShareRoot() {
@@ -928,6 +938,32 @@ final class CloudKitSharedDatabaseImportPolicyTests: XCTestCase {
         XCTAssertEqual(localized.map(\.ownerMemberID), ["icloud-owner", "icloud-owner"])
         XCTAssertEqual(localized.map(\.cloudKitRecordName), ["first", "second"])
     }
+
+    func testIdentifiedMirrorsKeepTheStableKey() {
+        let mirror = EventMirror(
+            id: "k",
+            ownerMemberID: "_other",
+            mirrorKey: "k",
+            sourceCalendarID: "cal",
+            sourceCalendarTitle: "Home",
+            occurrenceStartDate: Date(timeIntervalSince1970: 1),
+            startDate: Date(timeIntervalSince1970: 1),
+            endDate: Date(timeIntervalSince1970: 2),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Shanghai",
+            title: "Dinner",
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#3A86FF",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: nil,
+            cloudKitRecordName: "k",
+            stableKey: "s1:abc"
+        )
+        let localized = CloudKitSharedDatabaseImportPolicy.identifiedMirrors([mirror], sharedOwnerID: "_owner")
+        XCTAssertEqual(localized.first?.stableKey, "s1:abc")
+    }
 }
 
 final class CloudKitOperationCompletionGateTests: XCTestCase {
@@ -1457,7 +1493,8 @@ final class CloudKitBatchUpsertPolicyTests: XCTestCase {
                 EventMirrorRecordMapper.Key.urlString,
                 EventMirrorRecordMapper.Key.calendarColorHex,
                 EventMirrorRecordMapper.Key.visibilityRawValue,
-                EventMirrorRecordMapper.Key.deletedAt
+                EventMirrorRecordMapper.Key.deletedAt,
+                EventMirrorRecordMapper.Key.stableKey
             ]
         )
         XCTAssertEqual(

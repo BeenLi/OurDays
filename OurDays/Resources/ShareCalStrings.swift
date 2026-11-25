@@ -157,6 +157,9 @@ struct ShareCalStrings {
     var commentsSection: String { text("Comments", "评论") }
     var deleteButton: String { text("Delete", "删除") }
     var addCommentPlaceholder: String { text("Add a comment", "添加评论") }
+    var editButton: String { text("Edit", "编辑") }
+    var editingCommentTitle: String { text("Editing comment", "编辑评论") }
+    var commentEditedMark: String { text("Edited", "已编辑") }
     var commentsUnavailableNotShared: String {
         text(
             "Your partner can't see this event yet, so there is no one to comment with. Events from the pairing day onward are shared.",
@@ -511,6 +514,18 @@ struct ShareCalStrings {
 
     func cloudKitShareFailed(_ message: String) -> String {
         text("CloudKit share failed: \(message)", "CloudKit 共享失败：\(message)")
+    }
+
+    var copyPairingReport: String {
+        text("Copy diagnostic report", "复制诊断信息")
+    }
+
+    var collectingPairingReport: String {
+        text("Collecting… (about 10 seconds)", "正在收集…（约 10 秒）")
+    }
+
+    var pairingReportCopied: String {
+        text("Copied. Paste it to the developer.", "已复制，请粘贴发给开发者。")
     }
 
     func cloudKitAccountStatus(_ status: String) -> String {

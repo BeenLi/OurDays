@@ -168,3 +168,70 @@ enum CommentDeletionPolicy {
         }
     }
 }
+
+/// Editing a comment. Same rules as deleting (`CommentDeletionPolicy`): only the author
+/// edits, the new body goes to the comment's own record in the event owner's zone, and
+/// `editedAt` decides which body wins. Without that, the import would put the cloud's
+/// older body back over a local edit whose upload hasn't landed yet.
+enum CommentEditPolicy {
+    /// CloudKit keeps dates to the millisecond, so a body that came back from the server
+    /// can carry an `editedAt` a hair earlier than the local one it was saved from. Only a
+    /// gap larger than this counts as "local is newer".
+    static let clockTolerance: TimeInterval = 1
+
+    static func canEdit(_ comment: EventComment, currentMemberID: String) -> Bool {
+        CommentDeletionPolicy.canDelete(comment, currentMemberID: currentMemberID)
+    }
+
+    /// The trimmed new body, or nil when there is nothing to save (empty, or unchanged).
+    static func editedBody(original: String, draft: String) -> String? {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != original else { return nil }
+        return trimmed
+    }
+
+    static func isNewer(_ local: Date?, than incoming: Date?) -> Bool {
+        guard let local else { return false }
+        guard let incoming else { return true }
+        return local.timeIntervalSince(incoming) > clockTolerance
+    }
+
+    /// Import merge: the body with the later `editedAt` wins. A cloud copy that hasn't
+    /// caught up with my local edit keeps my body; anything else takes the cloud's.
+    static func merged(
+        localBody: String,
+        localEditedAt: Date?,
+        incomingBody: String,
+        incomingEditedAt: Date?
+    ) -> (body: String, editedAt: Date?) {
+        if isNewer(localEditedAt, than: incomingEditedAt) {
+            return (localBody, localEditedAt)
+        }
+        return (incomingBody, incomingEditedAt)
+    }
+
+    /// My live edits whose cloud record still has the older body (the one-shot upload
+    /// after saving failed or never ran). Self-limiting like the delete re-upload: once the
+    /// server has the edit, nothing is returned. Deleted comments are left to
+    /// `CommentDeletionPolicy`.
+    static func editsNeedingReupload(
+        local: [EventComment],
+        cloud: [EventComment],
+        currentMemberID: String
+    ) -> [EventComment] {
+        let me = MemberIDPolicy.normalized(currentMemberID)
+        let cloudByID = Dictionary(
+            cloud.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return local.filter { comment in
+            guard comment.deletedAt == nil,
+                  me != nil,
+                  MemberIDPolicy.normalized(comment.authorMemberID) == me,
+                  let cloudCopy = cloudByID[comment.id],
+                  cloudCopy.deletedAt == nil
+            else { return false }
+            return isNewer(comment.editedAt, than: cloudCopy.editedAt)
+        }
+    }
+}

@@ -36,6 +36,9 @@ struct SettingsTabView: View {
     /// Set when the invite sheet hands off to Apple's panel; shown once the sheet is gone.
     @State private var pendingAppleSharingShare: PreparedCloudShare?
     @State private var errorMessage: String?
+    /// The failure of the last Start Pairing, kept so the user can send a report of it.
+    @State private var pairingShareFailure: (message: String, error: Error)?
+    @State private var pairingReportState: PairingReportState = .idle
     @State private var accessRequestMessage: String?
     @State private var calendarAccessMessage: String?
     @State private var isRequestingCalendarAccess = false
@@ -294,6 +297,20 @@ struct SettingsTabView: View {
                             .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 4, trailing: 8))
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
+                    }
+
+                    if let pairingShareFailure, pairingShareFailure.message == errorMessage {
+                        Button {
+                            Task { await copyPairingReport(for: pairingShareFailure.error) }
+                        } label: {
+                            Text(pairingReportLabel)
+                                .font(.footnote.weight(.medium))
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(pairingReportState == .collecting)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 4, trailing: 8))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                     }
                 }
                 .id(SettingsFocusTarget.pairing)
@@ -794,6 +811,8 @@ struct SettingsTabView: View {
         }
         defer { timeoutTask.cancel() }
 
+        pairingShareFailure = nil
+        pairingReportState = .idle
         do {
             if !settings.hasSyncedMemberID {
                 settings.currentMemberID = try await cloudKit.fetchCurrentUserRecordID()
@@ -833,10 +852,56 @@ struct SettingsTabView: View {
         } catch {
             guard activeSharePreparationID == preparationID else { return }
             if let draftID, inviteDraft?.id == draftID { inviteDraft = nil }
-            errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+            let message = CloudKitSharingFailureMessage.userFacingMessage(for: error)
+            errorMessage = message
+            pairingShareFailure = (message, error)
         }
         isPreparingShare = false
         activeSharePreparationID = nil
+    }
+
+    private enum PairingReportState {
+        case idle, collecting, copied
+    }
+
+    private var pairingReportLabel: String {
+        switch pairingReportState {
+        case .idle: settings.strings.copyPairingReport
+        case .collecting: settings.strings.collectingPairingReport
+        case .copied: settings.strings.pairingReportCopied
+        }
+    }
+
+    /// Start Pairing failed and the line on screen can't say why. Collects what this
+    /// device knows (account, zone, root, the whole error, a share probe) for the user
+    /// to paste to us.
+    @MainActor
+    private func copyPairingReport(for error: Error) async {
+        guard let cloudKit = services.cloudKitIfAvailable, pairingReportState != .collecting else { return }
+        pairingReportState = .collecting
+        let report = await cloudKit.pairingShareFailureReport(for: error, device: Self.reportDevice())
+        UIPasteboard.general.string = report.text
+        pairingReportState = .copied
+    }
+
+    @MainActor
+    private static func reportDevice() -> PairingShareFailureReport.Device {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let model = withUnsafeBytes(of: &systemInfo.machine) { bytes in
+            String(decoding: bytes.prefix(while: { $0 != 0 }), as: UTF8.self)
+        }
+        let info = Bundle.main.infoDictionary
+        return PairingShareFailureReport.Device(
+            appVersion: info?["CFBundleShortVersionString"] as? String ?? "?",
+            appBuild: info?["CFBundleVersion"] as? String ?? "?",
+            systemName: UIDevice.current.systemName,
+            systemVersion: UIDevice.current.systemVersion,
+            model: model,
+            localeIdentifier: Locale.current.identifier,
+            preferredLanguages: Array(Locale.preferredLanguages.prefix(3)),
+            timeZoneIdentifier: TimeZone.current.identifier
+        )
     }
 
     @MainActor

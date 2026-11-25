@@ -51,6 +51,12 @@ enum ShareCalLaunchDiagnosticPolicy {
     /// `-ShareCalEventCommentTitle`, the way the swipe does (author check, soft delete,
     /// upload to the comment's zone), then sync.
     static let deleteEventCommentArgument = "-ShareCalDeleteEventComment"
+    /// Either side: edit my comment with this body on the event titled by
+    /// `-ShareCalEventCommentTitle` to the body after `-ShareCalEditEventCommentBody`, the
+    /// way the composer does (author check, `editedAt`, upload to the comment's zone),
+    /// then sync.
+    static let editEventCommentArgument = "-ShareCalEditEventComment"
+    static let editEventCommentBodyArgument = "-ShareCalEditEventCommentBody"
     /// Reinstall smoke: delete the ShareCal events with this title from the system calendar
     /// WITHOUT syncing (the automatic launch sync is throttled right after a sync), so the
     /// next install has to discover the deletion from its own cloud mirrors.
@@ -153,6 +159,14 @@ enum ShareCalLaunchDiagnosticPolicy {
 
     static func deleteEventCommentBody(arguments: [String]) -> String? {
         value(after: deleteEventCommentArgument, arguments: arguments)
+    }
+
+    /// The (old, new) bodies of an edit; nil unless both are given.
+    static func editEventComment(arguments: [String]) -> (from: String, to: String)? {
+        guard let from = value(after: editEventCommentArgument, arguments: arguments),
+              let to = value(after: editEventCommentBodyArgument, arguments: arguments)
+        else { return nil }
+        return (from, to)
     }
 
     static func eventCommentTitle(arguments: [String]) -> String {

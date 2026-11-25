@@ -58,6 +58,7 @@ App 为四个 Tab 的标准 iOS 结构：
 
 ![OurDays 数据同步架构：两个私有 zone，各自一条 CKShare，互相只读](docs/diagrams/sync-architecture.png)
 
+- **日程只有一个入口 EventKit**：Google（CalDAV）、Outlook（Exchange）、iCloud 和本机日历由系统各自同步进同一个日历库，OurDays 不对接任何日历服务，只通过 EventKit 读取所选日历，再写成自己 zone 里的 EventMirror。系统「日历」App 里能看到的日历都能选来共享。
 - **写入路径规则**：自己的数据写自己的私有 zone；针对对方数据的回应（评论、邀请状态、申请批复）写进对方的共享 zone。
 - **镜像是派生数据**：自己的 EventMirror 每次同步都从 EventKit 重建，SwiftData 只是缓存。
 - **mirrorKey 是跨设备的稳定锚点**：`日历ID:事件ID:发生时刻` 同时是 SwiftData 的 id、CloudKit 的 recordName 和评论线程的键，两端生成规则相同，所以还没同步的日程也能先被评论。

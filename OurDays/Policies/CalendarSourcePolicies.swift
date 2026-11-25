@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct CalendarDescriptor: Identifiable, Hashable {
@@ -67,6 +68,14 @@ struct CalendarSourceEvent: Hashable {
     /// Part of a repeating series: its occurrences share `eventIdentifier`, so only
     /// the occurrence date tells them apart.
     var isRecurring: Bool = false
+    /// `EKCalendarItem.calendarItemExternalIdentifier`: the server's identifier for the
+    /// event (the iCalendar UID on iCloud and CalDAV), the same on every device of the
+    /// user, unlike `eventIdentifier` and `calendarIdentifier`. Nil or empty when the
+    /// calendar has none.
+    var externalIdentifier: String? = nil
+    /// One occurrence of a series that was changed on its own (`EKEvent.isDetached`).
+    /// It shares the series' external identifier; its original date tells it apart.
+    var isDetached: Bool = false
 
     var occurrenceEpoch: Int {
         Int(occurrenceStartDate.timeIntervalSince1970.rounded())
@@ -111,6 +120,63 @@ enum CalendarAuthorizationState: Equatable {
 /// Builds the stable key that identifies one EventKit occurrence across syncs.
 /// Shared by the mirror generator, the SwiftData models and the display policies, so
 /// it lives with the other calendar-source policies rather than in `EventMirrorService`.
+/// The cross-device identity hint of an occurrence (`EventMirror.stableKey`). The record
+/// name stays what it was first uploaded as (`EventMirrorKeyPolicy`); this is how my other
+/// devices, whose EventKit identifiers differ, find that record for the same event.
+///
+/// Made from the external identifier, plus the original occurrence date for occurrences
+/// of a series (they share the identifier); a one-off event keeps its key when moved.
+/// All-day occurrences use the calendar day, so a device in another time zone agrees.
+/// When two events in the list would get the same key (one invitation in two calendars),
+/// the calendar title is mixed in. Hashed: the partner can read the record and has no use
+/// for the raw identifier. "" when the event has no external identifier.
+enum EventStableKeyPolicy {
+    static let version = "s1"
+
+    /// `[derived mirror key: stable key]` for `events`.
+    static func stableKeys(
+        for events: [CalendarSourceEvent],
+        calendar: Calendar = .current
+    ) -> [String: String] {
+        let bases = events.map { base(for: $0, calendar: calendar) }
+        var counts: [String: Int] = [:]
+        for base in bases.compactMap({ $0 }) {
+            counts[base, default: 0] += 1
+        }
+        var keys: [String: String] = [:]
+        for (event, base) in zip(events, bases) {
+            let mirrorKey = EventMirrorKeyPolicy.makeMirrorKey(for: event)
+            guard let base else {
+                keys[mirrorKey] = ""
+                continue
+            }
+            let material = (counts[base] ?? 0) > 1 ? "\(base)\n\(event.calendarTitle)" : base
+            keys[mirrorKey] = "\(version):\(digest(material))"
+        }
+        return keys
+    }
+
+    static func base(for event: CalendarSourceEvent, calendar: Calendar = .current) -> String? {
+        guard let external = event.externalIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !external.isEmpty else {
+            return nil
+        }
+        guard event.isRecurring || event.isDetached else { return external }
+        if event.isAllDay {
+            let day = calendar.dateComponents([.year, .month, .day], from: event.occurrenceStartDate)
+            return "\(external)\nday:\(day.year ?? 0)-\(day.month ?? 0)-\(day.day ?? 0)"
+        }
+        return "\(external)\nat:\(event.occurrenceEpoch)"
+    }
+
+    private static func digest(_ material: String) -> String {
+        SHA256.hash(data: Data(material.utf8))
+            .prefix(16)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+}
+
 enum EventMirrorKeyPolicy {
     static func makeMirrorKey(
         calendarIdentifier: String,

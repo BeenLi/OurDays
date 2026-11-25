@@ -263,7 +263,8 @@ enum CloudKitForegroundQueryPolicy {
                 EventMirrorRecordMapper.Key.urlString,
                 EventMirrorRecordMapper.Key.calendarColorHex,
                 EventMirrorRecordMapper.Key.visibilityRawValue,
-                EventMirrorRecordMapper.Key.deletedAt
+                EventMirrorRecordMapper.Key.deletedAt,
+                EventMirrorRecordMapper.Key.stableKey
             ]
         case InvitationRecordMapper.recordType:
             [
@@ -374,6 +375,7 @@ enum EventMirrorRecordMapper {
         static let calendarColorHex = "calendarColorHex"
         static let visibilityRawValue = "visibilityRawValue"
         static let deletedAt = "deletedAt"
+        static let stableKey = "stableKey"
     }
 
     static func record(
@@ -401,6 +403,10 @@ enum EventMirrorRecordMapper {
         record[Key.calendarColorHex] = mirror.calendarColorHex as CKRecordValue
         record[Key.visibilityRawValue] = mirror.visibilityRawValue as CKRecordValue
         record[Key.deletedAt] = mirror.deletedAt as CKRecordValue?
+        // Only written when known: a nil would clear what another device wrote.
+        if let stableKey = mirror.stableKey {
+            record[Key.stableKey] = stableKey as CKRecordValue
+        }
         return record
     }
 
@@ -435,7 +441,8 @@ enum EventMirrorRecordMapper {
             calendarColorHex: calendarColorHex,
             visibilityRawValue: visibilityRawValue,
             deletedAt: record[Key.deletedAt] as? Date,
-            cloudKitRecordName: record.recordID.recordName
+            cloudKitRecordName: record.recordID.recordName,
+            stableKey: record[Key.stableKey] as? String
         )
     }
 }

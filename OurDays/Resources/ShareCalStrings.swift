@@ -516,6 +516,18 @@ struct ShareCalStrings {
         text("CloudKit share failed: \(message)", "CloudKit 共享失败：\(message)")
     }
 
+    var copyPairingReport: String {
+        text("Copy diagnostic report", "复制诊断信息")
+    }
+
+    var collectingPairingReport: String {
+        text("Collecting… (about 10 seconds)", "正在收集…（约 10 秒）")
+    }
+
+    var pairingReportCopied: String {
+        text("Copied. Paste it to the developer.", "已复制，请粘贴发给开发者。")
+    }
+
     func cloudKitAccountStatus(_ status: String) -> String {
         text("CloudKit account status is \(status).", "CloudKit 账户状态为 \(status)。")
     }

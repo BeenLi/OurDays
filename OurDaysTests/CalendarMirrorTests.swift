@@ -933,3 +933,239 @@ final class EventMirrorStoreTests: XCTestCase {
         )
     }
 }
+
+final class RescheduledEventKeyTests: XCTestCase {
+    // Repro 2026-11-24: an event moved 20:00 → 21:00 got a new key, a new record for the
+    // partner, and the partner's comments (hung on the old record) vanished on both sides.
+    func testMovedOneOffEventKeepsItsUploadedKey() {
+        let moved = event(start: 5_400)
+        let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+            [moved],
+            existingShadows: [shadow(key: "work:event-1:1800", start: 1_800)],
+            existingMirrors: [mirror(key: "work:event-1:1800", start: 1_800)]
+        )
+
+        XCTAssertEqual(kept, ["work:event-1:5400": "work:event-1:1800"])
+        XCTAssertEqual(EventMirrorKeyPolicy.mirrorKey(for: moved, keptKeys: kept), "work:event-1:1800")
+    }
+
+    func testKeyIsFoundFromTheCloudCopyAloneAfterAReinstall() {
+        let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+            [event(start: 5_400)],
+            existingShadows: [],
+            existingMirrors: [mirror(key: "work:event-1:1800", start: 1_800)]
+        )
+
+        XCTAssertEqual(kept, ["work:event-1:5400": "work:event-1:1800"])
+    }
+
+    func testUnmovedNewRecurringAndAmbiguousEventsUseTheirOwnKeys() {
+        let old = [mirror(key: "work:event-1:1800", start: 1_800)]
+        // Not moved: its own key is already live.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents([event(start: 1_800)], existingShadows: [], existingMirrors: old),
+            [:]
+        )
+        // A new event: nothing carries its identifier.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents([event(id: "event-2", start: 5_400)], existingShadows: [], existingMirrors: old),
+            [:]
+        )
+        // A repeating series' occurrences share the identifier; the date is what tells them apart.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents([event(start: 5_400, isRecurring: true)], existingShadows: [], existingMirrors: old),
+            [:]
+        )
+        // Two live keys for the identifier: no way to tell which is this event's.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                [event(start: 5_400)],
+                existingShadows: [],
+                existingMirrors: old + [mirror(key: "work:event-1:3600", start: 3_600)]
+            ),
+            [:]
+        )
+        // A key another current event has is never taken.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                [event(start: 5_400), event(start: 1_800)],
+                existingShadows: [],
+                existingMirrors: old
+            ),
+            [:]
+        )
+        // Same identifier in another calendar is another event.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                [event(start: 5_400)],
+                existingShadows: [],
+                existingMirrors: [mirror(key: "home:event-1:1800", start: 1_800)]
+            ),
+            [:]
+        )
+    }
+
+    func testDeletedOrTombstonedCopiesAreNotRevived() {
+        let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+            [event(start: 5_400)],
+            existingShadows: [shadow(key: "work:event-1:1800", start: 1_800, isTombstone: true)],
+            existingMirrors: [mirror(key: "work:event-1:1800", start: 1_800, deletedAt: Date(timeIntervalSince1970: 9_000))]
+        )
+
+        XCTAssertEqual(kept, [:])
+    }
+
+    func testEventIdentifiersWithColonsMatchOnlyTheirOwnKeys() {
+        // EventKit identifiers look like "UUID:UUID"; "event-1" must not claim "event-1:x"'s keys.
+        let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+            [event(id: "A:B", start: 5_400)],
+            existingShadows: [],
+            existingMirrors: [mirror(key: "work:A:B:1800", start: 1_800)]
+        )
+        XCTAssertEqual(kept, ["work:A:B:5400": "work:A:B:1800"])
+
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                [event(id: "A", start: 5_400)],
+                existingShadows: [],
+                existingMirrors: [mirror(key: "work:A:B:1800", start: 1_800)]
+            ),
+            [:]
+        )
+    }
+
+    func testMovedEventUpdatesItsRecordInPlaceInsteadOfTombstoningIt() {
+        let service = EventMirrorService()
+        let moved = event(start: 5_400)
+        let oldShadow = shadow(key: "work:event-1:1800", start: 1_800)
+        let oldMirror = mirror(key: "work:event-1:1800", start: 1_800)
+        let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+            [moved],
+            existingShadows: [oldShadow],
+            existingMirrors: [oldMirror]
+        )
+
+        let mirrors = service.makeMirrors(
+            from: [moved],
+            selectedCalendarIDs: ["work"],
+            ownerMemberID: "_me",
+            visibility: .fullDetails,
+            keptKeys: kept
+        )
+        let shadows = service.makeShadows(
+            from: [moved],
+            selectedCalendarIDs: ["work"],
+            uploadedAt: nil,
+            keptKeys: kept
+        )
+
+        XCTAssertEqual(mirrors.map(\.id), ["work:event-1:1800"])
+        XCTAssertEqual(mirrors.map(\.cloudKitRecordName), ["work:event-1:1800"])
+        XCTAssertEqual(mirrors.first?.startDate, Date(timeIntervalSince1970: 5_400))
+        XCTAssertEqual(mirrors.first?.occurrenceStartDate, Date(timeIntervalSince1970: 5_400))
+        XCTAssertEqual(shadows.map(\.id), ["work:event-1:1800"])
+        XCTAssertEqual(shadows.map(\.mirrorKey), ["work:event-1:1800"])
+
+        let currentKeys = Set(mirrors.map(\.mirrorKey))
+        let window = DateInterval(start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 100_000))
+        XCTAssertTrue(service.deletedShadows(existingEventKeys: currentKeys, shadows: [oldShadow], syncWindow: window).isEmpty)
+        XCTAssertTrue(
+            service.deletedMirrorTombstones(
+                existingEventKeys: currentKeys,
+                existingMirrors: [oldMirror],
+                selectedCalendarIDs: ["work"],
+                syncWindow: window,
+                deletedAt: Date(timeIntervalSince1970: 9_000)
+            ).isEmpty
+        )
+        // The new time is a change, so the record is uploaded again under its old name.
+        XCTAssertEqual(
+            CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
+                mirrors,
+                activeShadows: shadows,
+                existingShadows: [oldShadow],
+                existingLocalMirrors: [oldMirror]
+            ).map(\.cloudKitRecordName),
+            ["work:event-1:1800"]
+        )
+
+        // The next sync finds the kept key again from the updated shadow and mirror.
+        let nextKept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+            [moved],
+            existingShadows: shadows,
+            existingMirrors: mirrors
+        )
+        XCTAssertEqual(nextKept, kept)
+    }
+
+    func testDisplayMirrorOfAMovedEventShowsUnderItsUploadedKey() {
+        let moved = event(start: 5_400)
+        let display = CalendarDisplayMirrorPolicy.displayMirrors(
+            from: [moved],
+            ownerMemberID: "_me",
+            keptKeys: EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                [moved],
+                existingShadows: [],
+                existingMirrors: [mirror(key: "work:event-1:1800", start: 1_800)]
+            )
+        )
+
+        XCTAssertEqual(display.map(\.mirrorKey), ["work:event-1:1800"])
+        XCTAssertEqual(display.map(\.id), ["\(CalendarDisplayMirrorPolicy.transientIDPrefix)work:event-1:1800"])
+    }
+
+    private func event(id: String = "event-1", start: TimeInterval, isRecurring: Bool = false) -> CalendarSourceEvent {
+        CalendarSourceEvent(
+            eventIdentifier: id,
+            calendarIdentifier: "work",
+            calendarTitle: "Work",
+            calendarColorHex: "#3A86FF",
+            startDate: Date(timeIntervalSince1970: start),
+            endDate: Date(timeIntervalSince1970: start + 3_600),
+            occurrenceStartDate: Date(timeIntervalSince1970: start),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: "Dinner",
+            location: nil,
+            notes: nil,
+            url: nil,
+            isRecurring: isRecurring
+        )
+    }
+
+    private func shadow(key: String, start: TimeInterval, isTombstone: Bool = false) -> LocalEventShadow {
+        LocalEventShadow(
+            id: key,
+            localEventIdentifier: "event-1",
+            calendarIdentifier: "work",
+            occurrenceStartDate: Date(timeIntervalSince1970: start),
+            fingerprint: "old",
+            cloudKitRecordName: key,
+            lastUploadedAt: Date(timeIntervalSince1970: 2_000),
+            isTombstone: isTombstone
+        )
+    }
+
+    private func mirror(key: String, start: TimeInterval, deletedAt: Date? = nil) -> EventMirror {
+        EventMirror(
+            id: key,
+            ownerMemberID: "_me",
+            mirrorKey: key,
+            sourceCalendarID: String(key.prefix(while: { $0 != ":" })),
+            sourceCalendarTitle: "Work",
+            occurrenceStartDate: Date(timeIntervalSince1970: start),
+            startDate: Date(timeIntervalSince1970: start),
+            endDate: Date(timeIntervalSince1970: start + 3_600),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: "Dinner",
+            location: nil,
+            notes: nil,
+            urlString: nil,
+            calendarColorHex: "#3A86FF",
+            visibilityRawValue: EventVisibility.fullDetails.rawValue,
+            deletedAt: deletedAt,
+            cloudKitRecordName: key
+        )
+    }
+}

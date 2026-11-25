@@ -29,6 +29,15 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
+        if let title = ShareCalLaunchDiagnosticPolicy.moveCalendarEventTitle(arguments: arguments) {
+            do {
+                let count = try services.calendarAccess.moveShareCalEventsOneHourLater(titled: title)
+                NSLog("%@ moveCalendarEvent succeeded title=%@ count=%d", diag, title, count)
+            } catch {
+                NSLog("%@ moveCalendarEvent failed: %@", diag, String(describing: error))
+            }
+        }
+
         if ShareCalLaunchDiagnosticPolicy.shouldRunCloudKitWriteProbe(arguments: arguments) {
             await services.cloudKit.runPrivateDatabaseWriteProbe()
         }

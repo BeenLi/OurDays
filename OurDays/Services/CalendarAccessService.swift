@@ -146,6 +146,76 @@ final class CalendarAccessService {
         return matches.count
     }
 
+    /// Test-harness only (`-ShareCalSeedDailySeriesTitled`): a daily series of five
+    /// one-hour events in the ShareCal calendar, the first in 15 minutes. Replaces a
+    /// series left by an earlier run. Returns the series' event identifier.
+    @discardableResult
+    func ensureShareCalDailySeries(titled title: String, now: Date = .now) throws -> String {
+        try deleteShareCalSeries(titled: title, now: now)
+        let event = EKEvent(eventStore: eventStore)
+        event.title = title
+        event.startDate = now.addingTimeInterval(15 * 60)
+        event.endDate = now.addingTimeInterval(75 * 60)
+        event.notes = ShareCalSmokeTestEventPolicy.notes
+        event.calendar = try ensureShareCalEKCalendar()
+        event.addRecurrenceRule(
+            EKRecurrenceRule(recurrenceWith: .daily, interval: 1, end: EKRecurrenceEnd(occurrenceCount: 5))
+        )
+        try eventStore.save(event, span: .futureEvents, commit: true)
+        return event.eventIdentifier ?? ""
+    }
+
+    /// Test-harness only (`-ShareCalMoveSeriesTitled`): moves the series with this title
+    /// one hour later from its `fromOccurrence`-th occurrence on ("all future events"),
+    /// so a smoke run can see what EventKit does to the event identifiers and whether
+    /// the uploaded records survive. Returns each occurrence before and after, as
+    /// `index:eventIdentifier@occurrenceEpoch`.
+    func moveShareCalSeriesOneHourLater(
+        titled title: String,
+        fromOccurrence: Int,
+        now: Date = .now
+    ) throws -> (before: [String], after: [String])? {
+        let occurrences = try shareCalOccurrences(titled: title, now: now)
+        guard occurrences.indices.contains(fromOccurrence) else { return nil }
+        let before = Self.describe(occurrences)
+        let event = occurrences[fromOccurrence]
+        event.startDate = event.startDate.addingTimeInterval(60 * 60)
+        event.endDate = event.endDate.addingTimeInterval(60 * 60)
+        try eventStore.save(event, span: .futureEvents, commit: true)
+        return (before, Self.describe(try shareCalOccurrences(titled: title, now: now)))
+    }
+
+    /// Test-harness only: removes every series (or event) with this title from the
+    /// ShareCal calendar within ±30 days. Returns how many saves it took.
+    @discardableResult
+    func deleteShareCalSeries(titled title: String, now: Date = .now) throws -> Int {
+        var removed = 0
+        while removed < 20, let first = try shareCalOccurrences(titled: title, now: now).first {
+            try eventStore.remove(first, span: .futureEvents, commit: true)
+            removed += 1
+        }
+        return removed
+    }
+
+    private func shareCalOccurrences(titled title: String, now: Date) throws -> [EKEvent] {
+        let calendar = try ensureShareCalEKCalendar()
+        let predicate = eventStore.predicateForEvents(
+            withStart: now.addingTimeInterval(-30 * 24 * 60 * 60),
+            end: now.addingTimeInterval(30 * 24 * 60 * 60),
+            calendars: [calendar]
+        )
+        return eventStore.events(matching: predicate)
+            .filter { $0.title == title }
+            .sorted { $0.startDate < $1.startDate }
+    }
+
+    private static func describe(_ occurrences: [EKEvent]) -> [String] {
+        occurrences.enumerated().map { index, event in
+            let occurrenceDate: Date = event.occurrenceDate ?? event.startDate
+            return "\(index):\(event.eventIdentifier ?? "")@\(Int(occurrenceDate.timeIntervalSince1970.rounded()))"
+        }
+    }
+
     func events(from startDate: Date, to endDate: Date, selectedCalendarIDs: Set<String>) -> [CalendarSourceEvent] {
         let calendars = eventStore.calendars(for: .event)
             .filter { selectedCalendarIDs.contains($0.calendarIdentifier) }

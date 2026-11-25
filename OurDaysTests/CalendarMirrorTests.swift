@@ -971,9 +971,14 @@ final class RescheduledEventKeyTests: XCTestCase {
             EventMirrorKeyPolicy.keptKeysForRescheduledEvents([event(id: "event-2", start: 5_400)], existingShadows: [], existingMirrors: old),
             [:]
         )
-        // A repeating series' occurrences share the identifier; the date is what tells them apart.
+        // A repeating series' occurrences share the identifier, so they pair by date: only
+        // with a copy closer than the series' spacing (a day when it can't be told).
         XCTAssertEqual(
-            EventMirrorKeyPolicy.keptKeysForRescheduledEvents([event(start: 5_400, isRecurring: true)], existingShadows: [], existingMirrors: old),
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                [event(start: 200_000, isRecurring: true)],
+                existingShadows: [],
+                existingMirrors: old
+            ),
             [:]
         )
         // Two live keys for the identifier: no way to tell which is this event's.
@@ -1167,5 +1172,307 @@ final class RescheduledEventKeyTests: XCTestCase {
             deletedAt: deletedAt,
             cloudKitRecordName: key
         )
+    }
+}
+
+final class MovedSeriesKeyTests: XCTestCase {
+    private let hour: TimeInterval = 3_600
+    private let week: TimeInterval = 7 * 24 * 3_600
+    private let firstWednesday: TimeInterval = 1_000_000
+    private let service = EventMirrorService()
+
+    // Every Wednesday 20:00 moved to 21:00: every occurrence date shifts, and each
+    // occurrence keeps the record (and comments) it had.
+    func testWholeSeriesMovedAnHourKeepsEveryRecord() {
+        let before = series(weeks: 0..<4)
+        let old = uploaded(before)
+        let after = series(weeks: 0..<4, shift: hour)
+
+        let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+            after,
+            existingShadows: old.shadows,
+            existingMirrors: old.mirrors
+        )
+
+        XCTAssertEqual(kept, Dictionary(uniqueKeysWithValues: zip(after.map(key), before.map(key))))
+
+        let new = uploaded(after, keptKeys: kept)
+        XCTAssertEqual(new.mirrors.map(\.mirrorKey), before.map(key))
+        XCTAssertEqual(new.mirrors.map(\.occurrenceStartDate), after.map(\.occurrenceStartDate))
+        XCTAssertTrue(
+            service.deletedShadows(existingEventKeys: Set(new.mirrors.map(\.mirrorKey)), shadows: old.shadows).isEmpty
+        )
+        // Updated in place: uploaded again under the old names.
+        XCTAssertEqual(
+            CloudKitMirrorSyncPolicy.mirrorsNeedingUpload(
+                new.mirrors,
+                activeShadows: new.shadows,
+                existingShadows: old.shadows,
+                existingLocalMirrors: old.mirrors
+            ).map(\.mirrorKey),
+            before.map(key)
+        )
+        // Later syncs read the names back from the name book.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(after, existingShadows: new.shadows, existingMirrors: new.mirrors),
+            kept
+        )
+        // Also from the mirrors alone, and from one week of the calendar.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                [after[2]],
+                existingShadows: [],
+                existingMirrors: new.mirrors,
+                matchesMovedSeries: false
+            ),
+            [key(after[2]): key(before[2])]
+        )
+    }
+
+    func testSeriesMovedToAnotherWeekdayPairsWithTheNearestOccurrence() {
+        let before = series(weeks: 0..<4)
+        let old = uploaded(before)
+        let after = series(weeks: 0..<4, shift: 2 * 24 * hour)
+
+        let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(after, existingShadows: old.shadows, existingMirrors: old.mirrors)
+
+        XCTAssertEqual(kept, Dictionary(uniqueKeysWithValues: zip(after.map(key), before.map(key))))
+    }
+
+    // "All future events" from the third week: EventKit ends the old series there and
+    // starts a new one, with a new event identifier, for the rest.
+    func testAllFutureEventsMovedIntoANewSeriesKeepTheirRecords() {
+        let before = series(weeks: 0..<4)
+        let old = uploaded(before)
+        let moved = series(id: "series-2", weeks: 2..<4, shift: hour)
+        let after = series(weeks: 0..<2) + moved
+
+        let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(after, existingShadows: old.shadows, existingMirrors: old.mirrors)
+
+        XCTAssertEqual(kept, [key(moved[0]): key(before[2]), key(moved[1]): key(before[3])])
+
+        // The name book now files the old names under the new series.
+        let new = uploaded(after, keptKeys: kept)
+        XCTAssertEqual(new.shadows.map(\.id), before.map(key))
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(after, existingShadows: new.shadows, existingMirrors: new.mirrors),
+            kept
+        )
+        // A reinstall's first sync has only the cloud copies, named after the old series.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(after, existingShadows: [], existingMirrors: new.mirrors),
+            kept
+        )
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                [moved[1]],
+                existingShadows: new.shadows,
+                existingMirrors: new.mirrors,
+                matchesMovedSeries: false
+            ),
+            [key(moved[1]): key(before[3])]
+        )
+    }
+
+    func testNewSeriesOnlyContinuesOneSeriesWithTheSameContent() {
+        let before = series(weeks: 0..<4)
+        let old = uploaded(before)
+        // Another title: a different series, not the old one continued.
+        let renamed = series(id: "series-2", weeks: 2..<4, shift: hour, title: "Gym")
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                series(weeks: 0..<2) + renamed,
+                existingShadows: old.shadows,
+                existingMirrors: old.mirrors
+            ),
+            [:]
+        )
+        // Two ended series with this content: no way to tell which one it continues.
+        let twin = uploaded(series(id: "series-3", weeks: 2..<4, shift: 2 * hour))
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                series(weeks: 0..<2) + series(id: "series-2", weeks: 2..<4, shift: hour),
+                existingShadows: old.shadows + twin.shadows,
+                existingMirrors: old.mirrors + twin.mirrors
+            ),
+            [:]
+        )
+        // Another calendar is never searched.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                series(weeks: 0..<2) + series(id: "series-2", calendar: "home", weeks: 2..<4, shift: hour),
+                existingShadows: old.shadows,
+                existingMirrors: old.mirrors
+            ),
+            [:]
+        )
+    }
+
+    func testDeletedAndNewOccurrencesAreNotMistakenForAMove() {
+        let old = uploaded(series(weeks: 0..<4))
+        // Week 2 deleted and week 4 new: two weeks apart, further than the series' spacing.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                series(weeks: 0..<2) + series(weeks: 3..<5),
+                existingShadows: old.shadows,
+                existingMirrors: old.mirrors
+            ),
+            [:]
+        )
+        // The last one deleted and the next one new: exactly the spacing apart.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                series(weeks: 0..<3) + series(weeks: 4..<5),
+                existingShadows: old.shadows,
+                existingMirrors: old.mirrors
+            ),
+            [:]
+        )
+        // More occurrences of an unmoved series are simply new.
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                series(weeks: 0..<8),
+                existingShadows: old.shadows,
+                existingMirrors: old.mirrors
+            ),
+            [:]
+        )
+    }
+
+    func testSeriesMovedBackTakesItsOwnKeysAgain() {
+        let before = series(weeks: 0..<4)
+        let old = uploaded(before)
+        let shifted = series(weeks: 0..<4, shift: hour)
+        let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(shifted, existingShadows: old.shadows, existingMirrors: old.mirrors)
+        let moved = uploaded(shifted, keptKeys: kept)
+
+        let keptAfterMovingBack = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+            before,
+            existingShadows: moved.shadows,
+            existingMirrors: moved.mirrors
+        )
+
+        XCTAssertEqual(keptAfterMovingBack, [:])
+        XCTAssertEqual(uploaded(before, keptKeys: keptAfterMovingBack).mirrors.map(\.mirrorKey), before.map(key))
+    }
+
+    // The new series took over the old names; then the old series runs again at its old
+    // times. The names go back to the events that derive them, so no two events share one.
+    func testKeptKeyIsGivenUpToTheEventThatDerivesIt() {
+        let before = series(weeks: 0..<2)
+        let old = uploaded(before)
+        let moved = series(id: "series-2", weeks: 0..<2, shift: hour)
+        let kept = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(moved, existingShadows: old.shadows, existingMirrors: old.mirrors)
+        XCTAssertEqual(kept.count, 2)
+        let new = uploaded(moved, keptKeys: kept)
+
+        let both = before + moved
+        let keptWithBoth = EventMirrorKeyPolicy.keptKeysForRescheduledEvents(both, existingShadows: new.shadows, existingMirrors: new.mirrors)
+
+        XCTAssertEqual(keptWithBoth, [:])
+        let keys = both.map { EventMirrorKeyPolicy.mirrorKey(for: $0, keptKeys: keptWithBoth) }
+        XCTAssertEqual(Set(keys).count, both.count)
+    }
+
+    func testOneWeekOfTheCalendarLooksNamesUpButNeverPairs() {
+        let old = uploaded(series(weeks: 0..<4))
+
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
+                series(weeks: 1..<2, shift: hour),
+                existingShadows: old.shadows,
+                existingMirrors: old.mirrors,
+                matchesMovedSeries: false
+            ),
+            [:]
+        )
+    }
+
+    func testContentIsReadBackFromAFingerprint() {
+        let event = CalendarSourceEvent(
+            eventIdentifier: "A:B",
+            calendarIdentifier: "work",
+            calendarTitle: "Work",
+            calendarColorHex: "#3A86FF",
+            startDate: Date(timeIntervalSince1970: 1_800),
+            endDate: Date(timeIntervalSince1970: 5_400),
+            occurrenceStartDate: Date(timeIntervalSince1970: 1_800),
+            isAllDay: false,
+            timeZoneIdentifier: "Asia/Singapore",
+            title: "Dinner | date",
+            location: "Home",
+            notes: "a|b",
+            url: URL(string: "https://example.com")
+        )
+
+        XCTAssertEqual(EventMirrorKeyPolicy.content(for: event), "Dinner | date|Home|a|b|https://example.com")
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.fingerprint(for: event),
+            "A:B|work|1800|5400|Dinner | date|Home|a|b|https://example.com"
+        )
+        XCTAssertEqual(
+            EventMirrorKeyPolicy.content(
+                ofFingerprint: EventMirrorKeyPolicy.fingerprint(for: event),
+                eventIdentifier: "A:B",
+                calendarIdentifier: "work"
+            ),
+            EventMirrorKeyPolicy.content(for: event)
+        )
+        XCTAssertNil(EventMirrorKeyPolicy.content(ofFingerprint: "old", eventIdentifier: "A:B", calendarIdentifier: "work"))
+    }
+
+    private func key(_ event: CalendarSourceEvent) -> String {
+        EventMirrorKeyPolicy.makeMirrorKey(for: event)
+    }
+
+    /// The shadows and own mirrors a sync leaves behind for these events.
+    private func uploaded(
+        _ events: [CalendarSourceEvent],
+        keptKeys: [String: String] = [:]
+    ) -> (shadows: [LocalEventShadow], mirrors: [EventMirror]) {
+        let calendars = Set(events.map(\.calendarIdentifier))
+        return (
+            service.makeShadows(
+                from: events,
+                selectedCalendarIDs: calendars,
+                uploadedAt: Date(timeIntervalSince1970: 2_000),
+                keptKeys: keptKeys
+            ),
+            service.makeMirrors(
+                from: events,
+                selectedCalendarIDs: calendars,
+                ownerMemberID: "_me",
+                visibility: .fullDetails,
+                keptKeys: keptKeys
+            )
+        )
+    }
+
+    private func series(
+        id: String = "series-1",
+        calendar: String = "work",
+        weeks: Range<Int>,
+        shift: TimeInterval = 0,
+        title: String = "Dinner"
+    ) -> [CalendarSourceEvent] {
+        weeks.map { index in
+            let start = Date(timeIntervalSince1970: firstWednesday + Double(index) * week + shift)
+            return CalendarSourceEvent(
+                eventIdentifier: id,
+                calendarIdentifier: calendar,
+                calendarTitle: "Work",
+                calendarColorHex: "#3A86FF",
+                startDate: start,
+                endDate: start.addingTimeInterval(hour),
+                occurrenceStartDate: start,
+                isAllDay: false,
+                timeZoneIdentifier: "Asia/Singapore",
+                title: title,
+                location: nil,
+                notes: nil,
+                url: nil,
+                isRecurring: true
+            )
+        }
     }
 }

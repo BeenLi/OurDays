@@ -395,17 +395,23 @@ struct CalendarTabView: View {
         let persistedOwn = mirrors.filter { $0.ownerMemberID == settings.currentMemberID }
         let shownEvents = sourceEvents.filter { selectedCalendarIDs.contains($0.calendarIdentifier) }
         // An event just moved keeps its uploaded key (the next sync updates that record
-        // in place), so its comments show right away.
+        // in place), so its comments show right away. A moved series is only looked up
+        // here, not matched: this week alone can't tell which occurrences disappeared,
+        // so its comments come back with the next sync.
+        let liveShadows = (try? modelContext.fetch(
+            FetchDescriptor<LocalEventShadow>(predicate: #Predicate { $0.isTombstone == false })
+        )) ?? []
         let display = OwnEventTwinPolicy.adoptingPersistedKeys(
             CalendarDisplayMirrorPolicy.displayMirrors(
                 from: shownEvents,
                 ownerMemberID: settings.currentMemberID,
                 keptKeys: EventMirrorKeyPolicy.keptKeysForRescheduledEvents(
                     shownEvents,
-                    existingShadows: [],
+                    existingShadows: liveShadows,
                     existingMirrors: persistedOwn.filter {
                         !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
-                    }
+                    },
+                    matchesMovedSeries: false
                 )
             ),
             persistedOwn: persistedOwn

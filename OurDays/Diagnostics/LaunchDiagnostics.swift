@@ -38,6 +38,44 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
+        if let title = ShareCalLaunchDiagnosticPolicy.seedDailySeriesTitle(arguments: arguments) {
+            do {
+                let eventID = try services.calendarAccess.ensureShareCalDailySeries(titled: title)
+                NSLog("%@ seedDailySeries succeeded title=%@ id=%@", diag, title, eventID)
+            } catch {
+                NSLog("%@ seedDailySeries failed: %@", diag, String(describing: error))
+            }
+        }
+
+        if let title = ShareCalLaunchDiagnosticPolicy.moveSeriesTitle(arguments: arguments) {
+            let fromOccurrence = ShareCalLaunchDiagnosticPolicy.moveSeriesFromOccurrence(arguments: arguments)
+            do {
+                if let moved = try services.calendarAccess.moveShareCalSeriesOneHourLater(
+                    titled: title,
+                    fromOccurrence: fromOccurrence
+                ) {
+                    NSLog(
+                        "%@ moveSeries succeeded title=%@ from=%d before=[%@] after=[%@]",
+                        diag, title, fromOccurrence,
+                        moved.before.joined(separator: " "), moved.after.joined(separator: " ")
+                    )
+                } else {
+                    NSLog("%@ moveSeries failed: no occurrence %d titled '%@'", diag, fromOccurrence, title)
+                }
+            } catch {
+                NSLog("%@ moveSeries failed: %@", diag, String(describing: error))
+            }
+        }
+
+        if let title = ShareCalLaunchDiagnosticPolicy.deleteSeriesTitle(arguments: arguments) {
+            do {
+                let count = try services.calendarAccess.deleteShareCalSeries(titled: title)
+                NSLog("%@ deleteSeries succeeded title=%@ count=%d", diag, title, count)
+            } catch {
+                NSLog("%@ deleteSeries failed: %@", diag, String(describing: error))
+            }
+        }
+
         if ShareCalLaunchDiagnosticPolicy.shouldRunCloudKitWriteProbe(arguments: arguments) {
             await services.cloudKit.runPrivateDatabaseWriteProbe()
         }
@@ -132,12 +170,14 @@ enum ShareCalLaunchDiagnostics {
             await addEventComment(
                 body: body,
                 title: ShareCalLaunchDiagnosticPolicy.eventCommentTitle(arguments: arguments),
+                occurrence: ShareCalLaunchDiagnosticPolicy.eventCommentOccurrence(arguments: arguments),
                 services: services, settings: settings, modelContext: modelContext
             )
         }
         if ShareCalLaunchDiagnosticPolicy.shouldProbeEventComments(arguments: arguments) {
             await probeEventComments(
                 title: ShareCalLaunchDiagnosticPolicy.eventCommentTitle(arguments: arguments),
+                occurrence: ShareCalLaunchDiagnosticPolicy.eventCommentOccurrence(arguments: arguments),
                 services: services, settings: settings, modelContext: modelContext
             )
         }
@@ -158,7 +198,11 @@ enum ShareCalLaunchDiagnostics {
 
     private static func acceptedInvitation(in modelContext: ModelContext) -> EventInvitation? {
         let all = (try? modelContext.fetch(FetchDescriptor<EventInvitation>())) ?? []
-        return all.first { $0.status == .accepted && $0.archivedAt == nil }
+        // The newest one, the same on both devices: accepted invitations from earlier
+        // runs pile up, and an unordered pick let the two sides open different threads.
+        return all
+            .filter { $0.status == .accepted && $0.archivedAt == nil }
+            .max { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
     }
 
     /// Owner side: create an invitation matching the owner's already-seeded smoke event
@@ -370,7 +414,8 @@ enum ShareCalLaunchDiagnostics {
     /// is used and the write routes into the owner's shared zone. A sync follows the upload so
     /// an unsynced own mirror lands too and the partner can find the event.
     private static func addEventComment(
-        body: String, title: String, services: AppServices, settings: SettingsStore, modelContext: ModelContext
+        body: String, title: String, occurrence: Int?,
+        services: AppServices, settings: SettingsStore, modelContext: ModelContext
     ) async {
         let persisted = (try? modelContext.fetch(FetchDescriptor<EventMirror>())) ?? []
         let selectedCalendarIDs = settings.selectedCalendarIDs
@@ -379,8 +424,9 @@ enum ShareCalLaunchDiagnostics {
             from: now.addingTimeInterval(-7 * 86_400),
             to: now.addingTimeInterval(7 * 86_400)
         ).filter { selectedCalendarIDs.contains($0.calendarIdentifier) && $0.title == title }
-        let displayMirrors = CalendarDisplayMirrorPolicy.displayMirrors(
-            from: ownEvents, ownerMemberID: settings.currentMemberID
+        let displayMirrors = pick(
+            CalendarDisplayMirrorPolicy.displayMirrors(from: ownEvents, ownerMemberID: settings.currentMemberID),
+            occurrence: occurrence
         )
 
         let anchor: EventCommentAnchor
@@ -399,9 +445,12 @@ enum ShareCalLaunchDiagnostics {
                 NSLog("%@ addEventComment failed: own event '%@' is outside the sharing windows", diag, title)
                 return
             }
-        } else if let mirror = persisted.first(where: {
-            $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
-        }) {
+        } else if let mirror = pick(
+            persisted.filter {
+                $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
+            },
+            occurrence: occurrence
+        ).first {
             anchor = EventCommentAnchorPolicy.anchor(forMirror: mirror)
             resolution = "persisted owner=\(mirror.ownerMemberID)"
         } else {
@@ -438,13 +487,17 @@ enum ShareCalLaunchDiagnostics {
 
     /// Either side: sync, then log the thread of the persisted mirror with the given title.
     private static func probeEventComments(
-        title: String, services: AppServices, settings: SettingsStore, modelContext: ModelContext
+        title: String, occurrence: Int?,
+        services: AppServices, settings: SettingsStore, modelContext: ModelContext
     ) async {
         await runForegroundSync(services: services, settings: settings, modelContext: modelContext)
         let mirrors = (try? modelContext.fetch(FetchDescriptor<EventMirror>())) ?? []
-        guard let mirror = mirrors.first(where: {
-            $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
-        }) else {
+        guard let mirror = pick(
+            mirrors.filter {
+                $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
+            },
+            occurrence: occurrence
+        ).first else {
             NSLog("%@ eventComments title=%@ count=0 (no persisted mirror)", diag, title)
             return
         }
@@ -453,7 +506,15 @@ enum ShareCalLaunchDiagnostics {
             .filter { $0.eventMirrorID == anchor.key && $0.deletedAt == nil }
             .sorted { $0.createdAt < $1.createdAt }
         let bodies = comments.map(\.body).joined(separator: "|")
-        NSLog("%@ eventComments title=%@ count=%d bodies=[%@]", diag, title, comments.count, bodies)
+        NSLog("%@ eventComments title=%@ count=%d bodies=[%@] key=%@", diag, title, comments.count, bodies, anchor.key)
+    }
+
+    /// The mirrors as they are, or only the `occurrence`-th in start order (none when
+    /// there are fewer), for the events of a series, which share a title.
+    private static func pick(_ mirrors: [EventMirror], occurrence: Int?) -> [EventMirror] {
+        guard let occurrence else { return mirrors }
+        let sorted = mirrors.sorted { $0.startDate < $1.startDate }
+        return sorted.indices.contains(occurrence) ? [sorted[occurrence]] : []
     }
 
     /// V1b visual check title — a fresh ORDINARY event of my own (no matching invitation, so it

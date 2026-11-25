@@ -415,6 +415,74 @@ launch_app "$OWNER_UDID" "owner-own-cleanup" -ShareCalDeleteCalendarEventTitled 
 wait_for_console "$CONSOLE_LOG" "ShareCalDiag deleteCalendarEvent succeeded title=.* count=[1-9]" $DIAG_TIMEOUT \
   "owner deletes its own-comment event" >/dev/null
 
+# ---------- 9d. Repeating series: "all future events" moved one hour later ----------
+# Moving a series shifts every occurrence date, and moving it from a later occurrence makes
+# EventKit start a new series with a new event identifier. The uploaded records keep their
+# names either way (EventMirrorKeyPolicy.keptKeysForRescheduledEvents), so the comments on
+# the fourth occurrence stay on it.
+SERIES_TITLE="Series Comment Event $RANDOM"
+SERIES_COMMENT="series-first-$RANDOM"
+SERIES_REPLY="partner-on-series-$RANDOM"
+series_probe() { # series_probe <udid> <console-log-name> <description>
+  launch_app "$1" "$2" -ShareCalProbeEventComments -ShareCalEventCommentTitle "$SERIES_TITLE" \
+    -ShareCalEventCommentOccurrence 3
+  local probe
+  probe=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "$3")
+  echo "$probe" | grep -q "$SERIES_COMMENT" && echo "$probe" | grep -q "$SERIES_REPLY" \
+    || fail "$3: comments on the series' fourth occurrence are gone. Probe: $probe"
+  echo "$probe"
+}
+
+log "Owner: creating a daily series and commenting on its fourth occurrence ('$SERIES_COMMENT')..."
+launch_app "$OWNER_UDID" "owner-series-comment" \
+  -ShareCalSeedDailySeriesTitled "$SERIES_TITLE" \
+  -ShareCalAddEventComment "$SERIES_COMMENT" -ShareCalEventCommentTitle "$SERIES_TITLE" \
+  -ShareCalEventCommentOccurrence 3
+SERIES_ADD=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag addEventComment (succeeded|failed)" $DIAG_TIMEOUT "owner comments on the series' fourth occurrence")
+echo "$SERIES_ADD" | grep -q "addEventComment succeeded" || fail "owner could not comment on the series. Log: $SERIES_ADD"
+
+# The reply diag reads the partner's local copy, so the series has to be imported first.
+log "Partner: probing the series (must see the owner's comment on the fourth occurrence)..."
+launch_app "$PARTNER_UDID" "partner-series-probe0" -ShareCalProbeEventComments \
+  -ShareCalEventCommentTitle "$SERIES_TITLE" -ShareCalEventCommentOccurrence 3
+PARTNER_SERIES_PROBE0=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "partner imports the series")
+echo "$PARTNER_SERIES_PROBE0" | grep -q "$SERIES_COMMENT" \
+  || fail "partner did NOT see the owner's comment on the series' fourth occurrence. Probe: $PARTNER_SERIES_PROBE0"
+
+log "Partner: replying on the same occurrence ('$SERIES_REPLY')..."
+launch_app "$PARTNER_UDID" "partner-series-reply" \
+  -ShareCalAddEventComment "$SERIES_REPLY" -ShareCalEventCommentTitle "$SERIES_TITLE" \
+  -ShareCalEventCommentOccurrence 3
+SERIES_REPLY_ADD=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag addEventComment (succeeded|failed)" $DIAG_TIMEOUT "partner replies on the series' fourth occurrence")
+echo "$SERIES_REPLY_ADD" | grep -q "addEventComment succeeded" || fail "partner could not reply on the series. Log: $SERIES_REPLY_ADD"
+SERIES_KEY_BEFORE=$(series_probe "$OWNER_UDID" "owner-series-probe1" "owner before the move" | sed -n 's/.* key=//p' | tail -1 | tr -d '\r')
+[ -n "$SERIES_KEY_BEFORE" ] || fail "the series' fourth occurrence has no commented record before the move"
+
+log "Owner: moving the series one hour later from its third occurrence on..."
+launch_app "$OWNER_UDID" "owner-series-split" -ShareCalMoveSeriesTitled "$SERIES_TITLE"
+SERIES_SPLIT=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag moveSeries (succeeded|failed)" $DIAG_TIMEOUT "owner moves all future events")
+echo "$SERIES_SPLIT" | grep -q "moveSeries succeeded" || fail "could not move the series. Log: $SERIES_SPLIT"
+log "EventKit identifiers around the split: $SERIES_SPLIT"
+SERIES_KEY_OWNER=$(series_probe "$OWNER_UDID" "owner-series-probe2" "owner after all future events moved" | sed -n 's/.* key=//p' | tail -1 | tr -d '\r')
+[ "$SERIES_KEY_OWNER" = "$SERIES_KEY_BEFORE" ] \
+  || fail "the fourth occurrence changed its record: '$SERIES_KEY_BEFORE' -> '$SERIES_KEY_OWNER'"
+series_probe "$PARTNER_UDID" "partner-series-probe2" "partner after all future events moved" >/dev/null
+log "Both sides keep the comments after all future events moved ✓"
+
+log "Owner: moving the later series one more hour as a whole..."
+launch_app "$OWNER_UDID" "owner-series-move" -ShareCalMoveSeriesTitled "$SERIES_TITLE"
+SERIES_MOVE=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag moveSeries (succeeded|failed)" $DIAG_TIMEOUT "owner moves the whole later series")
+echo "$SERIES_MOVE" | grep -q "moveSeries succeeded" || fail "could not move the later series. Log: $SERIES_MOVE"
+log "EventKit identifiers around the whole-series move: $SERIES_MOVE"
+SERIES_KEY_OWNER=$(series_probe "$OWNER_UDID" "owner-series-probe3" "owner after the whole series moved" | sed -n 's/.* key=//p' | tail -1 | tr -d '\r')
+[ "$SERIES_KEY_OWNER" = "$SERIES_KEY_BEFORE" ] \
+  || fail "the fourth occurrence changed its record: '$SERIES_KEY_BEFORE' -> '$SERIES_KEY_OWNER'"
+series_probe "$PARTNER_UDID" "partner-series-probe3" "partner after the whole series moved" >/dev/null
+log "Both sides keep the comments after the whole series moved ✓"
+launch_app "$OWNER_UDID" "owner-series-cleanup" -ShareCalDeleteSeriesTitled "$SERIES_TITLE"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag deleteSeries succeeded title=.* count=[1-9]" $DIAG_TIMEOUT \
+  "owner deletes the series" >/dev/null
+
 # ---------- 10. Joint event UI: tapping the green block opens the comment thread ----------
 # Steps 8-9 prove the comment DATA pipeline; this proves the partner can actually REACH it
 # from the calendar UI — the green joint block must be tappable and open the comment thread

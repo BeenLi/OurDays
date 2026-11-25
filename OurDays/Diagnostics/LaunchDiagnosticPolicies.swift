@@ -54,6 +54,21 @@ enum ShareCalLaunchDiagnosticPolicy {
     /// Reschedule smoke: move the ShareCal events with this title one hour later WITHOUT
     /// syncing, so the next sync has to update the already-uploaded record in place.
     static let moveCalendarEventTitledArgument = "-ShareCalMoveCalendarEventTitled"
+    /// Series smoke: create a five-day daily series with this title in the ShareCal
+    /// calendar (replacing one from an earlier run), WITHOUT syncing.
+    static let seedDailySeriesTitledArgument = "-ShareCalSeedDailySeriesTitled"
+    /// Series smoke: move the series with this title one hour later from its
+    /// `-ShareCalMoveSeriesFromOccurrence`-th occurrence on (0 = the whole series; default
+    /// 2, which EventKit splits into a new series), WITHOUT syncing. Logs the event
+    /// identifiers before and after.
+    static let moveSeriesTitledArgument = "-ShareCalMoveSeriesTitled"
+    static let moveSeriesFromOccurrenceArgument = "-ShareCalMoveSeriesFromOccurrence"
+    /// Series smoke: remove the series with this title, WITHOUT syncing.
+    static let deleteSeriesTitledArgument = "-ShareCalDeleteSeriesTitled"
+    /// With `-ShareCalAddEventComment` / `-ShareCalProbeEventComments`: which of the
+    /// events with the title is meant, counted from 0 in start order. Without it, the
+    /// first one found.
+    static let eventCommentOccurrenceArgument = "-ShareCalEventCommentOccurrence"
     /// Reinstall smoke: on a fresh install, run the 「继续使用现有 iCloud 数据」 path
     /// (restore identity from the private zone + forced sync) and log what came back.
     static let recoverExistingICloudDataArgument = "-ShareCalRecoverExistingICloudData"
@@ -134,6 +149,26 @@ enum ShareCalLaunchDiagnosticPolicy {
 
     static func moveCalendarEventTitle(arguments: [String]) -> String? {
         value(after: moveCalendarEventTitledArgument, arguments: arguments)
+    }
+
+    static func seedDailySeriesTitle(arguments: [String]) -> String? {
+        value(after: seedDailySeriesTitledArgument, arguments: arguments)
+    }
+
+    static func moveSeriesTitle(arguments: [String]) -> String? {
+        value(after: moveSeriesTitledArgument, arguments: arguments)
+    }
+
+    static func moveSeriesFromOccurrence(arguments: [String]) -> Int {
+        max(value(after: moveSeriesFromOccurrenceArgument, arguments: arguments).flatMap { Int($0) } ?? 2, 0)
+    }
+
+    static func deleteSeriesTitle(arguments: [String]) -> String? {
+        value(after: deleteSeriesTitledArgument, arguments: arguments)
+    }
+
+    static func eventCommentOccurrence(arguments: [String]) -> Int? {
+        value(after: eventCommentOccurrenceArgument, arguments: arguments).flatMap { Int($0) }.map { max($0, 0) }
     }
 
     static func shouldRecoverExistingICloudData(arguments: [String]) -> Bool {

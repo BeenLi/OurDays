@@ -1353,6 +1353,42 @@ final class CloudKitCoupleSpaceService {
         return OwnMirrorReconciliationPolicy.ownedMirrors(mirrors, currentMemberID: currentMemberID)
     }
 
+    /// My own records for these stable keys (live or deleted), found by query instead of
+    /// reading the whole zone: what the iPhone asks before starting a record for an event
+    /// a Mac of mine may have uploaded already (`OwnRecordAdoptionPolicy`).
+    func fetchOwnEventMirrors(stableKeys: Set<String>, currentMemberID: String) async throws -> [EventMirror] {
+        let keys = stableKeys.filter { !$0.isEmpty }.sorted()
+        guard !keys.isEmpty else { return [] }
+        var records: [CKRecord] = []
+        do {
+            for batch in CloudKitBatchSizePolicy.batches(keys, size: 100) {
+                let query = CKQuery(
+                    recordType: EventMirrorRecordMapper.recordType,
+                    predicate: NSPredicate(format: "%K IN %@", EventMirrorRecordMapper.Key.stableKey, batch)
+                )
+                var page = try await privateDatabase.records(
+                    matching: query,
+                    inZoneWith: zoneID,
+                    desiredKeys: CloudKitForegroundQueryPolicy.desiredKeys(forRecordType: EventMirrorRecordMapper.recordType)
+                )
+                while true {
+                    records.append(contentsOf: page.matchResults.compactMap { try? $0.1.get() })
+                    guard let cursor = page.queryCursor else { break }
+                    page = try await privateDatabase.records(continuingMatchFrom: cursor)
+                }
+            }
+        } catch {
+            guard CloudKitRecordQueryFailurePolicy.isMissingZone(error) else {
+                cloudKitSharingError("fetchOwnEventMirrors(stableKeys:) failed error=\(describeCloudKitFailure(error))")
+                throw error
+            }
+            return []
+        }
+        let mirrors = try records.map { try EventMirrorRecordMapper.eventMirror(from: $0) }
+        cloudKitSharingInfo("fetchOwnEventMirrors(stableKeys:) keys=\(keys.count) records=\(mirrors.count)")
+        return OwnMirrorReconciliationPolicy.ownedMirrors(mirrors, currentMemberID: currentMemberID)
+    }
+
     /// Removes the previous partner's records from my private zone so they cannot be
     /// exposed through the next share (see `PartnerScopedDataPolicy`). Deletes the comments
     /// not authored by me and every invitation / history-access-request transport record.

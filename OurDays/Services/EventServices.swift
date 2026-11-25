@@ -11,12 +11,7 @@ struct EventMirrorService {
     ) -> [EventMirror] {
         guard visibility != .hidden else { return [] }
 
-        let shared = events
-            .filter { selectedCalendarIDs.contains($0.calendarIdentifier) }
-            .filter { event in
-                guard let sharingWindows else { return true }
-                return Self.isEvent(event, inside: sharingWindows)
-            }
+        let shared = Self.sharedEvents(events, selectedCalendarIDs: selectedCalendarIDs, sharingWindows: sharingWindows)
         let stableKeys = EventStableKeyPolicy.stableKeys(for: shared)
         return shared
             .map { event in
@@ -45,6 +40,20 @@ struct EventMirrorService {
                     cloudKitRecordName: mirrorKey,
                     stableKey: stableKeys[derivedKey] ?? ""
                 )
+            }
+    }
+
+    /// The events that become mirrors: in a selected calendar and inside the windows.
+    static func sharedEvents(
+        _ events: [CalendarSourceEvent],
+        selectedCalendarIDs: Set<String>,
+        sharingWindows: [DateInterval]?
+    ) -> [CalendarSourceEvent] {
+        events
+            .filter { selectedCalendarIDs.contains($0.calendarIdentifier) }
+            .filter { event in
+                guard let sharingWindows else { return true }
+                return isEvent(event, inside: sharingWindows)
             }
     }
 

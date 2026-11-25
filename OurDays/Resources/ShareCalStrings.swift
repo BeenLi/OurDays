@@ -157,6 +157,9 @@ struct ShareCalStrings {
     var commentsSection: String { text("Comments", "评论") }
     var deleteButton: String { text("Delete", "删除") }
     var addCommentPlaceholder: String { text("Add a comment", "添加评论") }
+    var editButton: String { text("Edit", "编辑") }
+    var editingCommentTitle: String { text("Editing comment", "编辑评论") }
+    var commentEditedMark: String { text("Edited", "已编辑") }
     var commentsUnavailableNotShared: String {
         text(
             "Your partner can't see this event yet, so there is no one to comment with. Events from the pairing day onward are shared.",

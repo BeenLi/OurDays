@@ -195,6 +195,14 @@ enum ShareCalLaunchDiagnostics {
                 services: services, settings: settings, modelContext: modelContext
             )
         }
+        if let edit = ShareCalLaunchDiagnosticPolicy.editEventComment(arguments: arguments) {
+            await editEventComment(
+                from: edit.from,
+                to: edit.to,
+                title: ShareCalLaunchDiagnosticPolicy.eventCommentTitle(arguments: arguments),
+                services: services, settings: settings, modelContext: modelContext
+            )
+        }
         if let body = ShareCalLaunchDiagnosticPolicy.deleteEventCommentBody(arguments: arguments) {
             await deleteEventComment(
                 body: body,
@@ -560,6 +568,58 @@ enum ShareCalLaunchDiagnostics {
               diag, title, body, stillDeleted ? "true" : "false")
     }
 
+    /// Either side: edit my comment with body `from` to `to` on the persisted mirror with
+    /// the given title, exactly like saving from the composer in `EventCommentsSection`,
+    /// then sync and check the import kept the new body.
+    private static func editEventComment(
+        from: String, to: String, title: String,
+        services: AppServices, settings: SettingsStore, modelContext: ModelContext
+    ) async {
+        await runForegroundSync(services: services, settings: settings, modelContext: modelContext)
+        let mirrors = (try? modelContext.fetch(FetchDescriptor<EventMirror>())) ?? []
+        guard let mirror = mirrors.first(where: {
+            $0.deletedAt == nil && $0.title == title && !$0.id.hasPrefix(CalendarDisplayMirrorPolicy.transientIDPrefix)
+        }) else {
+            NSLog("%@ editEventComment failed: no persisted mirror titled '%@'", diag, title)
+            return
+        }
+        let anchor = EventCommentAnchorPolicy.anchor(forMirror: mirror)
+        let comments = (try? modelContext.fetch(FetchDescriptor<EventComment>())) ?? []
+        guard let comment = comments.first(where: {
+            $0.eventMirrorID == anchor.key && $0.body == from && $0.deletedAt == nil
+        }) else {
+            NSLog("%@ editEventComment failed: no live comment '%@' on '%@'", diag, from, title)
+            return
+        }
+        guard CommentEditPolicy.canEdit(comment, currentMemberID: settings.currentMemberID),
+              let newBody = CommentEditPolicy.editedBody(original: comment.body, draft: to)
+        else {
+            NSLog("%@ editEventComment failed: not the author of '%@' or nothing to change", diag, from)
+            return
+        }
+        services.commentService.edit(comment, body: newBody)
+        do {
+            try modelContext.save()
+            if let cloudKit = services.cloudKitIfAvailable {
+                try await cloudKit.saveCommentForSync(
+                    comment,
+                    eventOwnerMemberID: anchor.ownerMemberID,
+                    currentMemberID: settings.currentMemberID,
+                    eventRecordName: anchor.recordName
+                )
+            }
+        } catch {
+            NSLog("%@ editEventComment failed: %@", diag, String(describing: error))
+            return
+        }
+        await runForegroundSync(services: services, settings: settings, modelContext: modelContext)
+        let afterSync = (try? modelContext.fetch(FetchDescriptor<EventComment>()))?
+            .first(where: { $0.id == comment.id })
+        let keptEdit = afterSync?.body == newBody && afterSync?.editedAt != nil
+        NSLog("%@ editEventComment succeeded title=%@ from=%@ to=%@ keptEditAfterSync=%@",
+              diag, title, from, newBody, keptEdit ? "true" : "false")
+    }
+
     /// Either side: sync, then log the thread of the persisted mirror with the given title.
     private static func probeEventComments(
         title: String, occurrence: Int?,
@@ -581,7 +641,11 @@ enum ShareCalLaunchDiagnostics {
             .filter { $0.eventMirrorID == anchor.key && $0.deletedAt == nil }
             .sorted { $0.createdAt < $1.createdAt }
         let bodies = comments.map(\.body).joined(separator: "|")
-        NSLog("%@ eventComments title=%@ count=%d bodies=[%@] key=%@", diag, title, comments.count, bodies, anchor.key)
+        let edited = comments.filter { $0.editedAt != nil }.map(\.body).joined(separator: "|")
+        NSLog(
+            "%@ eventComments title=%@ count=%d bodies=[%@] edited=[%@] key=%@",
+            diag, title, comments.count, bodies, edited, anchor.key
+        )
     }
 
     /// The mirrors as they are, or only the `occurrence`-th in start order (none when

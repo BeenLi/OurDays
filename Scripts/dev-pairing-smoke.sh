@@ -431,6 +431,43 @@ echo "$PARTNER_OWN_PROBE3" | grep -q "$OWN_COMMENT" && echo "$PARTNER_OWN_PROBE3
   || fail "partner lost comments after the owner moved the event. Probe: $PARTNER_OWN_PROBE3"
 log "Both sides keep BOTH comments after the move ✓"
 
+# ---------- 9c2. Edit: each side edits its own comment; the new body shows on BOTH sides ----------
+# Same routes as the delete below: the partner's reply lives in the OWNER's zone (written
+# via the shared DB), the owner's comment in its private zone. A following sync must not
+# put the old body back (CommentEditPolicy.merged), and the other side sees it marked edited.
+OWN_REPLY_EDITED="partner-edited-$RANDOM"
+log "Partner: editing its reply ('$OWN_REPLY' -> '$OWN_REPLY_EDITED')..."
+launch_app "$PARTNER_UDID" "partner-own-edit" -ShareCalEditEventComment "$OWN_REPLY" \
+  -ShareCalEditEventCommentBody "$OWN_REPLY_EDITED" -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag editEventComment succeeded .*keptEditAfterSync=true" $DIAG_TIMEOUT \
+  "partner edits its reply (and the edit survives a sync)" >/dev/null
+
+log "Owner: probing '$OWN_EVENT_TITLE' comments (must see the edited reply, marked edited)..."
+launch_app "$OWNER_UDID" "owner-own-probe-edit" -ShareCalProbeEventComments -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+OWNER_EDIT_PROBE=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "owner probes after the partner's edit")
+echo "$OWNER_EDIT_PROBE" | grep -q "edited=\[[^]]*$OWN_REPLY_EDITED" \
+  || fail "owner does not see the partner's edited reply ('$OWN_REPLY_EDITED') marked edited. Probe: $OWNER_EDIT_PROBE"
+echo "$OWNER_EDIT_PROBE" | grep -q "$OWN_REPLY" \
+  && fail "owner still sees the partner's old reply body ('$OWN_REPLY'). Probe: $OWNER_EDIT_PROBE"
+
+OWN_COMMENT_EDITED="owner-edited-$RANDOM"
+log "Owner: editing its own comment ('$OWN_COMMENT' -> '$OWN_COMMENT_EDITED')..."
+launch_app "$OWNER_UDID" "owner-own-edit" -ShareCalEditEventComment "$OWN_COMMENT" \
+  -ShareCalEditEventCommentBody "$OWN_COMMENT_EDITED" -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+wait_for_console "$CONSOLE_LOG" "ShareCalDiag editEventComment succeeded .*keptEditAfterSync=true" $DIAG_TIMEOUT \
+  "owner edits its comment (and the edit survives a sync)" >/dev/null
+
+log "Partner: probing '$OWN_EVENT_TITLE' comments (must see both edited bodies)..."
+launch_app "$PARTNER_UDID" "partner-own-probe-edit" -ShareCalProbeEventComments -ShareCalEventCommentTitle "$OWN_EVENT_TITLE"
+PARTNER_EDIT_PROBE=$(wait_for_console "$CONSOLE_LOG" "ShareCalDiag eventComments title=" $DIAG_TIMEOUT "partner probes after the owner's edit")
+echo "$PARTNER_EDIT_PROBE" | grep -q "edited=\[[^]]*$OWN_COMMENT_EDITED" \
+  || fail "partner does not see the owner's edited comment ('$OWN_COMMENT_EDITED') marked edited. Probe: $PARTNER_EDIT_PROBE"
+echo "$PARTNER_EDIT_PROBE" | grep -q "$OWN_REPLY_EDITED" \
+  || fail "partner lost its own edited reply ('$OWN_REPLY_EDITED'). Probe: $PARTNER_EDIT_PROBE"
+log "Edited comments show the new body on both sides and survive sync ✓"
+OWN_REPLY="$OWN_REPLY_EDITED"
+OWN_COMMENT="$OWN_COMMENT_EDITED"
+
 # ---------- 9d. Delete: each side deletes its own comment; it disappears on BOTH sides ----------
 # A delete is a soft delete (deletedAt) written to the comment's own record in the event
 # owner's zone. The partner's reply lives in the OWNER's zone (written via the shared DB),

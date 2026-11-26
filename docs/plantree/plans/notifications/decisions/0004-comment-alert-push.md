@@ -1,6 +1,6 @@
 # Decision 0004 — 对方的新评论改由 iCloud 直接发可见推送
 
-- **日期**：2026-11-26　**状态**：Accepted　**PR**：#82
+- **日期**：2026-11-26　**状态**：Accepted　**PR**：#83
 
 ## 背景（原本的工作方式）
 [0002](0002-silent-push-and-background-sync.md) 之后所有通知走同一条路：`CKDatabaseSubscription` 静默推送 → iOS 决定是否唤醒 App → 跑完整条 `foregroundSync` → 管线尾部发本地通知。静默推送优先级低、有预算、低电量模式会推迟，App 被上滑关闭后完全不唤醒，所以评论提醒常常晚几分钟到几小时，用户反馈「不像微信那样及时」。

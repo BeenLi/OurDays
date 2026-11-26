@@ -877,6 +877,10 @@ struct SettingsTabView: View {
                         // An invite-only link works too where the partner can ask to join
                         // from it; the request then shows up on my pairing card.
                         inviteDraft?.preparedShare = share
+                        if CloudKitSharePermissionPolicy.isInviteOnly(share.share) {
+                            // The pairing card starts checking for requests right away.
+                            Task { await ShareAccessRequestInbox.shared.refresh(cloudKit: cloudKit, settings: settings) }
+                        }
                     } else {
                         // No link to put in a message, or a link that only opens for
                         // people added to the share; Apple's panel can still invite.

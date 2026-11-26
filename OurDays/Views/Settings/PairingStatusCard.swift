@@ -384,6 +384,7 @@ struct ShareAccessRequestPanel: View {
     @State private var errorMessage: String?
 
     private static let pollInterval: Duration = .seconds(5)
+    private static let idlePollInterval: Duration = .seconds(30)
 
     private var watchesRequesters: Bool {
         CloudKitCoupleSpaceService.supportsShareAccessRequests
@@ -393,6 +394,16 @@ struct ShareAccessRequestPanel: View {
 
     private var isWaitingForApproval: Bool {
         settings.pendingShareAccessRequestURL != nil
+    }
+
+    /// Unpaired: the request may have gone out from iOS's own alert (a tapped link).
+    private var looksForApprovedShare: Bool {
+        CloudKitShareAccessRequestPolicy.shouldLookForApprovedShare(
+            supportsAccessRequests: CloudKitCoupleSpaceService.supportsShareAccessRequests,
+            partnerShareOwnerID: settings.partnerShareOwnerID,
+            outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
+            hasPendingRequest: isWaitingForApproval
+        )
     }
 
     var body: some View {
@@ -433,7 +444,7 @@ struct ShareAccessRequestPanel: View {
                     .foregroundStyle(OurDaysTheme.destructive)
             }
         }
-        .task(id: "\(watchesRequesters)-\(isWaitingForApproval)") {
+        .task(id: "\(watchesRequesters)-\(isWaitingForApproval)-\(looksForApprovedShare)") {
             await poll()
         }
     }
@@ -477,15 +488,12 @@ struct ShareAccessRequestPanel: View {
 
     private func poll() async {
         guard let cloudKit = services.cloudKitIfAvailable,
-              watchesRequesters || isWaitingForApproval else { return }
-        var pollsRequesters = watchesRequesters
-        while !Task.isCancelled, pollsRequesters || isWaitingForApproval {
-            if pollsRequesters {
+              watchesRequesters || isWaitingForApproval || looksForApprovedShare else { return }
+        while !Task.isCancelled, watchesRequesters || isWaitingForApproval || looksForApprovedShare {
+            if watchesRequesters {
                 if await inbox.refresh(cloudKit: cloudKit, settings: settings) {
                     await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
                 }
-                // A link share, or no share yet: nobody can ask, so stop asking CloudKit.
-                pollsRequesters = watchesRequesters && inbox.shareTakesRequests
             }
             if isWaitingForApproval,
                let zoneIDs = try? await cloudKit.fetchSharedCoupleSpaceZoneIDs(),
@@ -496,7 +504,13 @@ struct ShareAccessRequestPanel: View {
                 // Sync clears the wait and pairing resolution takes over from here.
                 await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
             }
-            try? await Task.sleep(for: Self.pollInterval)
+            if looksForApprovedShare {
+                await ShareAccessRequestSender.adoptApprovedShareIfAny(cloudKit: cloudKit, settings: settings)
+            }
+            // No invite-only share waiting for anyone (a link share, or none yet): check
+            // rarely, in case Start Pairing makes one while this card stays on screen.
+            let interval = isWaitingForApproval || inbox.shareTakesRequests ? Self.pollInterval : Self.idlePollInterval
+            try? await Task.sleep(for: interval)
         }
     }
 

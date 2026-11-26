@@ -160,8 +160,17 @@ enum ShareCalLaunchDiagnostics {
         if let shareURL = ShareCalLaunchDiagnosticPolicy.acceptShareURL(arguments: arguments) {
             do {
                 let metadata = try await services.cloudKit.fetchShareMetadata(from: shareURL)
-                ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
-                NSLog("ShareCal accept share probe handled metadata owner=%@", metadata.share.recordID.zoneID.ownerName)
+                if CloudKitShareAccessRequestPolicy.isUninvitedStub(
+                    containerIdentifier: metadata.containerIdentifier,
+                    zoneOwnerName: metadata.share.recordID.zoneID.ownerName
+                ) {
+                    // Like a pasted link: this probe knows the URL the stub lacks.
+                    NSLog("ShareCal accept share probe got the uninvited stub; asking to join")
+                    ShareAccessRequestSender.storeUninvitedLink(.url(shareURL))
+                } else {
+                    ShareCalCloudKitShareAcceptanceHandler.handle(metadata: metadata)
+                    NSLog("ShareCal accept share probe handled metadata owner=%@", metadata.share.recordID.zoneID.ownerName)
+                }
             } catch {
                 NSLog("ShareCal accept share probe failed: \(error)")
             }

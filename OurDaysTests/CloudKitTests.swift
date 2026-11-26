@@ -2327,6 +2327,23 @@ final class CloudKitShareAccessRequestPolicyTests: XCTestCase {
         XCTAssertFalse(CloudKitShareAccessRequestPolicy.requestIsAnswered(sharedZoneOwnerIDs: ["not-a-user-id"], zoneOwnerIDsWhenRequested: []))
     }
 
+    func testOnlyAnUnpairedAppLooksForAShareApprovedOutsideOurDays() {
+        func looks(_ supports: Bool = true, partner: String? = nil, outgoing: [String] = [], pending: Bool = false) -> Bool {
+            CloudKitShareAccessRequestPolicy.shouldLookForApprovedShare(
+                supportsAccessRequests: supports,
+                partnerShareOwnerID: partner,
+                outgoingParticipantIDs: outgoing,
+                hasPendingRequest: pending
+            )
+        }
+        XCTAssertTrue(looks())
+        XCTAssertFalse(looks(false))
+        XCTAssertFalse(looks(partner: "_a"))
+        XCTAssertFalse(looks(outgoing: ["_a"]))
+        // A request from the paste box already has its own wait and check.
+        XCTAssertFalse(looks(pending: true))
+    }
+
     func testInviteOnlyLinkIsSentOnlyWhereThePartnerCanAskToJoin() {
         XCTAssertTrue(PairingInviteLinkPolicy.canSendLink(hasURL: true, isInviteOnly: false, supportsAccessRequests: false))
         XCTAssertTrue(PairingInviteLinkPolicy.canSendLink(hasURL: true, isInviteOnly: true, supportsAccessRequests: true))

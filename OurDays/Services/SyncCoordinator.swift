@@ -147,16 +147,44 @@ enum ShareAccessRequestSender {
 
     /// A tapped uninvited link waiting for RootView, which may not be listening yet on a
     /// cold start; it takes the link when it appears as well as on the notification.
-    private(set) static var pendingUninvitedLinkURL: URL?
+    /// `.withoutURL`: iOS handed over the stub metadata of an invite-only share, which
+    /// carries no URL (seen on the iOS 26.3 simulator), so the request can only be sent
+    /// from the pasted link.
+    enum UninvitedLink: Equatable {
+        case url(URL)
+        case withoutURL
+    }
 
-    static func storeUninvitedLink(_ url: URL) {
-        pendingUninvitedLinkURL = url
+    private(set) static var pendingUninvitedLink: UninvitedLink?
+
+    static func storeUninvitedLink(_ link: UninvitedLink) {
+        pendingUninvitedLink = link
         NotificationCenter.default.post(name: uninvitedLinkNotification, object: nil)
     }
 
-    static func consumeUninvitedLink() -> URL? {
-        defer { pendingUninvitedLinkURL = nil }
-        return pendingUninvitedLinkURL
+    static func consumeUninvitedLink() -> UninvitedLink? {
+        defer { pendingUninvitedLink = nil }
+        return pendingUninvitedLink
+    }
+
+    /// See `CloudKitShareAccessRequestPolicy.shouldLookForApprovedShare`. When a shared
+    /// zone is readable, hands it to the accepted-share path (RootView runs a forced
+    /// sync and pairing resolution adopts the partner). Returns whether it did.
+    @discardableResult
+    static func adoptApprovedShareIfAny(cloudKit: CloudKitCoupleSpaceService, settings: SettingsStore) async -> Bool {
+        guard CloudKitShareAccessRequestPolicy.shouldLookForApprovedShare(
+            supportsAccessRequests: CloudKitCoupleSpaceService.supportsShareAccessRequests,
+            partnerShareOwnerID: settings.partnerShareOwnerID,
+            outgoingParticipantIDs: settings.outgoingShareParticipantIDs,
+            hasPendingRequest: settings.pendingShareAccessRequestURL != nil
+        ), let zoneIDs = try? await cloudKit.fetchSharedCoupleSpaceZoneIDs(),
+           CloudKitShareAccessRequestPolicy.requestIsAnswered(
+               sharedZoneOwnerIDs: zoneIDs.map(\.ownerName),
+               zoneOwnerIDsWhenRequested: []
+           ) else { return false }
+        syncInfo("shareAccessRequests found an approved share asked for outside OurDays")
+        ShareCalAcceptedShareSignal.markAccepted(partnerOwnerID: nil)
+        return true
     }
 
     /// False where access requests do not exist (before iOS 26): then only the owner
@@ -216,6 +244,7 @@ struct SyncCoordinator {
                 hasStartedPairing: settings.hasStartedPairing,
                 partnerShareOwnerID: settings.partnerShareOwnerID,
                 outgoingShareParticipantIDs: settings.outgoingShareParticipantIDs,
+                hasPendingShareAccessRequest: settings.pendingShareAccessRequestURL != nil,
                 forceCloudKit: forceCloudKit
             )
             // The member ID must be the CloudKit userRecordID before any mirrors

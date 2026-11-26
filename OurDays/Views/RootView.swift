@@ -215,6 +215,9 @@ struct RootView: View {
             syncAppIconBadge()
             Task {
                 await syncAfterSceneBecameActiveIfNeeded()
+                if let cloudKit = services.cloudKitIfAvailable, !hasUnresolvedExistingICloudRecoveryDecision {
+                    await ShareAccessRequestSender.adoptApprovedShareIfAny(cloudKit: cloudKit, settings: settings)
+                }
             }
         }
         .onChange(of: selectedTab) { _, newTab in
@@ -397,7 +400,12 @@ struct RootView: View {
     /// Sends the request to join for an uninvited invite-only link that was tapped.
     private func sendPendingShareAccessRequest() async {
         guard let cloudKit = services.cloudKitIfAvailable,
-              let url = ShareAccessRequestSender.consumeUninvitedLink() else { return }
+              let link = ShareAccessRequestSender.consumeUninvitedLink() else { return }
+        guard case .url(let url) = link else {
+            // The tapped link reached us without its URL: only the paste box can ask.
+            settings.shareAcceptanceFailureMessage = settings.strings.shareAccessRequestNeedsPastedLink
+            return
+        }
         do {
             let sent = try await ShareAccessRequestSender.send(url: url, cloudKit: cloudKit, settings: settings)
             if !sent {

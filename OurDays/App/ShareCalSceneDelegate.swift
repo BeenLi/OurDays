@@ -38,9 +38,8 @@ enum ShareCalCloudKitShareAcceptanceHandler {
             // uncaught CKException. Ask its owner instead (RootView sends the request).
             let url = metadata.share.url
             NSLog("ShareCal share metadata is the uninvited stub; urlPresent=%@", (url != nil).description)
-            guard let url else { return }
             Task { @MainActor in
-                ShareAccessRequestSender.storeUninvitedLink(url)
+                ShareAccessRequestSender.storeUninvitedLink(url.map { .url($0) } ?? .withoutURL)
             }
             return
         }

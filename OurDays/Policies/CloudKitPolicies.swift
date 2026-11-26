@@ -892,6 +892,22 @@ enum CloudKitShareAccessRequestPolicy {
         return MemberIDPolicy.normalizedList(sharedZoneOwnerIDs).contains { $0.hasPrefix("_") && !before.contains($0) }
     }
 
+    /// Tapping an invite-only link someone did not add me to makes iOS show its own
+    /// "Request Access" alert and send the request itself; OurDays is never told. So an
+    /// unpaired app that has not asked from a pasted link looks now and then for a
+    /// shared zone it can read, which is what an approval leaves behind.
+    static func shouldLookForApprovedShare(
+        supportsAccessRequests: Bool,
+        partnerShareOwnerID: String?,
+        outgoingParticipantIDs: [String],
+        hasPendingRequest: Bool
+    ) -> Bool {
+        supportsAccessRequests
+            && MemberIDPolicy.normalized(partnerShareOwnerID) == nil
+            && MemberIDPolicy.normalizedList(outgoingParticipantIDs).isEmpty
+            && !hasPendingRequest
+    }
+
     /// For someone not (yet) let into an invite-only share that allows access
     /// requests, `fetchShareMetadata` still succeeds but returns a stub: no container
     /// identifier and no zone owner. Accepting it raises an uncaught `CKException`

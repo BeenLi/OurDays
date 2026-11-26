@@ -574,6 +574,13 @@ struct ShareCalStrings {
         text("Couldn't answer the request: \(message)", "没能处理加入请求：\(message)")
     }
 
+    var shareAccessRequestNeedsPastedLink: String {
+        text(
+            "This invite needs your partner's OK. Copy the link they sent and paste it here with Open Invite Link; OurDays will ask them to let you in.",
+            "这个邀请要对方同意才能加入。请复制对方发来的链接，在这里「收到邀请链接」里粘贴，OurDays 会替你发加入请求。"
+        )
+    }
+
     func shareAccessRequestSendFailed(_ message: String) -> String {
         text("Couldn't send the request to join: \(message)", "没能发送加入请求：\(message)")
     }

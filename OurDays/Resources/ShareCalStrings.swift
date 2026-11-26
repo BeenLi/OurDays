@@ -113,6 +113,15 @@ struct ShareCalStrings {
     var notesLabel: String { text("Notes", "备注") }
     var sendInviteButton: String { text("Send Invite", "发送邀请") }
     var createInviteSection: String { text("Details", "详情") }
+    var inviteCalendarLabel: String { text("Calendar", "日历") }
+    var inviteCalendarFootnote: String {
+        text("The event is added to this calendar of yours.", "日程会建在你的这个日历里。")
+    }
+    func invitePartnerRowHint(isPaired: Bool) -> String {
+        isPaired
+            ? text("Shows up in their Invites", "会出现在 TA 的「邀请」里")
+            : text("Pair first to send invites", "配对后才能发出邀请")
+    }
     var emptyTitleError: String { text("Title is required.", "请输入标题。") }
     var invalidDateRangeError: String { text("End time must be after start time.", "结束时间必须晚于开始时间。") }
     var noSharedSchedulesTitle: String { text("No schedules today", "当前无日程") }

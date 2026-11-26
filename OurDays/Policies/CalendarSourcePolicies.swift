@@ -51,6 +51,34 @@ enum ShareCalCalendarBootstrapPolicy {
     }
 }
 
+/// Which calendar a new invitation's event is created in (the "+" sheet).
+///
+/// Only calendars the user already shares are offered: creating the event in an
+/// unshared calendar would have to switch that whole calendar on for the partner.
+enum InviteCalendarChoicePolicy {
+    static func candidates(
+        calendars: [CalendarDescriptor],
+        selectedCalendarIDs: Set<String>
+    ) -> [CalendarDescriptor] {
+        calendars.filter { $0.allowsContentModifications && selectedCalendarIDs.contains($0.id) }
+    }
+
+    /// Last calendar the user picked, else the system's default calendar, else the
+    /// app's own calendar, else the first shared one. Nil when nothing writable is
+    /// shared; the caller then creates the app's own calendar as before.
+    static func defaultCalendarID(
+        candidates: [CalendarDescriptor],
+        lastUsedCalendarID: String?,
+        systemDefaultCalendarID: String?
+    ) -> String? {
+        let ids = Set(candidates.map(\.id))
+        if let lastUsedCalendarID, ids.contains(lastUsedCalendarID) { return lastUsedCalendarID }
+        if let systemDefaultCalendarID, ids.contains(systemDefaultCalendarID) { return systemDefaultCalendarID }
+        if let own = candidates.first(where: ShareCalCalendarBootstrapPolicy.isShareCalCalendar) { return own.id }
+        return candidates.first?.id
+    }
+}
+
 struct CalendarSourceEvent: Hashable {
     let eventIdentifier: String
     let calendarIdentifier: String

@@ -186,13 +186,54 @@ enum CloudKitSharePermissionPolicy {
         .allowReadWrite
     ]
 
+    /// For an invite-only share the sheet has to offer "Only invited people": that is
+    /// the only kind this account may make (`CloudKitShareRegionPolicy`), and adding the
+    /// partner there is how they get in. It still never offers both, so nobody can flip
+    /// a share from one kind to the other.
+    static let inviteOnlyControllerAvailablePermissions: UICloudSharingController.PermissionOptions = [
+        .allowPrivate,
+        .allowReadWrite
+    ]
+
+    static func controllerAvailablePermissions(for share: CKShare) -> UICloudSharingController.PermissionOptions {
+        isInviteOnly(share) ? inviteOnlyControllerAvailablePermissions : controllerAvailablePermissions
+    }
+
     static func configureForLinkInvitation(_ share: CKShare) {
         share[CKShare.SystemFieldKey.title] = "OurDays" as CKRecordValue
         share.publicPermission = linkInvitationPublicPermission
     }
 
+    /// The share for accounts that may not make link shares: nobody gets in by the link
+    /// alone, the partner is added by phone number or email in Apple's sheet.
+    static func configureForInviteOnly(_ share: CKShare) {
+        share[CKShare.SystemFieldKey.title] = "OurDays" as CKRecordValue
+        share.publicPermission = .none
+    }
+
+    static func isInviteOnly(_ share: CKShare) -> Bool {
+        share.publicPermission == .none
+    }
+
     static func needsLinkInvitationUpgrade(_ share: CKShare, acceptedParticipantCount: Int) -> Bool {
         acceptedParticipantCount == 0 && share.publicPermission != linkInvitationPublicPermission
+    }
+}
+
+/// Some iCloud accounts may not make a share that anyone with the link can join. China
+/// mainland accounts (iCloud run by GCBD, links on icloud.com.cn) get the save rejected
+/// with `serverRejectedRequest`, underlying "ShareTypeUnsupported" (14000), server message
+/// "Cannot perform action due to region". An invite-only share saves fine for the same
+/// account, so that is what Start Pairing falls back to.
+enum CloudKitShareRegionPolicy {
+    static func refusesLinkShares(_ error: Error) -> Bool {
+        let nsError = CloudKitPrimaryErrorPolicy.primaryError(error) as NSError
+        guard nsError.domain == CKError.errorDomain,
+              CKError.Code(rawValue: nsError.code) == .serverRejectedRequest else { return false }
+        let serverMessage = nsError.userInfo["ServerErrorDescription"] as? String ?? ""
+        let text = serverMessage + " " + nsError.description
+        return text.localizedCaseInsensitiveContains("due to region")
+            || text.localizedCaseInsensitiveContains("ShareTypeUnsupported")
     }
 }
 

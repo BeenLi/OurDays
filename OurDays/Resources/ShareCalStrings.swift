@@ -516,6 +516,21 @@ struct ShareCalStrings {
         text("CloudKit share failed: \(message)", "CloudKit 共享失败：\(message)")
     }
 
+    var inviteOnlyShareNoticeTitle: String {
+        text("Invite by phone number or email", "用手机号或邮箱邀请")
+    }
+
+    var inviteOnlyShareNoticeMessage: String {
+        text(
+            "iCloud in your region doesn't allow invite links. On the next screen, add your partner with the phone number or email of their Apple Account, then send the invitation. Only that account can open it.",
+            "你所在地区的 iCloud 不支持链接邀请。请在下一步添加对方 Apple 账户的手机号或邮箱，再把邀请发出去。只有那个账户能打开。"
+        )
+    }
+
+    var inviteOnlyShareNoticeContinue: String {
+        text("Add Partner", "添加对方")
+    }
+
     var copyPairingReport: String {
         text("Copy diagnostic report", "复制诊断信息")
     }

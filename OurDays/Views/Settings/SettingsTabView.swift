@@ -35,6 +35,8 @@ struct SettingsTabView: View {
     @State private var inviteDraft: PairingInviteDraft?
     /// Set when the invite sheet hands off to Apple's panel; shown once the sheet is gone.
     @State private var pendingAppleSharingShare: PreparedCloudShare?
+    /// An invite-only share waiting behind the notice that says why there is no link.
+    @State private var inviteOnlyNoticeShare: PreparedCloudShare?
     @State private var errorMessage: String?
     /// The failure of the last Start Pairing, kept so the user can send a report of it.
     @State private var pairingShareFailure: (message: String, error: Error)?
@@ -267,7 +269,18 @@ struct SettingsTabView: View {
     private func presentPendingAppleSharingShare() {
         guard let share = pendingAppleSharingShare else { return }
         pendingAppleSharingShare = nil
-        preparedShare = share
+        presentAppleSharingPanel(for: share)
+    }
+
+    /// Apple's panel, with a word first when the share is invite-only: there the user
+    /// has to add the partner by phone number or email, which our own sheet never asked.
+    private func presentAppleSharingPanel(for share: PreparedCloudShare) {
+        if CloudKitSharePermissionPolicy.isInviteOnly(share.share),
+           CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(from: share.share).isEmpty {
+            inviteOnlyNoticeShare = share
+        } else {
+            preparedShare = share
+        }
     }
 
     var body: some View {
@@ -513,6 +526,14 @@ struct SettingsTabView: View {
                 onError: { message in
                     errorMessage = strings.cloudKitShareFailed(message)
                 },
+                onSavedShare: { saved in
+                    // An invite-only share goes out from Apple's panel, so this is the
+                    // only sign that my letter back was sent.
+                    guard CloudKitSharePermissionPolicy.isInviteOnly(saved),
+                          saved.participants.contains(where: { $0.role != .owner }),
+                          pairingStatus == .waitingForYouToShare else { return }
+                    settings.sentInviteBackToOwnerID = settings.partnerShareOwnerID
+                },
                 onStoppedSharing: {
                     clearLocalPairingAfterSharingStopped()
                 }
@@ -565,6 +586,21 @@ struct SettingsTabView: View {
                     settings.partnerAvatarOverride = MemberAvatarPolicy.normalized(avatar)
                 }
             }
+        }
+        .alert(
+            strings.inviteOnlyShareNoticeTitle,
+            isPresented: Binding(
+                get: { inviteOnlyNoticeShare != nil },
+                set: { if !$0 { inviteOnlyNoticeShare = nil } }
+            ),
+            presenting: inviteOnlyNoticeShare
+        ) { share in
+            Button(strings.inviteOnlyShareNoticeContinue) {
+                preparedShare = share
+            }
+            Button(strings.cancelButton, role: .cancel) {}
+        } message: { _ in
+            Text(strings.inviteOnlyShareNoticeMessage)
         }
         .alert(strings.unpairConfirmationTitle, isPresented: $showStopSharingConfirmation) {
             Button(strings.unpairButton, role: .destructive) {
@@ -826,10 +862,11 @@ struct SettingsTabView: View {
             )
             if let draftID {
                 if inviteDraft?.id == draftID {
-                    if share.share.url != nil {
+                    if share.share.url != nil, !CloudKitSharePermissionPolicy.isInviteOnly(share.share) {
                         inviteDraft?.preparedShare = share
                     } else {
-                        // No link to put in a message; Apple's panel can still invite.
+                        // No link to put in a message, or a link that only opens for
+                        // people added to the share; Apple's panel can still invite.
                         // It opens once the invite sheet is gone (onDismiss).
                         markPairingStarted()
                         pendingAppleSharingShare = share
@@ -838,7 +875,7 @@ struct SettingsTabView: View {
                 }
             } else {
                 markPairingStarted()
-                preparedShare = share
+                presentAppleSharingPanel(for: share)
             }
             // The partner reads my nickname from this record. It can follow the link:
             // a failure here must not close a sheet that already works, and the next

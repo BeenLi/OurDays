@@ -712,6 +712,62 @@ final class CloudKitSharePermissionPolicyTests: XCTestCase {
         XCTAssertTrue(permissions.contains(.allowReadWrite))
         XCTAssertFalse(permissions.contains(.allowPrivate))
     }
+
+    func testInviteOnlyShareOffersOnlyInvitedPeople() {
+        let root = CKRecord(recordType: "CoupleSpace", recordID: CKRecord.ID(recordName: "root"))
+        let share = CKShare(rootRecord: root)
+        CloudKitSharePermissionPolicy.configureForInviteOnly(share)
+
+        XCTAssertTrue(CloudKitSharePermissionPolicy.isInviteOnly(share))
+        let permissions = CloudKitSharePermissionPolicy.controllerAvailablePermissions(for: share)
+        XCTAssertTrue(permissions.contains(.allowPrivate))
+        XCTAssertTrue(permissions.contains(.allowReadWrite))
+        XCTAssertFalse(permissions.contains(.allowPublic))
+    }
+
+    func testLinkShareKeepsOfferingOnlyLinks() {
+        let root = CKRecord(recordType: "CoupleSpace", recordID: CKRecord.ID(recordName: "root"))
+        let share = CKShare(rootRecord: root)
+        CloudKitSharePermissionPolicy.configureForLinkInvitation(share)
+
+        XCTAssertFalse(CloudKitSharePermissionPolicy.isInviteOnly(share))
+        XCTAssertFalse(CloudKitSharePermissionPolicy.controllerAvailablePermissions(for: share).contains(.allowPrivate))
+    }
+}
+
+final class CloudKitShareRegionPolicyTests: XCTestCase {
+    private func rejected(_ userInfo: [String: Any]) -> NSError {
+        NSError(domain: CKError.errorDomain, code: CKError.Code.serverRejectedRequest.rawValue, userInfo: userInfo)
+    }
+
+    func testRegionRefusalReportedByChinaMainlandAccountIsRecognised() {
+        // The userInfo of the failure in a real user's report (2.0, iOS 27.2.1).
+        let error = rejected([
+            "ServerErrorDescription": "Cannot perform action due to region",
+            NSDebugDescriptionErrorKey: "CKInternalErrorDomain: 14000"
+        ])
+        XCTAssertTrue(CloudKitShareRegionPolicy.refusesLinkShares(error))
+    }
+
+    func testRegionRefusalIsFoundInsideAnAtomicBatch() {
+        let shareID = CKRecord.ID(recordName: "Share-1")
+        let rootID = CKRecord.ID(recordName: "couple-space-root")
+        let batch = NSError(domain: CKError.errorDomain, code: CKError.Code.partialFailure.rawValue, userInfo: [
+            CKPartialErrorsByItemIDKey: [
+                rootID: NSError(domain: CKError.errorDomain, code: CKError.Code.batchRequestFailed.rawValue),
+                shareID: rejected([NSLocalizedDescriptionKey: "ShareTypeUnsupported"])
+            ] as [AnyHashable: Error]
+        ])
+        XCTAssertTrue(CloudKitShareRegionPolicy.refusesLinkShares(batch))
+    }
+
+    func testOtherRejectionsAreNotRegionRefusals() {
+        XCTAssertFalse(CloudKitShareRegionPolicy.refusesLinkShares(rejected(["ServerErrorDescription": "Bad Request"])))
+        let quota = NSError(domain: CKError.errorDomain, code: CKError.Code.quotaExceeded.rawValue, userInfo: [
+            "ServerErrorDescription": "Cannot perform action due to region"
+        ])
+        XCTAssertFalse(CloudKitShareRegionPolicy.refusesLinkShares(quota))
+    }
 }
 
 final class CloudKitShareParticipantIdentityPolicyTests: XCTestCase {

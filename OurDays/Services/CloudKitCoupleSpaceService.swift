@@ -294,8 +294,16 @@ final class CloudKitCoupleSpaceService {
         }
         cloudKitSharingInfo("prepareShare needs new share root=\(rootRecord.recordID.recordName)")
         do {
-            let share = try await saveNewShare(rootRecord: rootRecord)
+            let share = try await saveNewShare(rootRecord: rootRecord, inviteOnly: Self.forcesInviteOnlyShare)
             return PreparedCloudShare(rootRecord: rootRecord, share: share, container: container)
+        } catch where CloudKitShareRegionPolicy.refusesLinkShares(error) {
+            // This account may not make link shares (China mainland iCloud). An
+            // invite-only share is allowed; the partner is then added by phone or email.
+            cloudKitSharingInfo("prepareShare link share refused for region; saving invite-only share")
+            // The refused share left its reference on the in-memory root; start clean.
+            let freshRoot = try await fetchRecordIfPresent(with: rootRecord.recordID) ?? rootRecord
+            let share = try await saveNewShare(rootRecord: freshRoot, inviteOnly: true)
+            return PreparedCloudShare(rootRecord: freshRoot, share: share, container: container)
         } catch {
             // Another device on the same Apple ID (or an earlier tap still in flight)
             // may have shared the root between our read and our save. Its share is
@@ -666,10 +674,24 @@ final class CloudKitCoupleSpaceService {
         return savedRoot
     }
 
-    func saveNewShare(rootRecord: CKRecord) async throws -> CKShare {
-        cloudKitSharingInfo("saveNewShare begin root=\(rootRecord.recordID.recordName)")
+    /// DEBUG builds only: `-ShareCalForceInviteOnlyShare YES` makes Start Pairing take
+    /// the invite-only path, which otherwise needs an account Apple refuses link shares to.
+    static var forcesInviteOnlyShare: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "ShareCalForceInviteOnlyShare")
+        #else
+        return false
+        #endif
+    }
+
+    func saveNewShare(rootRecord: CKRecord, inviteOnly: Bool = false) async throws -> CKShare {
+        cloudKitSharingInfo("saveNewShare begin root=\(rootRecord.recordID.recordName) inviteOnly=\(inviteOnly.description)")
         let share = CKShare(rootRecord: rootRecord)
-        CloudKitSharePermissionPolicy.configureForLinkInvitation(share)
+        if inviteOnly {
+            CloudKitSharePermissionPolicy.configureForInviteOnly(share)
+        } else {
+            CloudKitSharePermissionPolicy.configureForLinkInvitation(share)
+        }
 
         let result: CloudKitModifyRecordResults
         do {
@@ -810,6 +832,7 @@ final class CloudKitCoupleSpaceService {
             return share
         }
 
+        guard !Self.forcesInviteOnlyShare else { return share }
         cloudKitSharingInfo(
             "ensureShareSupportsLinkInvitation upgrading share=\(share.recordID.recordName) currentPermission=\(String(describing: share.publicPermission))"
         )
@@ -818,6 +841,10 @@ final class CloudKitCoupleSpaceService {
         let result: CloudKitModifyRecordResults
         do {
             result = try await modifyRecords(saving: [share], deleting: [], savePolicy: .changedKeys, atomically: false)
+        } catch where CloudKitShareRegionPolicy.refusesLinkShares(error) {
+            // The invite-only share this account fell back to: it stays invite-only.
+            cloudKitSharingInfo("ensureShareSupportsLinkInvitation link share refused for region; keeping invite-only share=\(share.recordID.recordName)")
+            return try await fetchShare(with: share.recordID)
         } catch {
             cloudKitSharingError("ensureShareSupportsLinkInvitation save failed share=\(share.recordID.recordName) error=\(describeCloudKitFailure(error))")
             throw error

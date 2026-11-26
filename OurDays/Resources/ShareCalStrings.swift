@@ -86,6 +86,15 @@ struct ShareCalStrings {
         text("\(partnerName) commented on your event", "\(partnerName) 评论了你的日程")
     }
     var notifInviteReceivedTitle: String { text("New invitation", "新邀请") }
+    func notifInvitePushTitle(_ partnerName: String) -> String {
+        text("\(partnerName) invited you", "\(partnerName) 邀请你")
+    }
+    func notifInviteAcceptedPushTitle(_ partnerName: String) -> String {
+        text("\(partnerName) accepted your invitation", "\(partnerName) 接受了你的邀请")
+    }
+    func notifInviteDeclinedPushTitle(_ partnerName: String) -> String {
+        text("\(partnerName) declined your invitation", "\(partnerName) 拒绝了你的邀请")
+    }
     var notifInviteAcceptedTitle: String { text("Invitation accepted", "邀请已接受") }
     var notifInviteDeclinedTitle: String { text("Invitation declined", "邀请被拒绝") }
     var notifAccessRequestTitle: String { text("History access request", "历史访问请求") }

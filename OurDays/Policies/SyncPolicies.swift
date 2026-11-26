@@ -160,7 +160,7 @@ enum CloudKitForegroundSyncPolicy {
         if forceCloudKit { return true }
         if hasStartedPairing { return true }
         // I asked to join someone's invite-only share: only sync notices that they
-        // let me in (decision 0022).
+        // let me in (decision 0023).
         if hasPendingShareAccessRequest { return true }
         if MemberIDPolicy.normalized(partnerShareOwnerID) != nil { return true }
         return outgoingShareParticipantIDs.contains { MemberIDPolicy.normalized($0) != nil }

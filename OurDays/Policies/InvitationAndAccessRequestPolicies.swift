@@ -515,6 +515,21 @@ enum InvitationReuploadPolicy {
 enum InviteTimeAdjustmentPolicy {
     static let minimumDuration: TimeInterval = 60 * 60
 
+    /// Where a new event starts: 10:00 on the chosen day, or the next full hour when
+    /// that day is today and 10:00 has passed, so the default can always be invited to.
+    static func defaultStart(
+        forDay day: Date,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> Date {
+        let dayStart = calendar.startOfDay(for: day)
+        let morning = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: dayStart)
+            ?? dayStart.addingTimeInterval(10 * 60 * 60)
+        guard calendar.isDate(day, inSameDayAs: now), morning <= now else { return morning }
+        let hourStart = calendar.dateInterval(of: .hour, for: now)?.start ?? now
+        return hourStart.addingTimeInterval(60 * 60)
+    }
+
     static func endDate(
         forNewStart newStart: Date,
         previousStart: Date,
@@ -757,12 +772,20 @@ enum CreateInviteValidationError: LocalizedError, Equatable {
 }
 
 enum CreateInvitePolicy {
-    static func localCalendarDraft(from draft: CreateInviteDraft, now: Date = .now) throws -> LocalCalendarEventDraft {
+    /// `invitesPartner: false` is the same sheet used to add an event of one's own:
+    /// nothing is proposed to anyone, so an event that has already ended is fine.
+    static func localCalendarDraft(
+        from draft: CreateInviteDraft,
+        invitesPartner: Bool = true,
+        now: Date = .now
+    ) throws -> LocalCalendarEventDraft {
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw CreateInviteValidationError.emptyTitle }
         guard draft.endDate > draft.startDate else { throw CreateInviteValidationError.invalidDateRange }
-        guard InvitationTimingPolicy.canInvite(endDate: draft.endDate, isAllDay: draft.isAllDay, now: now) else {
-            throw CreateInviteValidationError.alreadyEnded
+        if invitesPartner {
+            guard InvitationTimingPolicy.canInvite(endDate: draft.endDate, isAllDay: draft.isAllDay, now: now) else {
+                throw CreateInviteValidationError.alreadyEnded
+            }
         }
 
         return LocalCalendarEventDraft(
@@ -800,9 +823,10 @@ enum CreateInvitePolicy {
         createdEvent: CreatedCalendarEvent,
         ownerMemberID: String,
         timeZoneIdentifier: String = TimeZone.current.identifier,
+        invitesPartner: Bool = true,
         now: Date = .now
     ) throws -> EventMirror {
-        let localDraft = try localCalendarDraft(from: draft, now: now)
+        let localDraft = try localCalendarDraft(from: draft, invitesPartner: invitesPartner, now: now)
         let fingerprint = [
             createdEvent.eventIdentifier,
             "\(Int(localDraft.startDate.timeIntervalSince1970.rounded()))",

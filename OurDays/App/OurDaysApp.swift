@@ -35,15 +35,38 @@ final class ShareCalAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         if notification.request.trigger is UNPushNotificationTrigger {
-            // A generic CloudKit alert arrived while the app is active. Kick off a sync
-            // so the rich, per-item local notifications get posted (the scenePhase sync
-            // won't fire — the app is already active), then suppress the generic push
-            // banner here to avoid a duplicate.
+            // The visible pushes are the partner's new comment (decision 0004) and
+            // their invitation nudges (decision 0005). Show
+            // it, and kick off a sync so the comment itself is on screen too (the
+            // scenePhase sync won't fire — the app is already active). The sync does
+            // not post that comment again (LocalNotificationPolicy).
+            let userInfo = notification.request.content.userInfo
+            Task { @MainActor in
+                ShareCalBackgroundSyncRunner.shared.notePushSeen(userInfo: userInfo)
+            }
             ShareCalRemoteChangeSignal.notifyChanged()
-            completionHandler([])
+            completionHandler([.banner, .list, .sound])
         } else {
             // Local notifications (our rich per-item ones) present normally in foreground.
             completionHandler([.banner, .list, .sound, .badge])
+        }
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        // Tapping a visible push removes it from Notification Center; remember it so
+        // the sync that follows does not post it again.
+        if response.notification.request.trigger is UNPushNotificationTrigger {
+            let userInfo = response.notification.request.content.userInfo
+            Task { @MainActor in
+                ShareCalBackgroundSyncRunner.shared.notePushSeen(userInfo: userInfo)
+                completionHandler()
+            }
+        } else {
+            completionHandler()
         }
     }
 
@@ -105,7 +128,7 @@ final class ShareCalAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
 enum ShareCalNotificationSetup {
     /// Request notification authorization, register for CloudKit silent pushes, and
     /// ensure the database subscriptions exist. No-op when CloudKit is disabled.
-    static func configure(services: AppServices) async {
+    static func configure(services: AppServices, settings: SettingsStore) async {
         guard services.isCloudKitEnabled else { return }
         let center = UNUserNotificationCenter.current()
         do {
@@ -119,6 +142,32 @@ enum ShareCalNotificationSetup {
             try await cloudKit.configureDatabaseSubscription()
         } catch {
             NSLog("ShareCal subscription setup error: \(error)")
+        }
+        // Separate from the silent subscriptions above: if this one is refused (for
+        // example a Production schema without the authorMemberID index), comments keep
+        // arriving the old way, by silent push + local notification. Saving it does
+        // not switch local notifications off; only a push that was seen does.
+        let memberID = settings.currentMemberID
+        guard CommentAlertPushPolicy.canSubscribe(currentMemberID: memberID) else { return }
+        do {
+            try await cloudKit.configureCommentAlertSubscription(
+                currentMemberID: memberID,
+                title: settings.strings.notifCommentPushTitle(settings.partnerStatusDisplayName)
+            )
+        } catch {
+            NSLog("ShareCal comment alert subscription error: \(error)")
+        }
+        do {
+            let strings = settings.strings
+            let partnerName = settings.partnerStatusDisplayName
+            try await cloudKit.configureNudgeSubscriptions(titles: [
+                .invitationReceived: strings.notifInvitePushTitle(partnerName),
+                .invitationAccepted: strings.notifInviteAcceptedPushTitle(partnerName),
+                .invitationDeclined: strings.notifInviteDeclinedPushTitle(partnerName),
+            ])
+            await cloudKit.purgeExpiredPartnerNudges()
+        } catch {
+            NSLog("ShareCal nudge subscription error: \(error)")
         }
     }
 }
@@ -194,7 +243,7 @@ struct OurDaysApp: App {
                         settings: settings,
                         modelContext: modelContainer.mainContext
                     )
-                    await ShareCalNotificationSetup.configure(services: services)
+                    await ShareCalNotificationSetup.configure(services: services, settings: settings)
                 }
         }
     }

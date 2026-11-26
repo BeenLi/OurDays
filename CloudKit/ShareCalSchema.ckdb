@@ -70,7 +70,7 @@ DEFINE SCHEMA
     RECORD TYPE EventComment (
         "___recordID" REFERENCE QUERYABLE,
         eventMirrorID STRING QUERYABLE,
-        authorMemberID STRING,
+        authorMemberID STRING QUERYABLE,
         body STRING SEARCHABLE,
         createdAt TIMESTAMP QUERYABLE SORTABLE,
         editedAt TIMESTAMP,
@@ -82,6 +82,12 @@ DEFINE SCHEMA
         "___recordID" REFERENCE QUERYABLE,
         payload BYTES,
         updatedAt TIMESTAMP
+    );
+
+    RECORD TYPE PartnerNudge (
+        "___recordID" REFERENCE QUERYABLE,
+        kind STRING QUERYABLE,
+        text STRING
     );
 
     RECORD TYPE "cloudkit.share" (

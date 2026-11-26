@@ -929,3 +929,14 @@ enum CloudKitShareAccessRequestPolicy {
         "count=\(presences.count) requesters=[\(presences.map { logDescription($0) }.joined(separator: "; "))]"
     }
 }
+
+/// The record a visible CloudKit push is about. Query-subscription pushes carry the
+/// record ID in their payload; silent database pushes and anything else yield nil.
+enum CloudKitPushRecordNamePolicy {
+    static func recordName(fromRemoteNotification userInfo: [AnyHashable: Any]) -> String? {
+        guard let notification = CKNotification(fromRemoteNotificationDictionary: userInfo) as? CKQueryNotification else {
+            return nil
+        }
+        return notification.recordID?.recordName
+    }
+}

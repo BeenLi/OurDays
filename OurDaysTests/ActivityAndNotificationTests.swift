@@ -259,6 +259,112 @@ final class LocalNotificationPolicyTests: XCTestCase {
         XCTAssertEqual(planned.map(\.kind), [.partnerCommentedOnMyEvent(eventTitle: "Dinner", commentBody: "late")])
     }
 
+    func testSkipsOnlyTheCommentsWhosePushWasSeen() {
+        let pushed = comment(event: "M1", author: partner, body: "seen", at: 2_000)
+        let dropped = comment(event: "M1", author: partner, body: "never arrived", at: 2_100)
+
+        let planned = LocalNotificationPolicy.pending(
+            comments: [pushed, dropped],
+            mirrors: [mirror(id: "M1", owner: me, title: "Dinner")],
+            invitations: [],
+            accessRequests: [],
+            currentMemberID: me,
+            since: since,
+            pushedRecordNames: [pushed.cloudKitRecordName ?? pushed.id]
+        )
+
+        XCTAssertEqual(planned.map(\.kind), [
+            .partnerCommentedOnMyEvent(eventTitle: "Dinner", commentBody: "never arrived"),
+        ])
+    }
+
+    func testCommentAlertPushNeedsARealMemberID() {
+        XCTAssertTrue(CommentAlertPushPolicy.canSubscribe(currentMemberID: "_abc"))
+        XCTAssertFalse(CommentAlertPushPolicy.canSubscribe(currentMemberID: MemberIDPolicy.unsyncedMemberID))
+    }
+
+    func testSeenPushesAreRememberedOnceAndCapped() {
+        XCTAssertEqual(SeenPushPolicy.remembering("b", in: ["a"]), ["a", "b"])
+        XCTAssertEqual(SeenPushPolicy.remembering("a", in: ["a", "b"]), ["a", "b"])
+
+        let now = Date(timeIntervalSince1970: 3_000)
+        XCTAssertTrue(SeenPushPolicy.mayHaveBeenPushed([
+            PlannedLocalNotification(id: "c", kind: .partnerCommentedOnMyEvent(eventTitle: "E", commentBody: "b"), occurredAt: now),
+        ]))
+        XCTAssertTrue(SeenPushPolicy.mayHaveBeenPushed([
+            PlannedLocalNotification(id: "i", kind: .invitationReceived(title: "Trip"), occurredAt: now),
+        ]))
+        XCTAssertFalse(SeenPushPolicy.mayHaveBeenPushed([
+            PlannedLocalNotification(id: "r", kind: .accessRequestReceived, occurredAt: now),
+        ]))
+
+        let full = (0..<SeenPushPolicy.limit).map { "r\($0)" }
+        let next = SeenPushPolicy.remembering("new", in: full)
+        XCTAssertEqual(next.count, SeenPushPolicy.limit)
+        XCTAssertEqual(next.first, "r1")
+        XCTAssertEqual(next.last, "new")
+    }
+
+    func testSkipsOnlyTheInvitationsWhoseNudgePushWasSeen() {
+        let invitations = [
+            invitation(id: "new", creator: partner, invitee: me, title: "Trip", status: .pending, createdAt: 2_000, updatedAt: 2_000),
+            invitation(id: "quiet", creator: partner, invitee: me, title: "Old app", status: .pending, createdAt: 2_050, updatedAt: 2_050),
+            invitation(id: "yes", creator: me, invitee: partner, title: "Yes", status: .accepted, createdAt: 100, updatedAt: 2_100),
+            invitation(id: "no", creator: me, invitee: partner, title: "No", status: .declined, createdAt: 100, updatedAt: 2_200),
+            invitation(id: "no2", creator: me, invitee: partner, title: "No2", status: .declined, createdAt: 100, updatedAt: 2_300),
+        ]
+
+        let planned = LocalNotificationPolicy.pending(
+            comments: [], mirrors: [], invitations: invitations, accessRequests: [],
+            currentMemberID: me, since: since,
+            pushedRecordNames: [
+                "nudge:invitation:new",
+                "nudge:invitation-accepted:yes",
+                "nudge:invitation-declined:no",
+                // An accept nudge does not cover a later decline of the same invitation.
+                "nudge:invitation-accepted:no2",
+            ]
+        )
+
+        XCTAssertEqual(planned.map(\.kind), [
+            .invitationReceived(title: "Old app"),
+            .invitationDeclined(title: "No2"),
+        ])
+    }
+
+    func testNudgeIsSentForMyNewInvitationAndMyAnswerOnly() {
+        let mine = invitation(id: "a", creator: me, invitee: partner, title: "Trip", status: .pending, createdAt: 1, updatedAt: 1)
+        XCTAssertEqual(
+            PartnerNudgePolicy.nudge(afterSaving: mine, currentMemberID: me),
+            PartnerNudge(kind: .invitationReceived, subjectID: "a", text: "Trip")
+        )
+        let withdrawn = invitation(id: "b", creator: me, invitee: partner, title: "Trip", status: .canceled, createdAt: 1, updatedAt: 2)
+        XCTAssertNil(PartnerNudgePolicy.nudge(afterSaving: withdrawn, currentMemberID: me))
+        let answeredMine = invitation(id: "c", creator: me, invitee: partner, title: "Trip", status: .accepted, createdAt: 1, updatedAt: 2)
+        XCTAssertNil(PartnerNudgePolicy.nudge(afterSaving: answeredMine, currentMemberID: me))
+
+        let accepted = invitation(id: "d", creator: partner, invitee: me, title: "Dinner", status: .accepted, createdAt: 1, updatedAt: 2)
+        XCTAssertEqual(
+            PartnerNudgePolicy.nudge(afterSaving: accepted, currentMemberID: me),
+            PartnerNudge(kind: .invitationAccepted, subjectID: "d", text: "Dinner")
+        )
+        let declined = invitation(id: "e", creator: partner, invitee: me, title: "Dinner", status: .declined, createdAt: 1, updatedAt: 2)
+        XCTAssertEqual(PartnerNudgePolicy.nudge(afterSaving: declined, currentMemberID: me)?.kind, .invitationDeclined)
+        let stillPending = invitation(id: "f", creator: partner, invitee: me, title: "Dinner", status: .pending, createdAt: 1, updatedAt: 1)
+        XCTAssertNil(PartnerNudgePolicy.nudge(afterSaving: stillPending, currentMemberID: me))
+    }
+
+    func testNudgeRecordNamesAndExpiry() {
+        XCTAssertEqual(PartnerNudgePolicy.recordName(kind: .invitationReceived, subjectID: "a"), "nudge:invitation:a")
+        XCTAssertEqual(PartnerNudgePolicy.subscriptionID(for: .invitationDeclined), "couplecalendar-nudge-invitation-declined-subscription")
+
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertFalse(PartnerNudgePolicy.isExpired(createdAt: now.addingTimeInterval(-3_600), now: now))
+        XCTAssertTrue(PartnerNudgePolicy.isExpired(createdAt: now.addingTimeInterval(-8 * 24 * 3_600), now: now))
+        XCTAssertFalse(PartnerNudgePolicy.isExpired(createdAt: nil, now: now))
+
+    }
+
     func testNotifiesNewInvitationsToMe() {
         let invitations = [
             invitation(creator: partner, invitee: me, title: "Trip", status: .pending, createdAt: 2_000, updatedAt: 2_000),

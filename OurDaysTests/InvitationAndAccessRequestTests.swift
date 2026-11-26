@@ -1084,6 +1084,43 @@ final class InvitationListPolicyTests: XCTestCase {
     }
 }
 
+final class InviteDefaultStartPolicyTests: XCTestCase {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        return calendar
+    }
+
+    private func date(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+        calendar.date(from: DateComponents(year: 2026, month: 11, day: day, hour: hour, minute: minute))!
+    }
+
+    func testAnotherDayStartsAtTen() {
+        XCTAssertEqual(
+            InviteTimeAdjustmentPolicy.defaultStart(forDay: date(28, 0), now: date(26, 13, 15), calendar: calendar),
+            date(28, 10)
+        )
+    }
+
+    func testTodayBeforeTenStartsAtTen() {
+        XCTAssertEqual(
+            InviteTimeAdjustmentPolicy.defaultStart(forDay: date(26, 0), now: date(26, 8, 30), calendar: calendar),
+            date(26, 10)
+        )
+    }
+
+    func testTodayAfterTenStartsAtTheNextFullHour() {
+        XCTAssertEqual(
+            InviteTimeAdjustmentPolicy.defaultStart(forDay: date(26, 0), now: date(26, 13, 15), calendar: calendar),
+            date(26, 14)
+        )
+        XCTAssertEqual(
+            InviteTimeAdjustmentPolicy.defaultStart(forDay: date(26, 0), now: date(26, 10), calendar: calendar),
+            date(26, 11)
+        )
+    }
+}
+
 final class CreateInvitePolicyTests: XCTestCase {
     func testBuildsFutureInviteArtifactsForShareCalCalendar() throws {
         let start = Date(timeIntervalSince1970: 20_000)
@@ -1170,6 +1207,14 @@ final class CreateInvitePolicyTests: XCTestCase {
         XCTAssertThrowsError(try CreateInvitePolicy.localCalendarDraft(from: draft, now: start.addingTimeInterval(60 * 60))) { error in
             XCTAssertEqual(error as? CreateInviteValidationError, .alreadyEnded)
         }
+        // An event of one's own proposes nothing, so one that already ended can be added.
+        XCTAssertNoThrow(
+            try CreateInvitePolicy.localCalendarDraft(
+                from: draft,
+                invitesPartner: false,
+                now: start.addingTimeInterval(60 * 60)
+            )
+        )
     }
 }
 

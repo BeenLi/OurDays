@@ -307,6 +307,22 @@ final class CalendarAccessService {
         try createEvent(from: draft, calendar: ensureShareCalEKCalendar())
     }
 
+    /// The calendar the system puts new events in (Settings > Calendar > Default Calendar).
+    func defaultCalendarIDForNewEvents() -> String? {
+        eventStore.defaultCalendarForNewEvents?.calendarIdentifier
+    }
+
+    /// Creates the event in the chosen calendar; in the app's own calendar when none
+    /// was chosen or the chosen one is gone or read-only by now.
+    func createEvent(from draft: LocalCalendarEventDraft, inCalendarWithID calendarID: String?) throws -> CreatedCalendarEvent {
+        if let calendarID,
+           let calendar = eventStore.calendar(withIdentifier: calendarID),
+           calendar.allowsContentModifications {
+            return try createEvent(from: draft, calendar: calendar)
+        }
+        return try createShareCalEvent(from: draft)
+    }
+
     private func createEvent(from draft: LocalCalendarEventDraft, calendar: EKCalendar) throws -> CreatedCalendarEvent {
         let event = EKEvent(eventStore: eventStore)
         event.title = draft.title

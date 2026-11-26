@@ -166,6 +166,11 @@ final class SettingsStore {
     var lastNotifiedAt: Date? {
         didSet { defaults.set(lastNotifiedAt, forKey: Key.lastNotifiedAt) }
     }
+    /// Record names of the visible pushes this device saw arrive in the foreground
+    /// or get tapped (`SeenPushPolicy`), so the sync does not announce them again.
+    var seenPushRecordNames: [String] {
+        didSet { defaults.set(seenPushRecordNames, forKey: Key.seenPushRecordNames) }
+    }
     /// App Store rating moments already used on this install (`ReviewPromptPolicy`).
     /// Kept across unpair/re-pair: each moment asks once per install.
     /// Accepted invitations whose joint event this device has seen in its own system
@@ -176,6 +181,11 @@ final class SettingsStore {
             guard invitationIDsWithLocalEventSeen != oldValue else { return }
             defaults.set(invitationIDsWithLocalEventSeen.sorted(), forKey: Key.invitationIDsWithLocalEventSeen)
         }
+    }
+    /// The calendar the "+" sheet last added an event of one's own to; it starts there
+    /// next time (`InviteCalendarChoicePolicy`). This device only.
+    var lastOwnEventCalendarID: String? {
+        didSet { saveOptionalString(lastOwnEventCalendarID, forKey: Key.lastOwnEventCalendarID) }
     }
     var reviewPromptedMoments: Set<ReviewPromptMoment> {
         didSet { defaults.set(reviewPromptedMoments.map(\.rawValue).sorted(), forKey: Key.reviewPromptedMoments) }
@@ -262,9 +272,11 @@ final class SettingsStore {
         lastSeenActivityAt = defaults.object(forKey: Key.lastSeenActivityAt) as? Date
         macUploadsOwnEventsAt = defaults.object(forKey: Key.macUploadsOwnEventsAt) as? Date
         lastNotifiedAt = defaults.object(forKey: Key.lastNotifiedAt) as? Date
+        seenPushRecordNames = defaults.stringArray(forKey: Key.seenPushRecordNames) ?? []
         invitationIDsWithLocalEventSeen = Set(defaults.stringArray(forKey: Key.invitationIDsWithLocalEventSeen) ?? [])
         reviewPromptedMoments = Set((defaults.stringArray(forKey: Key.reviewPromptedMoments) ?? []).compactMap(ReviewPromptMoment.init(rawValue:)))
         lastReviewPromptAt = defaults.object(forKey: Key.lastReviewPromptAt) as? Date
+        lastOwnEventCalendarID = defaults.string(forKey: Key.lastOwnEventCalendarID)
     }
 
     var hasSyncedMemberID: Bool {
@@ -603,9 +615,11 @@ final class SettingsStore {
         static let lastSeenActivityAt = "lastSeenActivityAt"
         static let macUploadsOwnEventsAt = "macUploadsOwnEventsAt"
         static let lastNotifiedAt = "lastNotifiedAt"
+        static let seenPushRecordNames = "seenPushRecordNames"
         static let reviewPromptedMoments = "reviewPromptedMoments"
         static let invitationIDsWithLocalEventSeen = "invitationIDsWithLocalEventSeen"
         static let lastReviewPromptAt = "lastReviewPromptAt"
+        static let lastOwnEventCalendarID = "lastOwnEventCalendarID"
         static let partnerNoteUpdatedAt = "partnerNoteUpdatedAt"
         static let calendarSelectionUpdatedAt = "calendarSelectionUpdatedAt"
         static let defaultVisibilityUpdatedAt = "defaultVisibilityUpdatedAt"

@@ -1241,32 +1241,27 @@ final class CloudKitCoupleSpaceService {
         }
     }
 
-    /// Record names of the nudges the partner left in my zone, so the sync does not
-    /// repeat as a local notification what iCloud already pushed. Also clears nudges
-    /// older than `PartnerNudgePolicy.retention`. Best-effort: any failure reads as
-    /// "no nudges", which at worst shows one notification twice.
-    func fetchPartnerNudgeRecordNames(now: Date = .now) async -> Set<String> {
+    /// Deletes the nudges in my zone older than `PartnerNudgePolicy.retention`; they
+    /// only exist to fire a push once. Best-effort.
+    func purgeExpiredPartnerNudges(now: Date = .now) async {
         do {
-            // Record name and creation date are all that is needed, so the type needs
-            // no entry in CloudKitForegroundQueryPolicy (no keys are read).
-            let records = try await fetchRecords(
+            // Only the record ID and creation date are used, so the type needs no
+            // entry in CloudKitForegroundQueryPolicy (no keys are read).
+            let expired = try await fetchRecords(
                 recordType: PartnerNudgePolicy.recordType,
                 in: zoneID,
                 database: privateDatabase
             )
-            let expired = records.filter { PartnerNudgePolicy.isExpired(createdAt: $0.creationDate, now: now) }
-            if !expired.isEmpty {
-                _ = try? await modifyRecords(
-                    saving: [],
-                    deleting: expired.map(\.recordID),
-                    savePolicy: .changedKeys,
-                    atomically: false
-                )
-            }
-            return Set(records.map(\.recordID.recordName))
+            .filter { PartnerNudgePolicy.isExpired(createdAt: $0.creationDate, now: now) }
+            guard !expired.isEmpty else { return }
+            _ = try await modifyRecords(
+                saving: [],
+                deleting: expired.map(\.recordID),
+                savePolicy: .changedKeys,
+                atomically: false
+            )
         } catch {
-            cloudKitSharingInfo("fetchPartnerNudgeRecordNames failed error=\(describeCloudKitFailure(error))")
-            return []
+            cloudKitSharingInfo("purgeExpiredPartnerNudges failed error=\(describeCloudKitFailure(error))")
         }
     }
 

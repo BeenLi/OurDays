@@ -191,8 +191,7 @@ enum LocalNotificationPolicy {
         accessRequests: [CalendarAccessRequest],
         currentMemberID: String,
         since lastNotifiedAt: Date?,
-        commentsArriveByAlertPush: Bool = false,
-        nudgedRecordNames: Set<String> = []
+        pushedRecordNames: Set<String> = []
     ) -> [PlannedLocalNotification] {
         guard let since = lastNotifiedAt else { return [] }
         var result: [PlannedLocalNotification] = []
@@ -201,11 +200,11 @@ enum LocalNotificationPolicy {
             uniquingKeysWith: { first, _ in first }
         )
 
-        // 1. Partner commented on one of MY events. Skipped once the comment alert
-        // subscription is in place (CommentAlertPushPolicy, decision 0004): iCloud has
-        // already shown that comment, and a second banner after the sync would repeat it.
+        // 1. Partner commented on one of MY events. Skipped only for a comment whose
+        // visible push is known to have reached this device (CommentAlertPushPolicy,
+        // decision 0004); a push that never arrived still gets its local notification.
         for comment in comments
-        where !commentsArriveByAlertPush
+        where !pushedRecordNames.contains(comment.cloudKitRecordName ?? comment.id)
             && comment.deletedAt == nil
             && comment.authorMemberID != currentMemberID
             && comment.createdAt > since {
@@ -227,7 +226,7 @@ enum LocalNotificationPolicy {
             && invite.archivedAt == nil
             && invite.status == .pending
             && invite.createdAt > since
-            && !PartnerNudgePolicy.isNudged(.invitationReceived, invite, in: nudgedRecordNames) {
+            && !PartnerNudgePolicy.isNudged(.invitationReceived, invite, in: pushedRecordNames) {
             result.append(
                 PlannedLocalNotification(
                     id: "invite-recv-\(invite.id)",
@@ -242,9 +241,9 @@ enum LocalNotificationPolicy {
         where invite.creatorMemberID == currentMemberID
             && invite.updatedAt > since {
             switch invite.status {
-            case .accepted where PartnerNudgePolicy.isNudged(.invitationAccepted, invite, in: nudgedRecordNames),
-                 .declined where PartnerNudgePolicy.isNudged(.invitationDeclined, invite, in: nudgedRecordNames):
-                // iCloud already showed this answer as a visible push (decision 0005).
+            case .accepted where PartnerNudgePolicy.isNudged(.invitationAccepted, invite, in: pushedRecordNames),
+                 .declined where PartnerNudgePolicy.isNudged(.invitationDeclined, invite, in: pushedRecordNames):
+                // The nudge push for this answer reached this device (decision 0005).
                 break
             case .accepted:
                 result.append(
@@ -324,11 +323,31 @@ enum CommentAlertPushPolicy {
         MemberIDPolicy.normalized(currentMemberID)?.hasPrefix("_") == true
     }
 
-    /// True when this device has saved the subscription for the account it is using
-    /// now, so partner comments must not also be posted as local notifications.
-    static func coversComments(subscribedMemberID: String?, currentMemberID: String) -> Bool {
-        guard canSubscribe(currentMemberID: currentMemberID) else { return false }
-        return MemberIDPolicy.normalized(subscribedMemberID) == MemberIDPolicy.normalized(currentMemberID)
+}
+
+/// Which visible pushes this device has actually shown. A saved subscription does not
+/// prove a push arrived (it can be dropped, or the device can be offline for days), so
+/// the sync only skips the local notification for a record it knows was pushed: one
+/// still sitting in Notification Center, or one the app saw arrive or get tapped.
+enum SeenPushPolicy {
+    static let limit = 200
+
+    /// True when the planned notifications contain a kind that also travels as a
+    /// visible push, i.e. when Notification Center is worth checking before posting.
+    static func mayHaveBeenPushed(_ planned: [PlannedLocalNotification]) -> Bool {
+        planned.contains { notification in
+            switch notification.kind {
+            case .partnerCommentedOnMyEvent,
+                 .invitationReceived, .invitationAccepted, .invitationDeclined: true
+            case .accessRequestReceived, .accessRequestAnswered: false
+            }
+        }
+    }
+
+    /// `seen` with `recordName` appended, oldest dropped beyond `limit`.
+    static func remembering(_ recordName: String, in seen: [String]) -> [String] {
+        guard !seen.contains(recordName) else { return seen }
+        return Array((seen + [recordName]).suffix(limit))
     }
 }
 
@@ -399,20 +418,9 @@ enum PartnerNudgePolicy {
     static func isNudged(
         _ kind: PartnerNudgeKind,
         _ invitation: EventInvitation,
-        in nudgedRecordNames: Set<String>
+        in pushedRecordNames: Set<String>
     ) -> Bool {
-        nudgedRecordNames.contains(recordName(kind: kind, subjectID: subjectID(for: invitation)))
-    }
-
-    /// True when the planned notifications contain something a nudge could already
-    /// have announced, i.e. when it is worth reading the inbox before posting.
-    static func mayBeNudged(_ planned: [PlannedLocalNotification]) -> Bool {
-        planned.contains { notification in
-            switch notification.kind {
-            case .invitationReceived, .invitationAccepted, .invitationDeclined: true
-            case .partnerCommentedOnMyEvent, .accessRequestReceived, .accessRequestAnswered: false
-            }
-        }
+        pushedRecordNames.contains(recordName(kind: kind, subjectID: subjectID(for: invitation)))
     }
 
     static func isExpired(createdAt: Date?, now: Date) -> Bool {

@@ -41,10 +41,19 @@ private struct SyncTimingLog {
 @MainActor
 protocol LocalNotificationScheduling {
     func post(_ notifications: [PlannedLocalNotification], strings: ShareCalStrings, partnerName: String) async
+    /// Record names of the visible CloudKit pushes still in Notification Center.
+    func deliveredPushRecordNames() async -> Set<String>
 }
 
 @MainActor
 struct UserNotificationScheduler: LocalNotificationScheduling {
+    func deliveredPushRecordNames() async -> Set<String> {
+        let delivered = await UNUserNotificationCenter.current().deliveredNotifications()
+        return Set(delivered.compactMap {
+            CloudKitPushRecordNamePolicy.recordName(fromRemoteNotification: $0.request.content.userInfo)
+        })
+    }
+
     func post(_ notifications: [PlannedLocalNotification], strings: ShareCalStrings, partnerName: String) async {
         guard !notifications.isEmpty else { return }
         let center = UNUserNotificationCenter.current()
@@ -790,7 +799,7 @@ struct SyncCoordinator {
             let mirrors = try modelContext.fetch(FetchDescriptor<EventMirror>())
             let invitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
             let accessRequests = try modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())
-            func pending(nudgedRecordNames: Set<String>) -> [PlannedLocalNotification] {
+            func pending(pushedRecordNames: Set<String>) -> [PlannedLocalNotification] {
                 LocalNotificationPolicy.pending(
                     comments: comments,
                     mirrors: mirrors,
@@ -798,25 +807,17 @@ struct SyncCoordinator {
                     accessRequests: accessRequests,
                     currentMemberID: settings.currentMemberID,
                     since: settings.lastNotifiedAt,
-                    commentsArriveByAlertPush: CommentAlertPushPolicy.coversComments(
-                        subscribedMemberID: settings.commentAlertPushMemberID,
-                        currentMemberID: settings.currentMemberID
-                    ),
-                    nudgedRecordNames: nudgedRecordNames
+                    pushedRecordNames: pushedRecordNames
                 )
             }
-            planned = pending(nudgedRecordNames: [])
-            // Only when an invitation is about to be announced, and this device gets
-            // nudge pushes, look in the inbox for the ones iCloud already showed.
-            if PartnerNudgePolicy.mayBeNudged(planned),
-               let cloudKit,
-               CommentAlertPushPolicy.coversComments(
-                   subscribedMemberID: settings.partnerNudgePushMemberID,
-                   currentMemberID: settings.currentMemberID
-               ) {
-                let nudged = await cloudKit.fetchPartnerNudgeRecordNames()
-                if !nudged.isEmpty {
-                    planned = pending(nudgedRecordNames: nudged)
+            let seen = Set(settings.seenPushRecordNames)
+            planned = pending(pushedRecordNames: seen)
+            // Something a visible push may already have shown: look at what is still
+            // in Notification Center before repeating it (decision 0004).
+            if SeenPushPolicy.mayHaveBeenPushed(planned) {
+                let delivered = await notificationScheduler.deliveredPushRecordNames()
+                if !delivered.isEmpty {
+                    planned = pending(pushedRecordNames: seen.union(delivered))
                 }
             }
         } catch {
@@ -1174,6 +1175,14 @@ final class ShareCalBackgroundSyncRunner {
         self.modelContainer = modelContainer
         self.settings = settings
         self.services = services
+    }
+
+    /// A visible CloudKit push arrived while the app was open, or was tapped: remember
+    /// its record so the next sync does not announce the same thing again.
+    func notePushSeen(userInfo: [AnyHashable: Any]) {
+        guard let settings,
+              let recordName = CloudKitPushRecordNamePolicy.recordName(fromRemoteNotification: userInfo) else { return }
+        settings.seenPushRecordNames = SeenPushPolicy.remembering(recordName, in: settings.seenPushRecordNames)
     }
 
     /// Runs the full sync pipeline to completion. Returns true if a sync actually ran

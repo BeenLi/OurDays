@@ -40,11 +40,33 @@ final class ShareCalAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
             // it, and kick off a sync so the comment itself is on screen too (the
             // scenePhase sync won't fire — the app is already active). The sync does
             // not post that comment again (LocalNotificationPolicy).
+            let userInfo = notification.request.content.userInfo
+            Task { @MainActor in
+                ShareCalBackgroundSyncRunner.shared.notePushSeen(userInfo: userInfo)
+            }
             ShareCalRemoteChangeSignal.notifyChanged()
             completionHandler([.banner, .list, .sound])
         } else {
             // Local notifications (our rich per-item ones) present normally in foreground.
             completionHandler([.banner, .list, .sound, .badge])
+        }
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        // Tapping a visible push removes it from Notification Center; remember it so
+        // the sync that follows does not post it again.
+        if response.notification.request.trigger is UNPushNotificationTrigger {
+            let userInfo = response.notification.request.content.userInfo
+            Task { @MainActor in
+                ShareCalBackgroundSyncRunner.shared.notePushSeen(userInfo: userInfo)
+                completionHandler()
+            }
+        } else {
+            completionHandler()
         }
     }
 
@@ -123,7 +145,8 @@ enum ShareCalNotificationSetup {
         }
         // Separate from the silent subscriptions above: if this one is refused (for
         // example a Production schema without the authorMemberID index), comments keep
-        // arriving the old way, by silent push + local notification.
+        // arriving the old way, by silent push + local notification. Saving it does
+        // not switch local notifications off; only a push that was seen does.
         let memberID = settings.currentMemberID
         guard CommentAlertPushPolicy.canSubscribe(currentMemberID: memberID) else { return }
         do {
@@ -131,7 +154,6 @@ enum ShareCalNotificationSetup {
                 currentMemberID: memberID,
                 title: settings.strings.notifCommentPushTitle(settings.partnerStatusDisplayName)
             )
-            settings.commentAlertPushMemberID = memberID
         } catch {
             NSLog("ShareCal comment alert subscription error: \(error)")
         }
@@ -143,7 +165,7 @@ enum ShareCalNotificationSetup {
                 .invitationAccepted: strings.notifInviteAcceptedPushTitle(partnerName),
                 .invitationDeclined: strings.notifInviteDeclinedPushTitle(partnerName),
             ])
-            settings.partnerNudgePushMemberID = memberID
+            await cloudKit.purgeExpiredPartnerNudges()
         } catch {
             NSLog("ShareCal nudge subscription error: \(error)")
         }

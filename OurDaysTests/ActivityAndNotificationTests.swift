@@ -259,36 +259,53 @@ final class LocalNotificationPolicyTests: XCTestCase {
         XCTAssertEqual(planned.map(\.kind), [.partnerCommentedOnMyEvent(eventTitle: "Dinner", commentBody: "late")])
     }
 
-    func testSkipsCommentsOnceTheAlertPushCoversThemButKeepsTheRest() {
+    func testSkipsOnlyTheCommentsWhosePushWasSeen() {
+        let pushed = comment(event: "M1", author: partner, body: "seen", at: 2_000)
+        let dropped = comment(event: "M1", author: partner, body: "never arrived", at: 2_100)
+
         let planned = LocalNotificationPolicy.pending(
-            comments: [comment(event: "M1", author: partner, body: "late", at: 2_000)],
-            mirrors: [mirror(id: "M1", owner: me)],
-            invitations: [
-                invitation(creator: partner, invitee: me, title: "Trip", status: .pending, createdAt: 2_000, updatedAt: 2_000),
-            ],
+            comments: [pushed, dropped],
+            mirrors: [mirror(id: "M1", owner: me, title: "Dinner")],
+            invitations: [],
             accessRequests: [],
             currentMemberID: me,
             since: since,
-            commentsArriveByAlertPush: true
+            pushedRecordNames: [pushed.cloudKitRecordName ?? pushed.id]
         )
 
-        XCTAssertEqual(planned.map(\.kind), [.invitationReceived(title: "Trip")])
+        XCTAssertEqual(planned.map(\.kind), [
+            .partnerCommentedOnMyEvent(eventTitle: "Dinner", commentBody: "never arrived"),
+        ])
     }
 
-    func testCommentAlertPushNeedsARealMemberIDAndTheSameAccount() {
+    func testCommentAlertPushNeedsARealMemberID() {
         XCTAssertTrue(CommentAlertPushPolicy.canSubscribe(currentMemberID: "_abc"))
         XCTAssertFalse(CommentAlertPushPolicy.canSubscribe(currentMemberID: MemberIDPolicy.unsyncedMemberID))
-
-        XCTAssertTrue(CommentAlertPushPolicy.coversComments(subscribedMemberID: "_abc", currentMemberID: "_abc"))
-        XCTAssertFalse(CommentAlertPushPolicy.coversComments(subscribedMemberID: nil, currentMemberID: "_abc"))
-        XCTAssertFalse(CommentAlertPushPolicy.coversComments(subscribedMemberID: "_old", currentMemberID: "_abc"))
-        XCTAssertFalse(CommentAlertPushPolicy.coversComments(
-            subscribedMemberID: MemberIDPolicy.unsyncedMemberID,
-            currentMemberID: MemberIDPolicy.unsyncedMemberID
-        ))
     }
 
-    func testSkipsInvitationsTheNudgePushAlreadyAnnounced() {
+    func testSeenPushesAreRememberedOnceAndCapped() {
+        XCTAssertEqual(SeenPushPolicy.remembering("b", in: ["a"]), ["a", "b"])
+        XCTAssertEqual(SeenPushPolicy.remembering("a", in: ["a", "b"]), ["a", "b"])
+
+        let now = Date(timeIntervalSince1970: 3_000)
+        XCTAssertTrue(SeenPushPolicy.mayHaveBeenPushed([
+            PlannedLocalNotification(id: "c", kind: .partnerCommentedOnMyEvent(eventTitle: "E", commentBody: "b"), occurredAt: now),
+        ]))
+        XCTAssertTrue(SeenPushPolicy.mayHaveBeenPushed([
+            PlannedLocalNotification(id: "i", kind: .invitationReceived(title: "Trip"), occurredAt: now),
+        ]))
+        XCTAssertFalse(SeenPushPolicy.mayHaveBeenPushed([
+            PlannedLocalNotification(id: "r", kind: .accessRequestReceived, occurredAt: now),
+        ]))
+
+        let full = (0..<SeenPushPolicy.limit).map { "r\($0)" }
+        let next = SeenPushPolicy.remembering("new", in: full)
+        XCTAssertEqual(next.count, SeenPushPolicy.limit)
+        XCTAssertEqual(next.first, "r1")
+        XCTAssertEqual(next.last, "new")
+    }
+
+    func testSkipsOnlyTheInvitationsWhoseNudgePushWasSeen() {
         let invitations = [
             invitation(id: "new", creator: partner, invitee: me, title: "Trip", status: .pending, createdAt: 2_000, updatedAt: 2_000),
             invitation(id: "quiet", creator: partner, invitee: me, title: "Old app", status: .pending, createdAt: 2_050, updatedAt: 2_050),
@@ -300,7 +317,7 @@ final class LocalNotificationPolicyTests: XCTestCase {
         let planned = LocalNotificationPolicy.pending(
             comments: [], mirrors: [], invitations: invitations, accessRequests: [],
             currentMemberID: me, since: since,
-            nudgedRecordNames: [
+            pushedRecordNames: [
                 "nudge:invitation:new",
                 "nudge:invitation-accepted:yes",
                 "nudge:invitation-declined:no",
@@ -337,7 +354,7 @@ final class LocalNotificationPolicyTests: XCTestCase {
         XCTAssertNil(PartnerNudgePolicy.nudge(afterSaving: stillPending, currentMemberID: me))
     }
 
-    func testNudgeRecordNamesExpiryAndWhenToReadTheInbox() {
+    func testNudgeRecordNamesAndExpiry() {
         XCTAssertEqual(PartnerNudgePolicy.recordName(kind: .invitationReceived, subjectID: "a"), "nudge:invitation:a")
         XCTAssertEqual(PartnerNudgePolicy.subscriptionID(for: .invitationDeclined), "couplecalendar-nudge-invitation-declined-subscription")
 
@@ -346,10 +363,6 @@ final class LocalNotificationPolicyTests: XCTestCase {
         XCTAssertTrue(PartnerNudgePolicy.isExpired(createdAt: now.addingTimeInterval(-8 * 24 * 3_600), now: now))
         XCTAssertFalse(PartnerNudgePolicy.isExpired(createdAt: nil, now: now))
 
-        let invite = PlannedLocalNotification(id: "i", kind: .invitationReceived(title: "Trip"), occurredAt: now)
-        let access = PlannedLocalNotification(id: "r", kind: .accessRequestReceived, occurredAt: now)
-        XCTAssertTrue(PartnerNudgePolicy.mayBeNudged([access, invite]))
-        XCTAssertFalse(PartnerNudgePolicy.mayBeNudged([access]))
     }
 
     func testNotifiesNewInvitationsToMe() {

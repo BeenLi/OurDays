@@ -206,9 +206,31 @@ enum CloudKitSharePermissionPolicy {
 
     /// The share for accounts that may not make link shares: nobody gets in by the link
     /// alone, the partner is added by phone number or email in Apple's sheet.
-    static func configureForInviteOnly(_ share: CKShare) {
+    ///
+    /// `allowsAccessRequests` lets an uninvited partner who opens the link ask to join;
+    /// the owner then approves them, so no phone number or email is needed. Setting it
+    /// needs the `com.apple.developer.icloud-extended-share-access` entitlement with
+    /// `InProcessShareAccessRequests`: without it CloudKit traps (EXC_BREAKPOINT in
+    /// `-[CKShare setAllowsAccessRequests:]`), so only pass true from a build that has it.
+    static func configureForInviteOnly(_ share: CKShare, allowsAccessRequests: Bool = false) {
         share[CKShare.SystemFieldKey.title] = "OurDays" as CKRecordValue
         share.publicPermission = .none
+        #if compiler(>=6.2)
+        if allowsAccessRequests, #available(iOS 26.0, macCatalyst 26.0, *) {
+            share.allowsAccessRequests = true
+        }
+        #endif
+    }
+
+    /// Whether the share lets uninvited people ask to join. `nil` where the SDK or OS
+    /// has no access requests (before iOS 26).
+    static func allowsAccessRequests(_ share: CKShare) -> Bool? {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, macCatalyst 26.0, *) {
+            return share.allowsAccessRequests
+        }
+        #endif
+        return nil
     }
 
     static func isInviteOnly(_ share: CKShare) -> Bool {
@@ -507,6 +529,7 @@ enum CloudKitSharingError: LocalizedError {
     case invalidShareRecord(CKRecord.ID)
     case missingSavedShare(CKRecord.ID)
     case operationTimedOut(String)
+    case notInvitedToShare
 
     var errorDescription: String? {
         switch self {
@@ -518,6 +541,8 @@ enum CloudKitSharingError: LocalizedError {
             "CloudKit did not return saved share \(recordID.recordName)."
         case .operationTimedOut(let operation):
             "CloudKit \(operation) timed out. Try again after iCloud finishes syncing."
+        case .notInvitedToShare:
+            "This iCloud account has not been let into the share yet."
         }
     }
 }
@@ -753,5 +778,38 @@ enum ShareInvitationLinkPolicy {
         default:
             return .other(error.localizedDescription)
         }
+    }
+}
+
+/// What a share access requester shows the owner about who they are. Presence only:
+/// the values are the requester's name, email address or phone number and never go
+/// into a log.
+struct ShareAccessRequesterIdentityPresence: Equatable {
+    var hasNameComponents: Bool
+    var hasEmailAddress: Bool
+    var hasPhoneNumber: Bool
+    var hasUserRecordID: Bool
+}
+
+enum CloudKitShareAccessRequestPolicy {
+    /// For someone not (yet) let into an invite-only share that allows access
+    /// requests, `fetchShareMetadata` still succeeds but returns a stub: no container
+    /// identifier and no zone owner. Accepting it raises an uncaught `CKException`
+    /// ("containerIdentifier can not be empty"), so it must never be accepted.
+    static func isUninvitedStub(containerIdentifier: String, zoneOwnerName: String) -> Bool {
+        containerIdentifier.isEmpty || zoneOwnerName.isEmpty
+    }
+
+    static func logDescription(_ presence: ShareAccessRequesterIdentityPresence) -> String {
+        [
+            "name=\(presence.hasNameComponents)",
+            "email=\(presence.hasEmailAddress)",
+            "phone=\(presence.hasPhoneNumber)",
+            "userRecordID=\(presence.hasUserRecordID)"
+        ].joined(separator: " ")
+    }
+
+    static func logDescription(_ presences: [ShareAccessRequesterIdentityPresence]) -> String {
+        "count=\(presences.count) requesters=[\(presences.map { logDescription($0) }.joined(separator: "; "))]"
     }
 }

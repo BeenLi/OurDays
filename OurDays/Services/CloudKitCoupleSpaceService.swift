@@ -534,6 +534,13 @@ final class CloudKitCoupleSpaceService {
     func acceptShare(metadata: CKShare.Metadata) async throws {
         let containerIdentifier = metadata.containerIdentifier
         cloudKitSharingInfo("acceptShare begin container=\(containerIdentifier)")
+        guard !CloudKitShareAccessRequestPolicy.isUninvitedStub(
+            containerIdentifier: containerIdentifier,
+            zoneOwnerName: metadata.share.recordID.zoneID.ownerName
+        ) else {
+            cloudKitSharingError("acceptShare refused; metadata is the stub CloudKit returns to someone not let into the share")
+            throw CloudKitSharingError.notInvitedToShare
+        }
         let started = ContinuousClock.now
         defer { cloudKitSharingInfo("acceptShare finished \(cloudKitElapsed(since: started))") }
 
@@ -684,11 +691,26 @@ final class CloudKitCoupleSpaceService {
         #endif
     }
 
+    /// DEBUG builds only: `-ShareCalEnableShareAccessRequests YES` makes an invite-only
+    /// share allow access requests. Only for a build signed with the
+    /// `com.apple.developer.icloud-extended-share-access` entitlement, which the
+    /// project's entitlements files do not have yet; without it CloudKit traps.
+    static var enablesShareAccessRequests: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "ShareCalEnableShareAccessRequests")
+        #else
+        return false
+        #endif
+    }
+
     func saveNewShare(rootRecord: CKRecord, inviteOnly: Bool = false) async throws -> CKShare {
         cloudKitSharingInfo("saveNewShare begin root=\(rootRecord.recordID.recordName) inviteOnly=\(inviteOnly.description)")
         let share = CKShare(rootRecord: rootRecord)
         if inviteOnly {
-            CloudKitSharePermissionPolicy.configureForInviteOnly(share)
+            CloudKitSharePermissionPolicy.configureForInviteOnly(
+                share,
+                allowsAccessRequests: Self.enablesShareAccessRequests
+            )
         } else {
             CloudKitSharePermissionPolicy.configureForLinkInvitation(share)
         }
@@ -2066,3 +2088,181 @@ extension CloudKitCoupleSpaceService {
         }
     }
 }
+
+// MARK: - Share access requests (iOS 26+)
+
+/// What the owner's share looks like to the access-request flow, for diagnostics.
+struct OutgoingShareAccessState {
+    var shareRecordName: String
+    var publicPermission: CKShare.ParticipantPermission
+    var allowsAccessRequests: Bool?
+    var urlPresent: Bool
+    var participantLines: [String]
+    var requesters: [ShareAccessRequesterIdentityPresence]
+
+    var logDescription: String {
+        [
+            "share=\(shareRecordName)",
+            "publicPermission=\(publicPermission.rawValue)",
+            "allowsAccessRequests=\(allowsAccessRequests.map(String.init(describing:)) ?? "unavailable")",
+            "url=\(urlPresent)",
+            "participants=[\(participantLines.joined(separator: "; "))]",
+            CloudKitShareAccessRequestPolicy.logDescription(requesters)
+        ].joined(separator: " ")
+    }
+}
+
+#if compiler(>=6.2)
+@available(iOS 26.0, macCatalyst 26.0, *)
+extension CloudKitCoupleSpaceService {
+    /// Partner side: asks the owner of the share behind `url` to let me in. CloudKit
+    /// answers the same whether or not the share exists (it does not disclose shares).
+    func requestShareAccess(url: URL) async throws {
+        cloudKitSharingInfo("requestShareAccess begin")
+        let started = ContinuousClock.now
+        let errors = CloudKitRequestAccessErrors()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let operation = CKShareRequestAccessOperation(shareURLs: [url])
+            operation.perShareAccessRequestResultBlock = { _, result in
+                switch result {
+                case .success:
+                    cloudKitSharingInfo("requestShareAccess perShare succeeded")
+                case .failure(let error):
+                    cloudKitSharingError("requestShareAccess perShare failed error=\(describeCloudKitFailure(error))")
+                    errors.set(error)
+                }
+            }
+            operation.shareAccessRequestResultBlock = { result in
+                cloudKitSharingInfo("requestShareAccess finished \(cloudKitElapsed(since: started))")
+                switch result {
+                case .success:
+                    if let error = errors.first {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume()
+                    }
+                case .failure(let error):
+                    cloudKitSharingError("requestShareAccess failed error=\(describeCloudKitFailure(error))")
+                    continuation.resume(throwing: error)
+                }
+            }
+            container.add(operation)
+        }
+    }
+
+    /// What `fetchShareMetadata` gives this account for `url`, field presence only.
+    func shareMetadataAccessDescription(url: URL) async -> String {
+        do {
+            let metadata = try await fetchShareMetadata(from: url)
+            let share = metadata.share
+            return [
+                "containerIdentifierEmpty=\(metadata.containerIdentifier.isEmpty)",
+                "ownerNameEmpty=\(share.recordID.zoneID.ownerName.isEmpty)",
+                "participantStatus=\(metadata.participantStatus.rawValue)",
+                "participantRole=\(metadata.participantRole.rawValue)",
+                "participantPermission=\(metadata.participantPermission.rawValue)",
+                "rootRecordID=\(metadata.hierarchicalRootRecordID != nil)",
+                "sharePublicPermission=\(share.publicPermission.rawValue)",
+                "shareAllowsAccessRequests=\(share.allowsAccessRequests)",
+                "shareParticipants=\(share.participants.count)",
+                "ownerUserRecordID=\(metadata.ownerIdentity.userRecordID != nil)"
+            ].joined(separator: " ")
+        } catch {
+            return "failed \(describeCloudKitFailure(error))"
+        }
+    }
+
+    /// Owner side: the share as the server has it now, with who is asking to join.
+    func outgoingShareAccessState() async throws -> OutgoingShareAccessState? {
+        try await ensureZone()
+        guard let share = try await fetchOutgoingShare() else {
+            cloudKitSharingInfo("outgoingShareAccessState skipped; share missing")
+            return nil
+        }
+        let participantLines = share.participants.map { participant in
+            [
+                "role=\(participant.role.rawValue)",
+                "acceptance=\(participant.acceptanceStatus.rawValue)",
+                "permission=\(participant.permission.rawValue)",
+                "approvedRequester=\(participant.isApprovedRequester)",
+                "userRecordID=\(participant.userIdentity.userRecordID != nil)"
+            ].joined(separator: ",")
+        }
+        let requesters = share.requesters.map { requester in
+            let identity = requester.userIdentity
+            let lookup = requester.participantLookupInfo
+            return ShareAccessRequesterIdentityPresence(
+                hasNameComponents: identity.nameComponents != nil,
+                hasEmailAddress: lookup.emailAddress != nil || identity.lookupInfo?.emailAddress != nil,
+                hasPhoneNumber: lookup.phoneNumber != nil || identity.lookupInfo?.phoneNumber != nil,
+                // `requester.contact` is not read: it asks for Contacts access, and an
+                // app without NSContactsUsageDescription is killed by TCC.
+                hasUserRecordID: lookup.userRecordID != nil || identity.userRecordID != nil
+            )
+        }
+        let state = OutgoingShareAccessState(
+            shareRecordName: share.recordID.recordName,
+            publicPermission: share.publicPermission,
+            allowsAccessRequests: share.allowsAccessRequests,
+            urlPresent: share.url != nil,
+            participantLines: participantLines,
+            requesters: requesters
+        )
+        cloudKitSharingInfo("outgoingShareAccessState \(state.logDescription)")
+        return state
+    }
+
+    /// Owner side: lets everyone who asked to join in, read-write. Returns how many
+    /// were added. Each requester becomes a participant through a lookup of their
+    /// `participantLookupInfo`; the share is saved once.
+    func approveShareRequesters() async throws -> Int {
+        try await ensureZone()
+        guard let share = try await fetchOutgoingShare() else {
+            cloudKitSharingInfo("approveShareRequesters skipped; share missing")
+            return 0
+        }
+        let requesters = share.requesters
+        cloudKitSharingInfo("approveShareRequesters begin requesters=\(requesters.count)")
+        guard !requesters.isEmpty else { return 0 }
+
+        let lookups = try await container.shareParticipants(for: requesters.map(\.participantLookupInfo))
+        var added = 0
+        for (_, result) in lookups {
+            switch result {
+            case .success(let participant):
+                participant.permission = .readWrite
+                share.addParticipant(participant)
+                added += 1
+            case .failure(let error):
+                cloudKitSharingError("approveShareRequesters lookup failed error=\(describeCloudKitFailure(error))")
+            }
+        }
+        guard added > 0 else { return 0 }
+        do {
+            _ = try await saveShare(share)
+        } catch {
+            cloudKitSharingError("approveShareRequesters save failed error=\(describeCloudKitFailure(error))")
+            throw error
+        }
+        cloudKitSharingInfo("approveShareRequesters succeeded added=\(added)")
+        return added
+    }
+}
+
+/// The first per-share failure of a `CKShareRequestAccessOperation`, which reports the
+/// overall result separately.
+private final class CloudKitRequestAccessErrors: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Error?
+
+    func set(_ error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        if stored == nil { stored = error }
+    }
+
+    var first: Error? {
+        lock.lock(); defer { lock.unlock() }
+        return stored
+    }
+}
+#endif

@@ -2236,3 +2236,33 @@ final class ZoneChangeSnapshotStoreTests: XCTestCase {
         store.remove(fileName: "zone.plist")
     }
 }
+
+final class CloudKitShareAccessRequestPolicyTests: XCTestCase {
+    func testUninvitedStubMetadataIsNeverAccepted() {
+        // What fetchShareMetadata returned to the not-yet-approved partner in the
+        // 2026-11-26 experiment: no container identifier, no zone owner.
+        XCTAssertTrue(CloudKitShareAccessRequestPolicy.isUninvitedStub(containerIdentifier: "", zoneOwnerName: ""))
+        XCTAssertTrue(CloudKitShareAccessRequestPolicy.isUninvitedStub(
+            containerIdentifier: CloudKitCoupleSpaceService.containerIdentifier,
+            zoneOwnerName: ""
+        ))
+        XCTAssertFalse(CloudKitShareAccessRequestPolicy.isUninvitedStub(
+            containerIdentifier: CloudKitCoupleSpaceService.containerIdentifier,
+            zoneOwnerName: "_2be1ca3a8f2dbd00020a541d080d6321"
+        ))
+    }
+
+    func testRequesterLogShowsOnlyWhichFieldsArePresent() {
+        let presence = ShareAccessRequesterIdentityPresence(
+            hasNameComponents: true,
+            hasEmailAddress: false,
+            hasPhoneNumber: true,
+            hasUserRecordID: true
+        )
+        XCTAssertEqual(
+            CloudKitShareAccessRequestPolicy.logDescription([presence]),
+            "count=1 requesters=[name=true email=false phone=true userRecordID=true]"
+        )
+        XCTAssertEqual(CloudKitShareAccessRequestPolicy.logDescription([]), "count=0 requesters=[]")
+    }
+}

@@ -11,6 +11,11 @@ enum ShareCalLaunchDiagnosticPolicy {
     static let preparePairingShareArgument = "-ShareCalPreparePairingShare"
     static let acceptShareURLArgument = "-ShareCalAcceptShareURL"
     static let forceSyncArgument = "-ShareCalForceSync"
+    /// Share access requests (iOS 26+): the partner asks to join an invite-only share by
+    /// its URL (`<arg> <url>`); the owner lists who asked and approves them.
+    static let requestShareAccessURLArgument = "-ShareCalRequestShareAccessURL"
+    static let listShareRequestersArgument = "-ShareCalListShareRequesters"
+    static let approveShareRequestersArgument = "-ShareCalApproveShareRequesters"
     /// Test-harness only: seed a display name + mark onboarding/recovery prompts resolved
     /// in the app's own UserDefaults at launch, so automation isn't blocked by the
     /// first-run profile sheet. Inert without the argument (normal launches ignore it).
@@ -260,6 +265,18 @@ enum ShareCalLaunchDiagnosticPolicy {
 
     static func seedProfileName(arguments: [String] = ProcessInfo.processInfo.arguments) -> String? {
         value(after: seedProfileNameArgument, arguments: arguments)
+    }
+
+    static func requestShareAccessURL(arguments: [String]) -> URL? {
+        value(after: requestShareAccessURLArgument, arguments: arguments).flatMap(URL.init(string:))
+    }
+
+    static func shouldListShareRequesters(arguments: [String]) -> Bool {
+        arguments.contains(listShareRequestersArgument)
+    }
+
+    static func shouldApproveShareRequesters(arguments: [String]) -> Bool {
+        arguments.contains(approveShareRequestersArgument)
     }
 
     static func acceptShareURL(arguments: [String]) -> URL? {

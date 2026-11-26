@@ -167,6 +167,8 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
+        await runShareAccessRequestDiagnostics(services: services, arguments: arguments)
+
         if ShareCalLaunchDiagnosticPolicy.shouldForceSync(arguments: arguments) {
             // Reuses the accepted-share signal channel: RootView consumes it and
             // runs a foreground sync that bypasses the automatic-sync throttle.
@@ -233,6 +235,49 @@ enum ShareCalLaunchDiagnostics {
     }
 
     private static let diag = ShareCalLaunchDiagnosticPolicy.diagnosticLogPrefix
+
+    /// Share access requests: request (partner), list and approve (owner), in that order.
+    private static func runShareAccessRequestDiagnostics(services: AppServices, arguments: [String]) async {
+        let requestURL = ShareCalLaunchDiagnosticPolicy.requestShareAccessURL(arguments: arguments)
+        let list = ShareCalLaunchDiagnosticPolicy.shouldListShareRequesters(arguments: arguments)
+        let approve = ShareCalLaunchDiagnosticPolicy.shouldApproveShareRequesters(arguments: arguments)
+        guard requestURL != nil || list || approve else { return }
+        #if compiler(>=6.2)
+        guard #available(iOS 26.0, macCatalyst 26.0, *) else {
+            NSLog("%@ shareAccessRequests failed: needs iOS 26", diag)
+            return
+        }
+        if let requestURL {
+            let before = await services.cloudKit.shareMetadataAccessDescription(url: requestURL)
+            NSLog("%@ shareMetadata before request %@", diag, before)
+            do {
+                try await services.cloudKit.requestShareAccess(url: requestURL)
+                NSLog("%@ requestShareAccess succeeded", diag)
+            } catch {
+                NSLog("%@ requestShareAccess failed: %@", diag, describeCloudKitFailure(error))
+            }
+        }
+        if list {
+            do {
+                let state = try await services.cloudKit.outgoingShareAccessState()
+                NSLog("%@ shareRequesters %@", diag, state?.logDescription ?? "share=missing")
+            } catch {
+                NSLog("%@ shareRequesters failed: %@", diag, describeCloudKitFailure(error))
+            }
+        }
+        if approve {
+            do {
+                let added = try await services.cloudKit.approveShareRequesters()
+                let state = try await services.cloudKit.outgoingShareAccessState()
+                NSLog("%@ approveShareRequesters succeeded added=%d after: %@", diag, added, state?.logDescription ?? "share=missing")
+            } catch {
+                NSLog("%@ approveShareRequesters failed: %@", diag, describeCloudKitFailure(error))
+            }
+        }
+        #else
+        NSLog("%@ shareAccessRequests failed: built without the iOS 26 SDK", diag)
+        #endif
+    }
 
     private static func runForegroundSync(
         services: AppServices, settings: SettingsStore, modelContext: ModelContext

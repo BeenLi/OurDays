@@ -86,6 +86,19 @@ final class ForegroundSyncPolicyTests: XCTestCase {
 }
 
 final class CloudKitForegroundSyncPolicyTests: XCTestCase {
+    func testAPendingShareAccessRequestRunsCloudKitSync() {
+        XCTAssertTrue(
+            CloudKitForegroundSyncPolicy.shouldRunCloudKit(
+                iCloudSharingEnabled: true,
+                hasStartedPairing: false,
+                partnerShareOwnerID: nil,
+                outgoingShareParticipantIDs: [],
+                hasPendingShareAccessRequest: true,
+                forceCloudKit: false
+            )
+        )
+    }
+
     func testSkipsCloudKitWhenSharingDisabledEvenIfForced() {
         XCTAssertFalse(
             CloudKitForegroundSyncPolicy.shouldRunCloudKit(

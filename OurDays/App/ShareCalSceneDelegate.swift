@@ -30,6 +30,19 @@ enum ShareCalPendingShareReplacement {
 enum ShareCalCloudKitShareAcceptanceHandler {
     static func handle(metadata: CKShare.Metadata) {
         let incomingOwnerID = metadata.share.recordID.zoneID.ownerName
+        if CloudKitShareAccessRequestPolicy.isUninvitedStub(
+            containerIdentifier: metadata.containerIdentifier,
+            zoneOwnerName: incomingOwnerID
+        ) {
+            // An invite-only share I was not let into: accepting it would raise an
+            // uncaught CKException. Ask its owner instead (RootView sends the request).
+            let url = metadata.share.url
+            NSLog("ShareCal share metadata is the uninvited stub; urlPresent=%@", (url != nil).description)
+            Task { @MainActor in
+                ShareAccessRequestSender.storeUninvitedLink(url.map { .url($0) } ?? .withoutURL)
+            }
+            return
+        }
         if ShareAcceptanceGuardPolicy.requiresReplacementConfirmation(
             incomingOwnerID: incomingOwnerID,
             storedPartnerID: SettingsStore.storedPartnerShareOwnerID(),

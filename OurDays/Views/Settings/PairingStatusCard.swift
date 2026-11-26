@@ -1,4 +1,5 @@
 import CloudKit
+import SwiftData
 import SwiftUI
 
 /// The hero card of the 我们 tab: the two avatars linked together, how many days the
@@ -366,6 +367,163 @@ struct ProfileIdentityRow: View {
                     .font(.caption)
                     .foregroundStyle(OurDaysTheme.secondaryInk)
             }
+        }
+    }
+}
+
+/// Under the pairing card while an invite-only share is being joined (iOS 26 access
+/// requests): the owner sees who asked to join, with Approve / Decline; the partner who
+/// asked sees that they are waiting. While it is on screen it checks every few seconds,
+/// since the owner gets no push when someone asks.
+struct ShareAccessRequestPanel: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(SettingsStore.self) private var settings
+    @Environment(AppServices.self) private var services
+    @State private var inbox = ShareAccessRequestInbox.shared
+    @State private var busyRequesterID: String?
+    @State private var errorMessage: String?
+
+    private static let pollInterval: Duration = .seconds(5)
+
+    private var watchesRequesters: Bool {
+        CloudKitCoupleSpaceService.supportsShareAccessRequests
+            && settings.outgoingShareParticipantIDs.isEmpty
+            && (settings.hasStartedPairing || settings.partnerShareOwnerID != nil)
+    }
+
+    private var isWaitingForApproval: Bool {
+        settings.pendingShareAccessRequestURL != nil
+    }
+
+    var body: some View {
+        let strings = settings.strings
+        VStack(alignment: .leading, spacing: 12) {
+            if isWaitingForApproval {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text(strings.shareAccessRequestSentTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(OurDaysTheme.ink)
+                    }
+                    Text(strings.shareAccessRequestSentMessage)
+                        .font(.footnote)
+                        .foregroundStyle(OurDaysTheme.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(strings.shareAccessRequestStopWaitingButton) {
+                        settings.clearPendingShareAccessRequest()
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                    .buttonStyle(.borderless)
+                }
+                .ourDaysCard()
+                .accessibilityIdentifier("share-access-request-waiting")
+            }
+
+            if watchesRequesters {
+                ForEach(inbox.offered) { requester in
+                    requesterCard(requester, strings: strings)
+                }
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(OurDaysTheme.destructive)
+            }
+        }
+        .task(id: "\(watchesRequesters)-\(isWaitingForApproval)") {
+            await poll()
+        }
+    }
+
+    private func requesterCard(_ requester: ShareAccessRequester, strings: ShareCalStrings) -> some View {
+        let name = CloudKitShareAccessRequestPolicy.displayName(
+            for: requester,
+            fallback: strings.shareAccessRequesterFallbackName
+        )
+        let isBusy = busyRequesterID == requester.id
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(strings.shareAccessRequesterTitle(name))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(OurDaysTheme.ink)
+            Text(strings.shareAccessRequesterMessage)
+                .font(.footnote)
+                .foregroundStyle(OurDaysTheme.secondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 12) {
+                Button {
+                    Task { await approve(requester) }
+                } label: {
+                    if isBusy {
+                        ProgressView()
+                    } else {
+                        Text(strings.shareAccessApproveButton)
+                    }
+                }
+                .buttonStyle(OurDaysPrimaryButtonStyle())
+                .accessibilityIdentifier("share-access-approve")
+                Button(strings.shareAccessDenyButton) {
+                    Task { await deny(requester) }
+                }
+                .buttonStyle(OurDaysSecondaryButtonStyle())
+                .accessibilityIdentifier("share-access-deny")
+            }
+            .disabled(busyRequesterID != nil)
+        }
+        .ourDaysCard()
+    }
+
+    private func poll() async {
+        guard let cloudKit = services.cloudKitIfAvailable,
+              watchesRequesters || isWaitingForApproval else { return }
+        var pollsRequesters = watchesRequesters
+        while !Task.isCancelled, pollsRequesters || isWaitingForApproval {
+            if pollsRequesters {
+                if await inbox.refresh(cloudKit: cloudKit, settings: settings) {
+                    await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
+                }
+                // A link share, or no share yet: nobody can ask, so stop asking CloudKit.
+                pollsRequesters = watchesRequesters && inbox.shareTakesRequests
+            }
+            if isWaitingForApproval,
+               let zoneIDs = try? await cloudKit.fetchSharedCoupleSpaceZoneIDs(),
+               CloudKitShareAccessRequestPolicy.requestIsAnswered(
+                   sharedZoneOwnerIDs: zoneIDs.map(\.ownerName),
+                   zoneOwnerIDsWhenRequested: settings.pendingShareAccessRequestZoneOwnerIDs
+               ) {
+                // Sync clears the wait and pairing resolution takes over from here.
+                await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
+            }
+            try? await Task.sleep(for: Self.pollInterval)
+        }
+    }
+
+    private func approve(_ requester: ShareAccessRequester) async {
+        guard let cloudKit = services.cloudKitIfAvailable else { return }
+        busyRequesterID = requester.id
+        errorMessage = nil
+        defer { busyRequesterID = nil }
+        do {
+            _ = try await cloudKit.approveShareAccessRequester(id: requester.id)
+            inbox.remove(id: requester.id)
+            await SyncCoordinator.syncIfIdle(services: services, settings: settings, modelContext: modelContext)
+        } catch {
+            errorMessage = settings.strings.shareAccessRequestFailed(CloudKitSharingFailureMessage.userFacingMessage(for: error))
+        }
+    }
+
+    private func deny(_ requester: ShareAccessRequester) async {
+        guard let cloudKit = services.cloudKitIfAvailable else { return }
+        busyRequesterID = requester.id
+        errorMessage = nil
+        defer { busyRequesterID = nil }
+        do {
+            try await cloudKit.denyShareAccessRequester(id: requester.id)
+            inbox.remove(id: requester.id)
+        } catch {
+            errorMessage = settings.strings.shareAccessRequestFailed(CloudKitSharingFailureMessage.userFacingMessage(for: error))
         }
     }
 }

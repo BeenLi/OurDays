@@ -205,14 +205,17 @@ enum CloudKitSharePermissionPolicy {
     }
 
     /// The share for accounts that may not make link shares: nobody gets in by the link
-    /// alone, the partner is added by phone number or email in Apple's sheet.
+    /// alone. Where the OS has share access requests (iOS 26), the partner who opens
+    /// the link asks to join and the owner lets them in from the pairing card
+    /// (`CloudKitShareAccessRequestPolicy`); below that, the partner is added by phone
+    /// number or email in Apple's sheet.
     ///
-    /// `allowsAccessRequests` lets an uninvited partner who opens the link ask to join;
-    /// the owner then approves them, so no phone number or email is needed. Setting it
-    /// needs the `com.apple.developer.icloud-extended-share-access` entitlement with
-    /// `InProcessShareAccessRequests`: without it CloudKit traps (EXC_BREAKPOINT in
-    /// `-[CKShare setAllowsAccessRequests:]`), so only pass true from a build that has it.
-    static func configureForInviteOnly(_ share: CKShare, allowsAccessRequests: Bool = false) {
+    /// Setting `allowsAccessRequests` needs the
+    /// `com.apple.developer.icloud-extended-share-access` entitlement with
+    /// `InProcessShareAccessRequests` (in every signed entitlements file): without it
+    /// CloudKit traps (EXC_BREAKPOINT in `-[CKShare setAllowsAccessRequests:]`), which
+    /// is why a process without it (the unit tests) passes `allowsAccessRequests: false`.
+    static func configureForInviteOnly(_ share: CKShare, allowsAccessRequests: Bool = true) {
         share[CKShare.SystemFieldKey.title] = "OurDays" as CKRecordValue
         share.publicPermission = .none
         #if compiler(>=6.2)
@@ -530,6 +533,7 @@ enum CloudKitSharingError: LocalizedError {
     case missingSavedShare(CKRecord.ID)
     case operationTimedOut(String)
     case notInvitedToShare
+    case requesterLookupFailed
 
     var errorDescription: String? {
         switch self {
@@ -543,6 +547,8 @@ enum CloudKitSharingError: LocalizedError {
             "CloudKit \(operation) timed out. Try again after iCloud finishes syncing."
         case .notInvitedToShare:
             "This iCloud account has not been let into the share yet."
+        case .requesterLookupFailed:
+            "iCloud could not find the account that asked to join. Try again."
         }
     }
 }
@@ -727,6 +733,13 @@ enum ShareInvitationLinkPolicy {
         case other(String)
     }
 
+    /// What looking up a pasted link led to: an invite to confirm, or (an invite-only
+    /// share I was not let into yet) a request to join that was sent to its owner.
+    enum LookupOutcome {
+        case invite(CKShare.Metadata)
+        case accessRequested
+    }
+
     /// The first `icloud.com/share/…` (or `icloud.com.cn`) URL in the pasted text (chat apps often wrap the
     /// link in a sentence).
     static func shareURL(from text: String) -> URL? {
@@ -791,7 +804,94 @@ struct ShareAccessRequesterIdentityPresence: Equatable {
     var hasUserRecordID: Bool
 }
 
+/// Someone who asked to join my invite-only share, as the pairing card needs them.
+/// Never carries their email address or phone number.
+struct ShareAccessRequester: Equatable, Identifiable {
+    /// The CloudKit user record name when CloudKit gives one, else a key made from the
+    /// requester's place in the list; what approve / deny pass back to find them.
+    let id: String
+    let userRecordID: String?
+    /// Their name as CloudKit formats it from the requester's name components.
+    let displayName: String?
+}
+
+enum ShareAccessRequestDecision: Equatable {
+    /// The partner whose share I already joined asked for mine: the second leg of
+    /// pairing, let in without a tap.
+    case approveAutomatically
+    /// Shown on the pairing card with Approve / Deny.
+    case offer
+    /// Not offered: someone already joined (two people only), or the partner asked
+    /// twice and was already let in.
+    case ignore
+}
+
+/// Whether Start Pairing puts the share's link in our own invite message, or has to go
+/// to Apple's add-people panel instead.
+enum PairingInviteLinkPolicy {
+    static func canSendLink(hasURL: Bool, isInviteOnly: Bool, supportsAccessRequests: Bool) -> Bool {
+        hasURL && (!isInviteOnly || supportsAccessRequests)
+    }
+}
+
 enum CloudKitShareAccessRequestPolicy {
+    /// What to do with each requester of my share. Two-person rule: once anyone has
+    /// joined, nobody else is offered. Once I have joined my partner's share, that
+    /// partner's request is approved without a tap (the second leg of pairing); anyone
+    /// else is still offered, because the requester's ID might not compare with the zone
+    /// owner's, and leaving the real partner neither approved nor offered would strand
+    /// the pairing. Approving a stranger then goes through the usual pairing conflict.
+    static func decisions(
+        for requesters: [ShareAccessRequester],
+        acceptedParticipantIDs: [String],
+        partnerShareOwnerID: String?
+    ) -> [(requester: ShareAccessRequester, decision: ShareAccessRequestDecision)] {
+        guard MemberIDPolicy.normalizedList(acceptedParticipantIDs).isEmpty else {
+            return requesters.map { ($0, .ignore) }
+        }
+        let partnerID = MemberIDPolicy.normalized(partnerShareOwnerID).flatMap { $0.hasPrefix("_") ? $0 : nil }
+        var approvedPartner = false
+        return requesters.map { requester in
+            guard let partnerID,
+                  MemberIDPolicy.normalized(requester.userRecordID) == partnerID else {
+                return (requester, .offer)
+            }
+            // The same person asking twice (two devices) is let in once.
+            guard !approvedPartner else { return (requester, .ignore) }
+            approvedPartner = true
+            return (requester, .approveAutomatically)
+        }
+    }
+
+    static func offered(
+        _ requesters: [ShareAccessRequester],
+        acceptedParticipantIDs: [String],
+        partnerShareOwnerID: String?
+    ) -> [ShareAccessRequester] {
+        decisions(for: requesters, acceptedParticipantIDs: acceptedParticipantIDs, partnerShareOwnerID: partnerShareOwnerID)
+            .filter { $0.decision == .offer }
+            .map(\.requester)
+    }
+
+    /// The name the pairing card shows: CloudKit's name for them, else "your partner".
+    static func displayName(for requester: ShareAccessRequester, fallback: String) -> String {
+        MemberIDPolicy.normalized(requester.displayName) ?? fallback
+    }
+
+    /// The owner asks CloudKit who is waiting only while that can matter: an
+    /// invite-only share nobody has joined yet.
+    static func shouldCheckRequesters(shareIsInviteOnly: Bool, acceptedParticipantIDs: [String]) -> Bool {
+        shareIsInviteOnly && MemberIDPolicy.normalizedList(acceptedParticipantIDs).isEmpty
+    }
+
+    /// A partner waiting on their request stops waiting once a shared zone they could
+    /// not read when they asked becomes readable: approval lets them in at once, and the
+    /// stub metadata never says whose share it was. Pairing resolution takes it from there.
+    static func requestIsAnswered(sharedZoneOwnerIDs: [String], zoneOwnerIDsWhenRequested: [String]) -> Bool {
+        let before = Set(MemberIDPolicy.normalizedList(zoneOwnerIDsWhenRequested))
+        return MemberIDPolicy.normalizedList(sharedZoneOwnerIDs).contains { $0.hasPrefix("_") && !before.contains($0) }
+    }
+
     /// For someone not (yet) let into an invite-only share that allows access
     /// requests, `fetchShareMetadata` still succeeds but returns a stub: no container
     /// identifier and no zone owner. Accepting it raises an uncaught `CKException`

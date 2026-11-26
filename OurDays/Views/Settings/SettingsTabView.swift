@@ -303,6 +303,13 @@ struct SettingsTabView: View {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
 
+                    if services.isCloudKitEnabled {
+                        ShareAccessRequestPanel()
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+
                     if let errorMessage {
                         Text(errorMessage)
                             .font(.footnote)
@@ -862,7 +869,13 @@ struct SettingsTabView: View {
             )
             if let draftID {
                 if inviteDraft?.id == draftID {
-                    if share.share.url != nil, !CloudKitSharePermissionPolicy.isInviteOnly(share.share) {
+                    if PairingInviteLinkPolicy.canSendLink(
+                        hasURL: share.share.url != nil,
+                        isInviteOnly: CloudKitSharePermissionPolicy.isInviteOnly(share.share),
+                        supportsAccessRequests: CloudKitCoupleSpaceService.supportsShareAccessRequests
+                    ) {
+                        // An invite-only link works too where the partner can ask to join
+                        // from it; the request then shows up on my pairing card.
                         inviteDraft?.preparedShare = share
                     } else {
                         // No link to put in a message, or a link that only opens for
@@ -953,7 +966,7 @@ struct SettingsTabView: View {
     /// Looks up an invite link copied from a chat app. Links tapped inside WeChat open the
     /// icloud.com web page (which can only ask for an Apple ID sign-in) instead of the app.
     @MainActor
-    private func lookUpInvite(_ url: URL) async -> Result<CKShare.Metadata, ShareInvitationLinkPolicy.Failure> {
+    private func lookUpInvite(_ url: URL) async -> Result<ShareInvitationLinkPolicy.LookupOutcome, ShareInvitationLinkPolicy.Failure> {
         guard let cloudKit = services.cloudKitIfAvailable else {
             return .failure(.other(settings.strings.iCloudSharingUnavailableLocalBuild))
         }
@@ -961,8 +974,23 @@ struct SettingsTabView: View {
         defer { isAcceptingInviteLink = false }
         do {
             let metadata = try await cloudKit.fetchShareMetadata(from: url)
+            if CloudKitShareAccessRequestPolicy.isUninvitedStub(
+                containerIdentifier: metadata.containerIdentifier,
+                zoneOwnerName: metadata.share.recordID.zoneID.ownerName
+            ) {
+                // An invite-only share nobody let me into yet: ask its owner.
+                do {
+                    guard try await ShareAccessRequestSender.send(url: url, cloudKit: cloudKit, settings: settings) else {
+                        return .failure(.inviteOnly)
+                    }
+                    return .success(.accessRequested)
+                } catch {
+                    cloudKitSharingError("lookUpInvite access request failed error=\(describeCloudKitFailure(error))")
+                    return .failure(.other(CloudKitSharingFailureMessage.userFacingMessage(for: error)))
+                }
+            }
             guard metadata.participantRole != .owner else { return .failure(.ownLink) }
-            return .success(metadata)
+            return .success(.invite(metadata))
         } catch {
             cloudKitSharingError("lookUpInvite failed error=\(describeCloudKitFailure(error))")
             let failure = ShareInvitationLinkPolicy.failure(for: error)

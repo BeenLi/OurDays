@@ -69,6 +69,16 @@ final class SettingsStore {
     var shareBackPromptShownForOwnerID: String? {
         didSet { defaults.set(shareBackPromptShownForOwnerID, forKey: Key.shareBackPromptShownForOwnerID) }
     }
+    /// The invite link I asked to join (an invite-only share that allows access
+    /// requests), while I wait for its owner to let me in. Kept across launches so the
+    /// waiting card stays up; cleared once a new shared zone shows up in sync.
+    var pendingShareAccessRequestURL: String? {
+        didSet { defaults.set(pendingShareAccessRequestURL, forKey: Key.pendingShareAccessRequestURL) }
+    }
+    /// The shared zones I could already read when I asked, so only a new one answers it.
+    var pendingShareAccessRequestZoneOwnerIDs: [String] {
+        didSet { defaults.set(pendingShareAccessRequestZoneOwnerIDs, forKey: Key.pendingShareAccessRequestZoneOwnerIDs) }
+    }
     var hasResolvedExistingICloudDataPrompt: Bool {
         didSet { defaults.set(hasResolvedExistingICloudDataPrompt, forKey: Key.hasResolvedExistingICloudDataPrompt) }
     }
@@ -223,6 +233,8 @@ final class SettingsStore {
         hasShownPairingSafetyNoticeForCurrentPairing = defaults.object(forKey: Key.hasShownPairingSafetyNoticeForCurrentPairing) as? Bool ?? false
         sentInviteBackToOwnerID = MemberIDPolicy.normalized(defaults.string(forKey: Key.sentInviteBackToOwnerID))
         shareBackPromptShownForOwnerID = MemberIDPolicy.normalized(defaults.string(forKey: Key.shareBackPromptShownForOwnerID))
+        pendingShareAccessRequestURL = MemberIDPolicy.normalized(defaults.string(forKey: Key.pendingShareAccessRequestURL))
+        pendingShareAccessRequestZoneOwnerIDs = defaults.stringArray(forKey: Key.pendingShareAccessRequestZoneOwnerIDs) ?? []
         hasResolvedExistingICloudDataPrompt = defaults.object(forKey: Key.hasResolvedExistingICloudDataPrompt) as? Bool ?? false
         outgoingShareParticipantIDs = defaults.stringArray(forKey: Key.outgoingShareParticipantIDs) ?? []
         pairingConflict = (defaults.data(forKey: Key.pairingConflict)).flatMap {
@@ -484,7 +496,13 @@ final class SettingsStore {
         pairingConflict = nil
         sentInviteBackToOwnerID = nil
         shareBackPromptShownForOwnerID = nil
+        clearPendingShareAccessRequest()
         clearPairingDate()
+    }
+
+    func clearPendingShareAccessRequest() {
+        pendingShareAccessRequestURL = nil
+        pendingShareAccessRequestZoneOwnerIDs = []
     }
 
     /// Forgets everything about the partner's avatar; called wherever pairing is torn down.
@@ -572,6 +590,8 @@ final class SettingsStore {
         static let sentInviteBackToOwnerID = "sentInviteBackToOwnerID"
         static let shareBackPromptShownForOwnerID = "shareBackPromptShownForOwnerID"
         static let hasResolvedExistingICloudDataPrompt = "hasResolvedExistingICloudDataPrompt"
+        static let pendingShareAccessRequestURL = "pendingShareAccessRequestURL"
+        static let pendingShareAccessRequestZoneOwnerIDs = "pendingShareAccessRequestZoneOwnerIDs"
         static let outgoingShareParticipantIDs = "outgoingShareParticipantIDs"
         static let pairingConflict = "pairingConflict"
         static let iCloudSharingEnabled = "iCloudSharingEnabled"

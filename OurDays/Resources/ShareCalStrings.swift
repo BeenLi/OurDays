@@ -452,8 +452,8 @@ struct ShareCalStrings {
             )
         case .inviteOnly:
             text(
-                "This link only opens for the iCloud account it was sent to. Ask your partner to send a new link.",
-                "这个链接只对受邀的 iCloud 账号开放。请对方重新发一次链接。"
+                "This link only opens for the iCloud account your partner adds. Ask them to add you with the phone number or email of your Apple Account.",
+                "这个链接只对对方添加的 iCloud 账号开放。请对方用你 Apple 账户的手机号或邮箱添加你。"
             )
         case .other(let message):
             text("Couldn't open the invite link: \(message)", "无法打开邀请链接：\(message)")
@@ -517,18 +517,65 @@ struct ShareCalStrings {
     }
 
     var inviteOnlyShareNoticeTitle: String {
-        text("Invite by phone number or email", "用手机号或邮箱邀请")
+        text("Add by phone number or email", "用手机号或邮箱添加")
     }
 
     var inviteOnlyShareNoticeMessage: String {
         text(
-            "iCloud in your region doesn't allow invite links. On the next screen, add your partner with the phone number or email of their Apple Account, then send the invitation. Only that account can open it.",
-            "你所在地区的 iCloud 不支持链接邀请。请在下一步添加对方 Apple 账户的手机号或邮箱，再把邀请发出去。只有那个账户能打开。"
+            "For when your partner's request to join doesn't reach you. On the next screen, add the phone number or email of their Apple Account, then send the invitation. Only that account can open it.",
+            "对方的加入请求一直没到时用这个办法：在下一步添加对方 Apple 账户的手机号或邮箱，再把邀请发出去。只有那个账户能打开。"
         )
     }
 
     var inviteOnlyShareNoticeContinue: String {
         text("Add Partner", "添加对方")
+    }
+
+    // Share access requests (invite-only shares, iOS 26)
+
+    var pairingInviteAddByPhoneOrEmailButton: String {
+        text("Add by phone number or email instead", "改用手机号或邮箱添加")
+    }
+
+    var shareAccessRequestSentTitle: String {
+        text("Request sent", "已向对方发送加入请求")
+    }
+
+    var shareAccessRequestSentMessage: String {
+        text(
+            "Waiting for your partner to let you in. This updates by itself once they approve.",
+            "等对方同意。对方同意后这里会自动更新。"
+        )
+    }
+
+    var shareAccessRequestStopWaitingButton: String {
+        text("Stop waiting", "不等了")
+    }
+
+    var shareAccessRequesterFallbackName: String {
+        text("Someone", "对方")
+    }
+
+    func shareAccessRequesterTitle(_ name: String) -> String {
+        text("\(name) wants to join", "\(name) 请求加入")
+    }
+
+    var shareAccessRequesterMessage: String {
+        text(
+            "Approving lets them see your calendar. Only approve your partner.",
+            "同意后对方就能看到你的日程。只同意你的另一半。"
+        )
+    }
+
+    var shareAccessApproveButton: String { text("Approve", "同意") }
+    var shareAccessDenyButton: String { text("Decline", "拒绝") }
+
+    func shareAccessRequestFailed(_ message: String) -> String {
+        text("Couldn't answer the request: \(message)", "没能处理加入请求：\(message)")
+    }
+
+    func shareAccessRequestSendFailed(_ message: String) -> String {
+        text("Couldn't send the request to join: \(message)", "没能发送加入请求：\(message)")
     }
 
     var copyPairingReport: String {

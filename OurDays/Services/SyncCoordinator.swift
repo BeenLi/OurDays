@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import Observation
 import OSLog
 import SwiftData
 import UserNotifications
@@ -71,6 +72,102 @@ struct UserNotificationScheduler: LocalNotificationScheduling {
             )
             try? await center.add(request)
         }
+    }
+}
+
+/// Who is asking to join my invite-only share, as the last check found them. In
+/// memory only: the requests live on the share, so every check reads them fresh (sync,
+/// pull-to-refresh, and a short timer while the pairing card is on screen).
+@MainActor
+@Observable
+final class ShareAccessRequestInbox {
+    static let shared = ShareAccessRequestInbox()
+
+    private(set) var offered: [ShareAccessRequester] = []
+    /// False after a check found no invite-only share waiting for someone (a link
+    /// share, nobody's share yet, or a partner already joined): nothing to poll for.
+    /// A failed check leaves it as it was, so a network blip does not stop the polling.
+    private(set) var shareTakesRequests = true
+
+    func clear() {
+        if !offered.isEmpty { offered = [] }
+        shareTakesRequests = false
+    }
+
+    func remove(id: String) {
+        offered.removeAll { $0.id == id }
+    }
+
+    /// Reads the requesters, lets the partner whose share I joined in without a tap
+    /// (the second leg of pairing), and keeps the rest that may be offered. Returns
+    /// whether someone was let in automatically. Never throws: a failed read leaves
+    /// the last list.
+    @discardableResult
+    func refresh(cloudKit: CloudKitCoupleSpaceService, settings: SettingsStore) async -> Bool {
+        guard CloudKitCoupleSpaceService.supportsShareAccessRequests else { return false }
+        let requesters: [ShareAccessRequester]?
+        do {
+            requesters = try await cloudKit.pendingShareAccessRequesters()
+        } catch {
+            syncInfo("shareAccessRequests read failed error=\(describeCloudKitFailure(error))")
+            return false
+        }
+        guard let requesters else {
+            clear()
+            return false
+        }
+        shareTakesRequests = true
+        let decisions = CloudKitShareAccessRequestPolicy.decisions(
+            for: requesters,
+            acceptedParticipantIDs: settings.outgoingShareParticipantIDs,
+            partnerShareOwnerID: settings.partnerShareOwnerID
+        )
+        var approvedAutomatically = false
+        for item in decisions where item.decision == .approveAutomatically {
+            do {
+                approvedAutomatically = try await cloudKit.approveShareAccessRequester(id: item.requester.id) || approvedAutomatically
+            } catch {
+                syncInfo("shareAccessRequests automatic approval failed error=\(describeCloudKitFailure(error))")
+            }
+        }
+        let offered = decisions.filter { $0.decision == .offer }.map(\.requester)
+        if offered != self.offered { self.offered = offered }
+        return approvedAutomatically
+    }
+}
+
+/// Partner side of an invite-only share: asks its owner to let me in, and remembers
+/// that I am waiting so the pairing card says so across launches until sync sees the
+/// owner's zone.
+@MainActor
+enum ShareAccessRequestSender {
+    /// Posted (object: the share `URL`) when a tapped link turned out to be an
+    /// invite-only share I was not let into yet; RootView sends the request.
+    static let uninvitedLinkNotification = Notification.Name("ShareCalUninvitedShareLink")
+
+    /// A tapped uninvited link waiting for RootView, which may not be listening yet on a
+    /// cold start; it takes the link when it appears as well as on the notification.
+    private(set) static var pendingUninvitedLinkURL: URL?
+
+    static func storeUninvitedLink(_ url: URL) {
+        pendingUninvitedLinkURL = url
+        NotificationCenter.default.post(name: uninvitedLinkNotification, object: nil)
+    }
+
+    static func consumeUninvitedLink() -> URL? {
+        defer { pendingUninvitedLinkURL = nil }
+        return pendingUninvitedLinkURL
+    }
+
+    /// False where access requests do not exist (before iOS 26): then only the owner
+    /// adding me by phone number or email gets me in.
+    static func send(url: URL, cloudKit: CloudKitCoupleSpaceService, settings: SettingsStore) async throws -> Bool {
+        guard CloudKitCoupleSpaceService.supportsShareAccessRequests else { return false }
+        let zonesBefore = (try? await cloudKit.fetchSharedCoupleSpaceZoneIDs().map(\.ownerName)) ?? []
+        guard try await cloudKit.requestShareAccessIfSupported(url: url) else { return false }
+        settings.pendingShareAccessRequestZoneOwnerIDs = zonesBefore
+        settings.pendingShareAccessRequestURL = url.absoluteString
+        return true
     }
 }
 
@@ -436,6 +533,23 @@ struct SyncCoordinator {
                     _ = await relayOwnSettings(cloudKit: cloudKit, settings: settings)
                 }
 
+                // After the partner and their note are in place (same main-actor turn
+                // above); these await CloudKit.
+                if settings.pendingShareAccessRequestURL != nil,
+                   CloudKitShareAccessRequestPolicy.requestIsAnswered(
+                       sharedZoneOwnerIDs: fetchedSharedZoneIDs.map(\.ownerName),
+                       zoneOwnerIDsWhenRequested: settings.pendingShareAccessRequestZoneOwnerIDs
+                   ) {
+                    settings.clearPendingShareAccessRequest()
+                    timing.mark("shareAccessRequestAnswered")
+                }
+                if outgoingParticipantIDs.isEmpty, settings.hasStartedPairing || settings.partnerShareOwnerID != nil {
+                    if await ShareAccessRequestInbox.shared.refresh(cloudKit: cloudKit, settings: settings) {
+                        timing.mark("shareAccessRequestApprovedAutomatically")
+                    }
+                } else {
+                    ShareAccessRequestInbox.shared.clear()
+                }
                 if PartnerDeparturePolicy.partnerHasLeft(
                     previousPartnerID: previousPartnerShareOwnerID,
                     previousOutgoingParticipantIDs: previousOutgoingParticipantIDs,

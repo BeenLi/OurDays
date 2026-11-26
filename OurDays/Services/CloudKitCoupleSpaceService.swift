@@ -691,26 +691,11 @@ final class CloudKitCoupleSpaceService {
         #endif
     }
 
-    /// DEBUG builds only: `-ShareCalEnableShareAccessRequests YES` makes an invite-only
-    /// share allow access requests. Only for a build signed with the
-    /// `com.apple.developer.icloud-extended-share-access` entitlement, which the
-    /// project's entitlements files do not have yet; without it CloudKit traps.
-    static var enablesShareAccessRequests: Bool {
-        #if DEBUG
-        return UserDefaults.standard.bool(forKey: "ShareCalEnableShareAccessRequests")
-        #else
-        return false
-        #endif
-    }
-
     func saveNewShare(rootRecord: CKRecord, inviteOnly: Bool = false) async throws -> CKShare {
         cloudKitSharingInfo("saveNewShare begin root=\(rootRecord.recordID.recordName) inviteOnly=\(inviteOnly.description)")
         let share = CKShare(rootRecord: rootRecord)
         if inviteOnly {
-            CloudKitSharePermissionPolicy.configureForInviteOnly(
-                share,
-                allowsAccessRequests: Self.enablesShareAccessRequests
-            )
+            CloudKitSharePermissionPolicy.configureForInviteOnly(share)
         } else {
             CloudKitSharePermissionPolicy.configureForLinkInvitation(share)
         }
@@ -842,6 +827,24 @@ final class CloudKitCoupleSpaceService {
         return lines
     }
 
+    /// An invite-only share made before access requests existed (or by an older build)
+    /// gets them turned on, so the partner can ask to join from the link. Only that
+    /// flag changes: `publicPermission` stays `.none`. A failed save leaves the share
+    /// as it was; Apple's panel can still add the partner.
+    private func ensureAllowsAccessRequests(_ share: CKShare) async -> CKShare {
+        guard CloudKitSharePermissionPolicy.isInviteOnly(share),
+              CloudKitSharePermissionPolicy.allowsAccessRequests(share) == false else { return share }
+        CloudKitSharePermissionPolicy.configureForInviteOnly(share)
+        do {
+            let saved = try await saveShare(share)
+            cloudKitSharingInfo("ensureAllowsAccessRequests turned on share=\(saved.recordID.recordName)")
+            return saved
+        } catch {
+            cloudKitSharingError("ensureAllowsAccessRequests save failed share=\(share.recordID.recordName) error=\(describeCloudKitFailure(error))")
+            return share
+        }
+    }
+
     private func ensureShareSupportsLinkInvitation(_ share: CKShare) async throws -> CKShare {
         let acceptedParticipantCount = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(from: share).count
         guard CloudKitSharePermissionPolicy.needsLinkInvitationUpgrade(
@@ -854,7 +857,7 @@ final class CloudKitCoupleSpaceService {
             return share
         }
 
-        guard !Self.forcesInviteOnlyShare else { return share }
+        guard !Self.forcesInviteOnlyShare else { return await ensureAllowsAccessRequests(share) }
         cloudKitSharingInfo(
             "ensureShareSupportsLinkInvitation upgrading share=\(share.recordID.recordName) currentPermission=\(String(describing: share.publicPermission))"
         )
@@ -866,7 +869,7 @@ final class CloudKitCoupleSpaceService {
         } catch where CloudKitShareRegionPolicy.refusesLinkShares(error) {
             // The invite-only share this account fell back to: it stays invite-only.
             cloudKitSharingInfo("ensureShareSupportsLinkInvitation link share refused for region; keeping invite-only share=\(share.recordID.recordName)")
-            return try await fetchShare(with: share.recordID)
+            return await ensureAllowsAccessRequests(try await fetchShare(with: share.recordID))
         } catch {
             cloudKitSharingError("ensureShareSupportsLinkInvitation save failed share=\(share.recordID.recordName) error=\(describeCloudKitFailure(error))")
             throw error
@@ -2112,9 +2115,137 @@ struct OutgoingShareAccessState {
     }
 }
 
+/// The access-request flow for callers that must also build without the iOS 26 SDK
+/// and run on older systems: there each one does nothing.
+extension CloudKitCoupleSpaceService {
+    static var supportsShareAccessRequests: Bool {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, macCatalyst 26.0, *) { return true }
+        #endif
+        return false
+    }
+
+    /// Partner side. Returns false where access requests do not exist.
+    func requestShareAccessIfSupported(url: URL) async throws -> Bool {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, macCatalyst 26.0, *) {
+            try await requestShareAccess(url: url)
+            return true
+        }
+        #endif
+        return false
+    }
+
+    /// Owner side: who is asking to join my share, or nil when that cannot matter (no
+    /// share, a link share, somebody already joined, or no access requests on this OS).
+    func pendingShareAccessRequesters() async throws -> [ShareAccessRequester]? {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, macCatalyst 26.0, *) {
+            return try await currentShareAccessRequesters()
+        }
+        #endif
+        return nil
+    }
+
+    /// Owner side: lets the requester in, read-write. False when they are no longer
+    /// waiting (approved or withdrawn meanwhile).
+    func approveShareAccessRequester(id: String) async throws -> Bool {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, macCatalyst 26.0, *) {
+            return try await approveRequester(id: id)
+        }
+        #endif
+        return false
+    }
+
+    /// Owner side: turns the request down. They may ask again.
+    func denyShareAccessRequester(id: String) async throws {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, macCatalyst 26.0, *) {
+            try await denyRequester(id: id)
+        }
+        #endif
+    }
+}
+
 #if compiler(>=6.2)
 @available(iOS 26.0, macCatalyst 26.0, *)
 extension CloudKitCoupleSpaceService {
+    private func requesterValues(of share: CKShare) -> [(value: ShareAccessRequester, requester: CKShare.AccessRequester)] {
+        share.requesters.enumerated().map { index, requester in
+            let recordName = requester.participantLookupInfo.userRecordID?.recordName
+                ?? requester.userIdentity.userRecordID?.recordName
+            // Name components only: never the email address or phone number, and never
+            // `requester.contact`, which asks for Contacts access (TCC kills the app).
+            let name = requester.userIdentity.nameComponents.map {
+                PersonNameComponentsFormatter.localizedString(from: $0, style: .default)
+            }
+            let value = ShareAccessRequester(
+                id: recordName ?? "requester-\(index)",
+                userRecordID: recordName,
+                displayName: name
+            )
+            return (value, requester)
+        }
+    }
+
+    fileprivate func currentShareAccessRequesters() async throws -> [ShareAccessRequester]? {
+        try await ensureZone()
+        guard let share = try await fetchOutgoingShare() else { return nil }
+        let acceptedIDs = CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(from: share)
+        guard CloudKitShareAccessRequestPolicy.shouldCheckRequesters(
+            shareIsInviteOnly: CloudKitSharePermissionPolicy.isInviteOnly(share),
+            acceptedParticipantIDs: acceptedIDs
+        ) else { return nil }
+        let requesters = requesterValues(of: share).map(\.value)
+        cloudKitSharingInfo("pendingShareAccessRequesters count=\(requesters.count)")
+        return requesters
+    }
+
+    fileprivate func approveRequester(id: String) async throws -> Bool {
+        try await ensureZone()
+        guard let share = try await fetchOutgoingShare(),
+              let match = requesterValues(of: share).first(where: { $0.value.id == id }) else {
+            cloudKitSharingInfo("approveRequester skipped; requester no longer waiting")
+            return false
+        }
+        // Two people only: someone may have joined since the card was drawn.
+        guard CloudKitShareParticipantIdentityPolicy.acceptedParticipantIDs(from: share).isEmpty else {
+            cloudKitSharingInfo("approveRequester skipped; someone already joined")
+            return false
+        }
+        let lookupInfo = match.requester.participantLookupInfo
+        guard let lookup = try await container.shareParticipants(for: [lookupInfo])[lookupInfo] else {
+            cloudKitSharingError("approveRequester lookup returned nothing")
+            throw CloudKitSharingError.requesterLookupFailed
+        }
+        let participant = try lookup.get()
+        participant.permission = .readWrite
+        share.addParticipant(participant)
+        do {
+            _ = try await saveShare(share)
+        } catch {
+            cloudKitSharingError("approveRequester save failed error=\(describeCloudKitFailure(error))")
+            throw error
+        }
+        cloudKitSharingInfo("approveRequester succeeded userRecordID=\(match.value.userRecordID != nil)")
+        return true
+    }
+
+    fileprivate func denyRequester(id: String) async throws {
+        try await ensureZone()
+        guard let share = try await fetchOutgoingShare(),
+              let match = requesterValues(of: share).first(where: { $0.value.id == id }) else { return }
+        share.denyRequesters([match.requester])
+        do {
+            _ = try await saveShare(share)
+        } catch {
+            cloudKitSharingError("denyRequester save failed error=\(describeCloudKitFailure(error))")
+            throw error
+        }
+        cloudKitSharingInfo("denyRequester succeeded")
+    }
+
     /// Partner side: asks the owner of the share behind `url` to let me in. CloudKit
     /// answers the same whether or not the share exists (it does not disclose shares).
     func requestShareAccess(url: URL) async throws {

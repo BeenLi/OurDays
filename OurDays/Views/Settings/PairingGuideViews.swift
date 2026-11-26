@@ -265,7 +265,11 @@ struct PairingInviteSheet: View {
                     .disabled(message == nil)
                     .accessibilityIdentifier("pairing-invite-send")
 
-                    Button(strings.pairingInviteAppleSheetButton) {
+                    Button(
+                        draft.preparedShare.map { CloudKitSharePermissionPolicy.isInviteOnly($0.share) } == true
+                            ? strings.pairingInviteAddByPhoneOrEmailButton
+                            : strings.pairingInviteAppleSheetButton
+                    ) {
                         guard draft.preparedShare != nil else { return }
                         onUseAppleSheet()
                         dismiss()
@@ -445,7 +449,9 @@ struct AcceptInviteLinkSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SettingsStore.self) private var settings
     /// Fetches the share behind the link, or returns a message saying why not.
-    let lookUp: (URL) async -> Result<CKShare.Metadata, ShareInvitationLinkPolicy.Failure>
+    /// An invite-only share I was not let into yet comes back `.accessRequested`: the
+    /// request to join went to its owner, and the pairing card shows the wait.
+    let lookUp: (URL) async -> Result<ShareInvitationLinkPolicy.LookupOutcome, ShareInvitationLinkPolicy.Failure>
     /// The OurDays nickname for an inviter this device already knows, else nil ("TA").
     /// Never the Apple ID name in the share metadata: partners appear by nickname only.
     let knownName: (_ ownerID: String) -> String?
@@ -617,7 +623,9 @@ struct AcceptInviteLinkSheet: View {
         defer { isLookingUp = false }
         async let participantIDs = outgoingParticipantIDs()
         switch await lookUp(url) {
-        case .success(let metadata):
+        case .success(.accessRequested):
+            dismiss()
+        case .success(.invite(let metadata)):
             let ownerID = metadata.share.recordID.zoneID.ownerName
             invite = FoundInvite(
                 metadata: metadata,

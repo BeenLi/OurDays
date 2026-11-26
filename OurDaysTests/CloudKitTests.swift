@@ -716,7 +716,9 @@ final class CloudKitSharePermissionPolicyTests: XCTestCase {
     func testInviteOnlyShareOffersOnlyInvitedPeople() {
         let root = CKRecord(recordType: "CoupleSpace", recordID: CKRecord.ID(recordName: "root"))
         let share = CKShare(rootRecord: root)
-        CloudKitSharePermissionPolicy.configureForInviteOnly(share)
+        // The test process has no extended-share-access entitlement; setting
+        // allowsAccessRequests there would trap.
+        CloudKitSharePermissionPolicy.configureForInviteOnly(share, allowsAccessRequests: false)
 
         XCTAssertTrue(CloudKitSharePermissionPolicy.isInviteOnly(share))
         let permissions = CloudKitSharePermissionPolicy.controllerAvailablePermissions(for: share)
@@ -2250,6 +2252,86 @@ final class CloudKitShareAccessRequestPolicyTests: XCTestCase {
             containerIdentifier: CloudKitCoupleSpaceService.containerIdentifier,
             zoneOwnerName: "_2be1ca3a8f2dbd00020a541d080d6321"
         ))
+    }
+
+    private func requester(_ id: String?, name: String? = nil) -> ShareAccessRequester {
+        ShareAccessRequester(id: id ?? "requester-0", userRecordID: id, displayName: name)
+    }
+
+    func testRequestersAreOfferedWhileNobodyHasJoined() {
+        let first = requester("_aaa", name: "Ann")
+        let second = requester("_bbb")
+        let decisions = CloudKitShareAccessRequestPolicy.decisions(
+            for: [first, second],
+            acceptedParticipantIDs: [],
+            partnerShareOwnerID: nil
+        )
+        XCTAssertEqual(decisions.map(\.decision), [.offer, .offer])
+    }
+
+    func testNobodyIsOfferedOnceAPartnerHasJoined() {
+        let decisions = CloudKitShareAccessRequestPolicy.decisions(
+            for: [requester("_bbb"), requester("_ccc")],
+            acceptedParticipantIDs: ["_aaa"],
+            partnerShareOwnerID: "_aaa"
+        )
+        XCTAssertEqual(decisions.map(\.decision), [.ignore, .ignore])
+    }
+
+    func testThePartnerWhoseShareIJoinedIsLetInAutomatically() {
+        let stranger = requester("_zzz")
+        let partner = requester(" _aaa ")
+        let decisions = CloudKitShareAccessRequestPolicy.decisions(
+            for: [stranger, partner, requester("_aaa")],
+            acceptedParticipantIDs: [],
+            partnerShareOwnerID: "_aaa"
+        )
+        // The partner once; anyone else stays the user's call.
+        XCTAssertEqual(decisions.map(\.decision), [.offer, .approveAutomatically, .ignore])
+        XCTAssertEqual(CloudKitShareAccessRequestPolicy.offered(
+            [stranger, partner],
+            acceptedParticipantIDs: [],
+            partnerShareOwnerID: "_aaa"
+        ), [stranger])
+    }
+
+    func testAPlaceholderOrMissingIDNeverApprovesAutomatically() {
+        XCTAssertEqual(CloudKitShareAccessRequestPolicy.decisions(
+            for: [requester("local-user")],
+            acceptedParticipantIDs: [],
+            partnerShareOwnerID: "local-user"
+        ).map(\.decision), [.offer])
+        XCTAssertEqual(CloudKitShareAccessRequestPolicy.decisions(
+            for: [requester(nil)],
+            acceptedParticipantIDs: [],
+            partnerShareOwnerID: "_aaa"
+        ).map(\.decision), [.offer])
+    }
+
+    func testRequesterNameFallsBackWithoutNameComponents() {
+        XCTAssertEqual(CloudKitShareAccessRequestPolicy.displayName(for: requester("_a", name: "Ann Lee"), fallback: "对方"), "Ann Lee")
+        XCTAssertEqual(CloudKitShareAccessRequestPolicy.displayName(for: requester("_a", name: "  "), fallback: "对方"), "对方")
+        XCTAssertEqual(CloudKitShareAccessRequestPolicy.displayName(for: requester("_a"), fallback: "对方"), "对方")
+    }
+
+    func testRequestersAreCheckedOnlyOnAnInviteOnlyShareNobodyJoined() {
+        XCTAssertTrue(CloudKitShareAccessRequestPolicy.shouldCheckRequesters(shareIsInviteOnly: true, acceptedParticipantIDs: []))
+        XCTAssertFalse(CloudKitShareAccessRequestPolicy.shouldCheckRequesters(shareIsInviteOnly: false, acceptedParticipantIDs: []))
+        XCTAssertFalse(CloudKitShareAccessRequestPolicy.shouldCheckRequesters(shareIsInviteOnly: true, acceptedParticipantIDs: ["_a"]))
+    }
+
+    func testOnlyANewSharedZoneAnswersMyRequest() {
+        XCTAssertFalse(CloudKitShareAccessRequestPolicy.requestIsAnswered(sharedZoneOwnerIDs: [], zoneOwnerIDsWhenRequested: []))
+        XCTAssertFalse(CloudKitShareAccessRequestPolicy.requestIsAnswered(sharedZoneOwnerIDs: ["_old"], zoneOwnerIDsWhenRequested: ["_old"]))
+        XCTAssertTrue(CloudKitShareAccessRequestPolicy.requestIsAnswered(sharedZoneOwnerIDs: ["_old", "_new"], zoneOwnerIDsWhenRequested: ["_old"]))
+        XCTAssertFalse(CloudKitShareAccessRequestPolicy.requestIsAnswered(sharedZoneOwnerIDs: ["not-a-user-id"], zoneOwnerIDsWhenRequested: []))
+    }
+
+    func testInviteOnlyLinkIsSentOnlyWhereThePartnerCanAskToJoin() {
+        XCTAssertTrue(PairingInviteLinkPolicy.canSendLink(hasURL: true, isInviteOnly: false, supportsAccessRequests: false))
+        XCTAssertTrue(PairingInviteLinkPolicy.canSendLink(hasURL: true, isInviteOnly: true, supportsAccessRequests: true))
+        XCTAssertFalse(PairingInviteLinkPolicy.canSendLink(hasURL: true, isInviteOnly: true, supportsAccessRequests: false))
+        XCTAssertFalse(PairingInviteLinkPolicy.canSendLink(hasURL: false, isInviteOnly: false, supportsAccessRequests: true))
     }
 
     func testRequesterLogShowsOnlyWhichFieldsArePresent() {

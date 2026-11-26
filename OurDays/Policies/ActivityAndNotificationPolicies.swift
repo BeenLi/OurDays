@@ -190,7 +190,8 @@ enum LocalNotificationPolicy {
         invitations: [EventInvitation],
         accessRequests: [CalendarAccessRequest],
         currentMemberID: String,
-        since lastNotifiedAt: Date?
+        since lastNotifiedAt: Date?,
+        pushedRecordNames: Set<String> = []
     ) -> [PlannedLocalNotification] {
         guard let since = lastNotifiedAt else { return [] }
         var result: [PlannedLocalNotification] = []
@@ -199,9 +200,12 @@ enum LocalNotificationPolicy {
             uniquingKeysWith: { first, _ in first }
         )
 
-        // 1. Partner commented on one of MY events.
+        // 1. Partner commented on one of MY events. Skipped only for a comment whose
+        // visible push is known to have reached this device (CommentAlertPushPolicy,
+        // decision 0004); a push that never arrived still gets its local notification.
         for comment in comments
-        where comment.deletedAt == nil
+        where !pushedRecordNames.contains(comment.cloudKitRecordName ?? comment.id)
+            && comment.deletedAt == nil
             && comment.authorMemberID != currentMemberID
             && comment.createdAt > since {
             guard let mirror = mirrorsByID[comment.eventMirrorID],
@@ -290,6 +294,55 @@ enum LocalNotificationPolicy {
         }
 
         return result.sorted { $0.occurredAt < $1.occurredAt }
+    }
+}
+
+/// The visible push iCloud sends the moment the partner comments on one of MY events
+/// (notifications decision 0004). Those comments are written into MY zone, i.e. my
+/// private database, where a query subscription can watch one record type, fire on
+/// creation only and carry the comment text. Everything else still travels by silent
+/// push + sync + local notification.
+enum CommentAlertPushPolicy {
+    static let subscriptionID = "couplecalendar-comment-alert-subscription"
+    /// Not a key in any strings file on purpose: iOS falls back to the key itself as
+    /// the format, so the alert body is exactly the first argument (the comment text).
+    static let bodyFormatKey = "%1$@"
+    static let bodyArgumentKeys = ["body"]
+    /// Excludes what I write myself on another device (iPhone and Mac share one
+    /// account). Needs `authorMemberID` to be QUERYABLE in the deployed schema.
+    static let predicateFormat = "authorMemberID != %@"
+
+    /// Only a real CloudKit user id can go into the predicate; the "local-user"
+    /// placeholder would make every comment (my own included) match.
+    static func canSubscribe(currentMemberID: String) -> Bool {
+        MemberIDPolicy.normalized(currentMemberID)?.hasPrefix("_") == true
+    }
+
+}
+
+/// Which visible pushes this device has actually shown. A saved subscription does not
+/// prove a push arrived (it can be dropped, or the device can be offline for days), so
+/// the sync only skips the local notification for a record it knows was pushed: one
+/// still sitting in Notification Center, or one the app saw arrive or get tapped.
+enum SeenPushPolicy {
+    static let limit = 200
+
+    /// True when the planned notifications contain a kind that also travels as a
+    /// visible push, i.e. when Notification Center is worth checking before posting.
+    static func mayHaveBeenPushed(_ planned: [PlannedLocalNotification]) -> Bool {
+        planned.contains { notification in
+            switch notification.kind {
+            case .partnerCommentedOnMyEvent: true
+            case .invitationReceived, .invitationAccepted, .invitationDeclined,
+                 .accessRequestReceived, .accessRequestAnswered: false
+            }
+        }
+    }
+
+    /// `seen` with `recordName` appended, oldest dropped beyond `limit`.
+    static func remembering(_ recordName: String, in seen: [String]) -> [String] {
+        guard !seen.contains(recordName) else { return seen }
+        return Array((seen + [recordName]).suffix(limit))
     }
 }
 

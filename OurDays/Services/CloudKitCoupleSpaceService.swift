@@ -1947,6 +1947,38 @@ final class CloudKitCoupleSpaceService {
         )
     }
 
+    /// Visible push for the partner's new comments on MY events (notifications decision
+    /// 0004). Those records are created in my own zone, so this is a private-database
+    /// query subscription: one record type, creation only (edits and deletes stay
+    /// quiet), with the comment text as the alert body. Saved under a fixed id, so
+    /// calling it again just refreshes the title.
+    func configureCommentAlertSubscription(currentMemberID: String, title: String) async throws {
+        let subscription = CKQuerySubscription(
+            recordType: CommentRecordMapper.recordType,
+            predicate: NSPredicate(format: CommentAlertPushPolicy.predicateFormat, currentMemberID),
+            subscriptionID: CommentAlertPushPolicy.subscriptionID,
+            options: [.firesOnRecordCreation]
+        )
+        subscription.zoneID = zoneID
+        let notificationInfo = CKSubscription.NotificationInfo()
+        notificationInfo.title = title
+        notificationInfo.alertLocalizationKey = CommentAlertPushPolicy.bodyFormatKey
+        notificationInfo.alertLocalizationArgs = CommentAlertPushPolicy.bodyArgumentKeys
+        notificationInfo.soundName = "default"
+        subscription.notificationInfo = notificationInfo
+
+        let operation = CKModifySubscriptionsOperation(
+            subscriptionsToSave: [subscription],
+            subscriptionIDsToDelete: nil
+        )
+        try await withCheckedThrowingContinuation { continuation in
+            operation.modifySubscriptionsResultBlock = { result in
+                continuation.resume(with: result)
+            }
+            privateDatabase.add(operation)
+        }
+    }
+
     private func ensureDatabaseSubscription(subscriptionID: String, database: CKDatabase) async throws {
         let subscription = CKDatabaseSubscription(subscriptionID: subscriptionID)
         let notificationInfo = CKSubscription.NotificationInfo()

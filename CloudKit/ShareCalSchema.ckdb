@@ -70,7 +70,7 @@ DEFINE SCHEMA
     RECORD TYPE EventComment (
         "___recordID" REFERENCE QUERYABLE,
         eventMirrorID STRING QUERYABLE,
-        authorMemberID STRING,
+        authorMemberID STRING QUERYABLE,
         body STRING SEARCHABLE,
         createdAt TIMESTAMP QUERYABLE SORTABLE,
         editedAt TIMESTAMP,

@@ -125,6 +125,26 @@ struct ShareCalStrings {
     var notesLabel: String { text("Notes", "备注") }
     var sendInviteButton: String { text("Send Invite", "发送邀请") }
     var createInviteSection: String { text("Details", "详情") }
+    var inviteCalendarLabel: String { text("Calendar", "日历") }
+    func inviteCalendarFootnote(invitesPartner: Bool) -> String {
+        invitesPartner
+            ? text(
+                "Events you do together live in the ShareCal calendar, on both your devices.",
+                "共同日程都放在「ShareCal」日历里，TA 接受后也会建在 TA 的这个日历里。"
+            )
+            : text("The event is added to this calendar of yours.", "日程会建在你的这个日历里。")
+    }
+    var newEventTitle: String { text("New Event", "新建日程") }
+    var addToCalendarButton: String { text("Add to Calendar", "添加到日历") }
+    func invitePartnerToggleLabel(partnerName: String) -> String {
+        text("Invite \(partnerName)", "邀请\(partnerName)")
+    }
+    func invitePartnerRowHint(isPaired: Bool, invitesPartner: Bool) -> String {
+        guard isPaired else { return text("Pair first to send invites", "配对后才能发出邀请") }
+        return invitesPartner
+            ? text("Shows up in their Invites", "会出现在 TA 的「邀请」里")
+            : text("Just an event of your own", "只建自己的日程")
+    }
     var emptyTitleError: String { text("Title is required.", "请输入标题。") }
     var invalidDateRangeError: String { text("End time must be after start time.", "结束时间必须晚于开始时间。") }
     var noSharedSchedulesTitle: String { text("No schedules today", "当前无日程") }

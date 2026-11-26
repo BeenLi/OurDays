@@ -1170,6 +1170,14 @@ final class CreateInvitePolicyTests: XCTestCase {
         XCTAssertThrowsError(try CreateInvitePolicy.localCalendarDraft(from: draft, now: start.addingTimeInterval(60 * 60))) { error in
             XCTAssertEqual(error as? CreateInviteValidationError, .alreadyEnded)
         }
+        // An event of one's own proposes nothing, so one that already ended can be added.
+        XCTAssertNoThrow(
+            try CreateInvitePolicy.localCalendarDraft(
+                from: draft,
+                invitesPartner: false,
+                now: start.addingTimeInterval(60 * 60)
+            )
+        )
     }
 }
 

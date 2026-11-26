@@ -22,6 +22,8 @@ struct CreateInviteView: View {
     @State private var isSending = false
     @State private var calendarChoices: [CalendarDescriptor] = []
     @State private var calendarID: String?
+    /// Off: the sheet only adds an event of one's own to the calendar.
+    @State private var wantsToInvite = true
 
     init(selectedDate: Binding<Date>, mode: Binding<CalendarMode>) {
         _selectedDate = selectedDate
@@ -81,24 +83,27 @@ struct CreateInviteView: View {
                 }
 
                 Section(strings.inviteSection) {
-                    HStack(spacing: 12) {
-                        MemberAvatarView(
-                            avatar: settings.partnerAvatar,
-                            fallbackText: settings.partnerAvatarFallbackText,
-                            identity: .partner,
-                            size: 36
-                        )
-                        Text(settings.partnerDisplayName)
-                            .foregroundStyle(OurDaysTheme.ink)
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        Text(strings.invitePartnerRowHint(isPaired: isPaired))
-                            .font(.footnote)
-                            .foregroundStyle(OurDaysTheme.secondaryInk)
-                            .multilineTextAlignment(.trailing)
+                    Toggle(isOn: $wantsToInvite) {
+                        HStack(spacing: 12) {
+                            MemberAvatarView(
+                                avatar: settings.partnerAvatar,
+                                fallbackText: settings.partnerAvatarFallbackText,
+                                identity: .partner,
+                                size: 36
+                            )
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(strings.invitePartnerToggleLabel(partnerName: settings.partnerDisplayName))
+                                    .foregroundStyle(OurDaysTheme.ink)
+                                    .lineLimit(1)
+                                Text(strings.invitePartnerRowHint(isPaired: isPaired, invitesPartner: invitesPartner))
+                                    .font(.footnote)
+                                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                            }
+                        }
                     }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("create-invite-partner-row")
+                    .tint(OurDaysTheme.inkFill)
+                    .disabled(!isPaired)
+                    .accessibilityIdentifier("create-invite-partner-toggle")
                 }
 
                 if let errorMessage {
@@ -110,7 +115,7 @@ struct CreateInviteView: View {
                 }
             }
             .ourDaysListBackground()
-            .navigationTitle(strings.newInviteTitle)
+            .navigationTitle(invitesPartner ? strings.newInviteTitle : strings.newEventTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -121,11 +126,11 @@ struct CreateInviteView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Button(strings.sendInviteButton) {
+                Button(invitesPartner ? strings.sendInviteButton : strings.addToCalendarButton) {
                     sendInvite()
                 }
                 .buttonStyle(OurDaysPrimaryButtonStyle())
-                .disabled(isSending || !isPaired)
+                .disabled(isSending)
                 .accessibilityIdentifier("create-invite-send-button")
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
@@ -158,6 +163,10 @@ struct CreateInviteView: View {
 
     private var isPaired: Bool {
         settings.partnerShareOwnerID != nil
+    }
+
+    private var invitesPartner: Bool {
+        isPaired && wantsToInvite
     }
 
     private func loadCalendarChoices() {
@@ -251,11 +260,12 @@ struct CreateInviteView: View {
         guard !isSending else { return }
         errorMessage = nil
         let draft = currentDraft()
+        let invitesPartner = invitesPartner
 
         do {
-            _ = try CreateInvitePolicy.localCalendarDraft(from: draft)
+            _ = try CreateInvitePolicy.localCalendarDraft(from: draft, invitesPartner: invitesPartner)
 
-            if !skipConflictCheck {
+            if invitesPartner, !skipConflictCheck {
                 let candidate = try CreateInvitePolicy.conflictCandidateMirror(
                     from: draft,
                     ownerMemberID: settings.currentMemberID
@@ -277,24 +287,31 @@ struct CreateInviteView: View {
             }
 
             isSending = true
-            let localDraft = try CreateInvitePolicy.localCalendarDraft(from: draft)
+            let localDraft = try CreateInvitePolicy.localCalendarDraft(from: draft, invitesPartner: invitesPartner)
             let createdEvent = try services.calendarAccess.createEvent(from: localDraft, inCalendarWithID: calendarID)
             let mirror = try CreateInvitePolicy.mirror(
                 from: draft,
                 createdEvent: createdEvent,
-                ownerMemberID: settings.currentMemberID
+                ownerMemberID: settings.currentMemberID,
+                invitesPartner: invitesPartner
             )
-            let invitation = try CreateInvitePolicy.invitation(
-                from: draft,
-                creatorMemberID: settings.currentMemberID,
-                inviteeMemberID: settings.partnerOwnerIDForLocalData
-            )
-            invitation.createdLocalEventID = createdEvent.eventIdentifier
-            // Mark "upload owed" so a failed/optimistic send self-heals on the next sync.
             let cloudKit = services.cloudKitIfAvailable
-            invitation.needsCloudKitUpload = cloudKit != nil
+            let invitation: EventInvitation?
+            if invitesPartner {
+                let newInvitation = try CreateInvitePolicy.invitation(
+                    from: draft,
+                    creatorMemberID: settings.currentMemberID,
+                    inviteeMemberID: settings.partnerOwnerIDForLocalData
+                )
+                newInvitation.createdLocalEventID = createdEvent.eventIdentifier
+                // Mark "upload owed" so a failed/optimistic send self-heals on the next sync.
+                newInvitation.needsCloudKitUpload = cloudKit != nil
+                modelContext.insert(newInvitation)
+                invitation = newInvitation
+            } else {
+                invitation = nil
+            }
             try EventMirrorStore.upsert(mirror, modelContext: modelContext)
-            modelContext.insert(invitation)
             settings.selectedCalendarIDs = ShareCalCalendarBootstrapPolicy.selectedCalendarIDs(
                 afterEnsuring: CalendarDescriptor(
                     id: createdEvent.calendarIdentifier,
@@ -310,8 +327,8 @@ struct CreateInviteView: View {
             mode = .day
 
             // Optimistic send, as in the event detail: the event is in the calendar and
-            // the invitation in the local store, so the sheet closes now. The upload runs
-            // in the background; if it fails, `needsCloudKitUpload` keeps the invitation
+            // the invitation (if any) in the local store, so the sheet closes now. The upload
+            // runs in the background; if it fails, `needsCloudKitUpload` keeps the invitation
             // queued (InvitationReuploadPolicy.creationsNeedingReupload) and the next sync
             // regenerates and uploads the mirror.
             dismiss()
@@ -323,6 +340,7 @@ struct CreateInviteView: View {
                 do {
                     try await cloudKit.ensureShareRoot(ownerMemberID: currentMemberID)
                     try await cloudKit.saveMirrorsForSync([mirror])
+                    guard let invitation else { return }
                     try await cloudKit.saveInvitationForSync(invitation, currentMemberID: currentMemberID)
                     invitation.needsCloudKitUpload = false
                     try? modelContext.save()

@@ -757,12 +757,20 @@ enum CreateInviteValidationError: LocalizedError, Equatable {
 }
 
 enum CreateInvitePolicy {
-    static func localCalendarDraft(from draft: CreateInviteDraft, now: Date = .now) throws -> LocalCalendarEventDraft {
+    /// `invitesPartner: false` is the same sheet used to add an event of one's own:
+    /// nothing is proposed to anyone, so an event that has already ended is fine.
+    static func localCalendarDraft(
+        from draft: CreateInviteDraft,
+        invitesPartner: Bool = true,
+        now: Date = .now
+    ) throws -> LocalCalendarEventDraft {
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw CreateInviteValidationError.emptyTitle }
         guard draft.endDate > draft.startDate else { throw CreateInviteValidationError.invalidDateRange }
-        guard InvitationTimingPolicy.canInvite(endDate: draft.endDate, isAllDay: draft.isAllDay, now: now) else {
-            throw CreateInviteValidationError.alreadyEnded
+        if invitesPartner {
+            guard InvitationTimingPolicy.canInvite(endDate: draft.endDate, isAllDay: draft.isAllDay, now: now) else {
+                throw CreateInviteValidationError.alreadyEnded
+            }
         }
 
         return LocalCalendarEventDraft(
@@ -800,9 +808,10 @@ enum CreateInvitePolicy {
         createdEvent: CreatedCalendarEvent,
         ownerMemberID: String,
         timeZoneIdentifier: String = TimeZone.current.identifier,
+        invitesPartner: Bool = true,
         now: Date = .now
     ) throws -> EventMirror {
-        let localDraft = try localCalendarDraft(from: draft, now: now)
+        let localDraft = try localCalendarDraft(from: draft, invitesPartner: invitesPartner, now: now)
         let fingerprint = [
             createdEvent.eventIdentifier,
             "\(Int(localDraft.startDate.timeIntervalSince1970.rounded()))",

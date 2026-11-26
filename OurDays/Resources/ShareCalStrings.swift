@@ -117,10 +117,16 @@ struct ShareCalStrings {
     var inviteCalendarFootnote: String {
         text("The event is added to this calendar of yours.", "日程会建在你的这个日历里。")
     }
-    func invitePartnerRowHint(isPaired: Bool) -> String {
-        isPaired
+    var newEventTitle: String { text("New Event", "新建日程") }
+    var addToCalendarButton: String { text("Add to Calendar", "添加到日历") }
+    func invitePartnerToggleLabel(partnerName: String) -> String {
+        text("Invite \(partnerName)", "邀请\(partnerName)")
+    }
+    func invitePartnerRowHint(isPaired: Bool, invitesPartner: Bool) -> String {
+        guard isPaired else { return text("Pair first to send invites", "配对后才能发出邀请") }
+        return invitesPartner
             ? text("Shows up in their Invites", "会出现在 TA 的「邀请」里")
-            : text("Pair first to send invites", "配对后才能发出邀请")
+            : text("Just an event of your own", "只建自己的日程")
     }
     var emptyTitleError: String { text("Title is required.", "请输入标题。") }
     var invalidDateRangeError: String { text("End time must be after start time.", "结束时间必须晚于开始时间。") }

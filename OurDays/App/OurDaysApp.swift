@@ -35,12 +35,12 @@ final class ShareCalAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         if notification.request.trigger is UNPushNotificationTrigger {
-            // A generic CloudKit alert arrived while the app is active. Kick off a sync
-            // so the rich, per-item local notifications get posted (the scenePhase sync
-            // won't fire — the app is already active), then suppress the generic push
-            // banner here to avoid a duplicate.
+            // The only visible push is the partner's new comment (decision 0004). Show
+            // it, and kick off a sync so the comment itself is on screen too (the
+            // scenePhase sync won't fire — the app is already active). The sync does
+            // not post that comment again (LocalNotificationPolicy).
             ShareCalRemoteChangeSignal.notifyChanged()
-            completionHandler([])
+            completionHandler([.banner, .list, .sound])
         } else {
             // Local notifications (our rich per-item ones) present normally in foreground.
             completionHandler([.banner, .list, .sound, .badge])
@@ -105,7 +105,7 @@ final class ShareCalAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
 enum ShareCalNotificationSetup {
     /// Request notification authorization, register for CloudKit silent pushes, and
     /// ensure the database subscriptions exist. No-op when CloudKit is disabled.
-    static func configure(services: AppServices) async {
+    static func configure(services: AppServices, settings: SettingsStore) async {
         guard services.isCloudKitEnabled else { return }
         let center = UNUserNotificationCenter.current()
         do {
@@ -119,6 +119,20 @@ enum ShareCalNotificationSetup {
             try await cloudKit.configureDatabaseSubscription()
         } catch {
             NSLog("ShareCal subscription setup error: \(error)")
+        }
+        // Separate from the silent subscriptions above: if this one is refused (for
+        // example a Production schema without the authorMemberID index), comments keep
+        // arriving the old way, by silent push + local notification.
+        let memberID = settings.currentMemberID
+        guard CommentAlertPushPolicy.canSubscribe(currentMemberID: memberID) else { return }
+        do {
+            try await cloudKit.configureCommentAlertSubscription(
+                currentMemberID: memberID,
+                title: settings.strings.notifCommentPushTitle(settings.partnerStatusDisplayName)
+            )
+            settings.commentAlertPushMemberID = memberID
+        } catch {
+            NSLog("ShareCal comment alert subscription error: \(error)")
         }
     }
 }
@@ -194,7 +208,7 @@ struct OurDaysApp: App {
                         settings: settings,
                         modelContext: modelContainer.mainContext
                     )
-                    await ShareCalNotificationSetup.configure(services: services)
+                    await ShareCalNotificationSetup.configure(services: services, settings: settings)
                 }
         }
     }

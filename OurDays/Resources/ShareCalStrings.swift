@@ -82,6 +82,9 @@ struct ShareCalStrings {
         text("Comments on shared events show up here.", "共享日程下的评论会显示在这里。")
     }
     var notifCommentTitle: String { text("New comment", "新评论") }
+    func notifCommentPushTitle(_ partnerName: String) -> String {
+        text("\(partnerName) commented on your event", "\(partnerName) 评论了你的日程")
+    }
     var notifInviteReceivedTitle: String { text("New invitation", "新邀请") }
     var notifInviteAcceptedTitle: String { text("Invitation accepted", "邀请已接受") }
     var notifInviteDeclinedTitle: String { text("Invitation declined", "邀请被拒绝") }

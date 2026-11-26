@@ -796,7 +796,11 @@ struct SyncCoordinator {
                 invitations: invitations,
                 accessRequests: accessRequests,
                 currentMemberID: settings.currentMemberID,
-                since: settings.lastNotifiedAt
+                since: settings.lastNotifiedAt,
+                commentsArriveByAlertPush: CommentAlertPushPolicy.coversComments(
+                    subscribedMemberID: settings.commentAlertPushMemberID,
+                    currentMemberID: settings.currentMemberID
+                )
             )
         } catch {
             // Notifications are best-effort; never let them fail a sync.

@@ -259,6 +259,35 @@ final class LocalNotificationPolicyTests: XCTestCase {
         XCTAssertEqual(planned.map(\.kind), [.partnerCommentedOnMyEvent(eventTitle: "Dinner", commentBody: "late")])
     }
 
+    func testSkipsCommentsOnceTheAlertPushCoversThemButKeepsTheRest() {
+        let planned = LocalNotificationPolicy.pending(
+            comments: [comment(event: "M1", author: partner, body: "late", at: 2_000)],
+            mirrors: [mirror(id: "M1", owner: me)],
+            invitations: [
+                invitation(creator: partner, invitee: me, title: "Trip", status: .pending, createdAt: 2_000, updatedAt: 2_000),
+            ],
+            accessRequests: [],
+            currentMemberID: me,
+            since: since,
+            commentsArriveByAlertPush: true
+        )
+
+        XCTAssertEqual(planned.map(\.kind), [.invitationReceived(title: "Trip")])
+    }
+
+    func testCommentAlertPushNeedsARealMemberIDAndTheSameAccount() {
+        XCTAssertTrue(CommentAlertPushPolicy.canSubscribe(currentMemberID: "_abc"))
+        XCTAssertFalse(CommentAlertPushPolicy.canSubscribe(currentMemberID: MemberIDPolicy.unsyncedMemberID))
+
+        XCTAssertTrue(CommentAlertPushPolicy.coversComments(subscribedMemberID: "_abc", currentMemberID: "_abc"))
+        XCTAssertFalse(CommentAlertPushPolicy.coversComments(subscribedMemberID: nil, currentMemberID: "_abc"))
+        XCTAssertFalse(CommentAlertPushPolicy.coversComments(subscribedMemberID: "_old", currentMemberID: "_abc"))
+        XCTAssertFalse(CommentAlertPushPolicy.coversComments(
+            subscribedMemberID: MemberIDPolicy.unsyncedMemberID,
+            currentMemberID: MemberIDPolicy.unsyncedMemberID
+        ))
+    }
+
     func testNotifiesNewInvitationsToMe() {
         let invitations = [
             invitation(creator: partner, invitee: me, title: "Trip", status: .pending, createdAt: 2_000, updatedAt: 2_000),

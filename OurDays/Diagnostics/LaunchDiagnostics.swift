@@ -176,6 +176,15 @@ enum ShareCalLaunchDiagnostics {
             }
         }
 
+        if ShareCalLaunchDiagnosticPolicy.shouldRunShareProbe(arguments: arguments) {
+            let account = await services.cloudKit.accountDiagnostic()
+            NSLog("%@ shareProbe environment=%@ account=%@", diag, CloudKitExpectedConfigurationPolicy.containerEnvironment, account.accountStatus)
+            for line in await services.cloudKit.shareCreationProbe() {
+                NSLog("%@ shareProbe %@", diag, line)
+            }
+            NSLog("%@ shareProbe finished", diag)
+        }
+
         await runShareAccessRequestDiagnostics(services: services, arguments: arguments)
 
         if ShareCalLaunchDiagnosticPolicy.shouldForceSync(arguments: arguments) {

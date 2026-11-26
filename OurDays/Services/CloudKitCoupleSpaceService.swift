@@ -804,10 +804,15 @@ final class CloudKitCoupleSpaceService {
         let linkShare = CKShare(rootRecord: linkRoot)
         CloudKitSharePermissionPolicy.configureForLinkInvitation(linkShare)
         let privateRoot = probeRoot("probe-private")
+        // What Start Pairing makes where link shares are refused (decision 0022).
+        let requestsRoot = probeRoot("probe-requests")
+        let requestsShare = CKShare(rootRecord: requestsRoot)
+        CloudKitSharePermissionPolicy.configureForInviteOnly(requestsShare)
         let attempts: [(label: String, records: [CKRecord])] = [
             ("record only", [probeRoot("probe-plain")]),
             ("link share", [linkRoot, linkShare]),
-            ("invite-only share", [privateRoot, CKShare(rootRecord: privateRoot)])
+            ("invite-only share", [privateRoot, CKShare(rootRecord: privateRoot)]),
+            ("invite-only share + access requests", [requestsRoot, requestsShare])
         ]
         for attempt in attempts {
             let started = ContinuousClock.now

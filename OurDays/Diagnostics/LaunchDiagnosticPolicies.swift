@@ -16,6 +16,9 @@ enum ShareCalLaunchDiagnosticPolicy {
     static let requestShareAccessURLArgument = "-ShareCalRequestShareAccessURL"
     static let listShareRequestersArgument = "-ShareCalListShareRequesters"
     static let approveShareRequestersArgument = "-ShareCalApproveShareRequesters"
+    /// Runs the share-creation probe behind 复制诊断信息 (a throwaway zone, never the
+    /// CoupleSpace zone or its share) and logs each attempt as a `ShareCalDiag` line.
+    static let shareProbeArgument = "-ShareCalShareProbe"
     /// Test-harness only: seed a display name + mark onboarding/recovery prompts resolved
     /// in the app's own UserDefaults at launch, so automation isn't blocked by the
     /// first-run profile sheet. Inert without the argument (normal launches ignore it).
@@ -269,6 +272,10 @@ enum ShareCalLaunchDiagnosticPolicy {
 
     static func requestShareAccessURL(arguments: [String]) -> URL? {
         value(after: requestShareAccessURLArgument, arguments: arguments).flatMap(URL.init(string:))
+    }
+
+    static func shouldRunShareProbe(arguments: [String]) -> Bool {
+        arguments.contains(shareProbeArgument)
     }
 
     static func shouldListShareRequesters(arguments: [String]) -> Bool {

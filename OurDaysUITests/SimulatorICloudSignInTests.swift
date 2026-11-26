@@ -91,6 +91,12 @@ final class SimulatorICloudSignInTests: XCTestCase {
             // iOS 26 first offers "Erase This iPhone" vs "Sign Out Without Erasing"
             // (抹掉此 iPhone / 退出登录但不抹掉). Only ever take the non-erasing one.
             if tapSignOutWithoutErasing() { continue }
+            // When an app still holds data it has not uploaded (seen with Reminders on
+            // the partner simulator), Continue raises an alert warning that this data
+            // will be removed: 了解如何保留这些数据 / 仍然继续 / 取消. Its buttons match
+            // none of the labels below, so without this the loop kept tapping the
+            // sheet's Continue and Sign Out underneath it and never got past the alert.
+            if tapFirst(["Continue Anyway", "仍然继续"], preferAlert: true) { continue }
             // …which then explains what stays on the device, with Continue / Cancel. The
             // account page's Sign Out row stays in the tree underneath this sheet, so
             // Continue must win over "Sign Out" below.

@@ -24,11 +24,13 @@ struct CreateInviteView: View {
     @State private var calendarID: String?
     /// Off: the sheet only adds an event of one's own to the calendar.
     @State private var wantsToInvite = true
+    /// The times chosen before 全天 was switched on, put back when it goes off.
+    @State private var timedRange: (start: Date, end: Date)?
 
     init(selectedDate: Binding<Date>, mode: Binding<CalendarMode>) {
         _selectedDate = selectedDate
         _mode = mode
-        let defaultStart = Self.defaultStartDate(for: selectedDate.wrappedValue)
+        let defaultStart = InviteTimeAdjustmentPolicy.defaultStart(forDay: selectedDate.wrappedValue)
         _title = State(initialValue: "")
         _startDate = State(initialValue: defaultStart)
         _endDate = State(initialValue: defaultStart.addingTimeInterval(60 * 60))
@@ -112,13 +114,6 @@ struct CreateInviteView: View {
                     }
                 }
 
-                if let errorMessage {
-                    Section {
-                        Text(errorMessage)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                }
             }
             .ourDaysListBackground()
             .navigationTitle(invitesPartner ? strings.newInviteTitle : strings.newEventTitle)
@@ -132,12 +127,22 @@ struct CreateInviteView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Button(invitesPartner ? strings.sendInviteButton : strings.addToCalendarButton) {
-                    sendInvite()
+                VStack(spacing: 8) {
+                    // Above the button, where a failed tap is seen without scrolling.
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(OurDaysTheme.destructive)
+                            .multilineTextAlignment(.center)
+                            .accessibilityIdentifier("create-invite-error")
+                    }
+                    Button(invitesPartner ? strings.sendInviteButton : strings.addToCalendarButton) {
+                        sendInvite()
+                    }
+                    .buttonStyle(OurDaysPrimaryButtonStyle())
+                    .disabled(isSending)
+                    .accessibilityIdentifier("create-invite-send-button")
                 }
-                .buttonStyle(OurDaysPrimaryButtonStyle())
-                .disabled(isSending)
-                .accessibilityIdentifier("create-invite-send-button")
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .background(OurDaysTheme.paper)
@@ -217,12 +222,6 @@ struct CreateInviteView: View {
         }
     }
 
-    private static func defaultStartDate(for selectedDate: Date, calendar: Calendar = .current) -> Date {
-        let dayStart = calendar.startOfDay(for: selectedDate)
-        return calendar.date(bySettingHour: 10, minute: 0, second: 0, of: dayStart)
-            ?? dayStart.addingTimeInterval(10 * 60 * 60)
-    }
-
     private func moveInvite(toDayContaining newDate: Date) {
         let calendar = Calendar.current
         let currentDuration = max(60 * 60, endDate.timeIntervalSince(startDate))
@@ -241,13 +240,29 @@ struct CreateInviteView: View {
     }
 
     private func adjustForAllDay(_ enabled: Bool) {
+        let calendar = Calendar.current
         if enabled {
-            let dayStart = Calendar.current.startOfDay(for: startDate)
+            // `moveInvite` re-enters here while 全天 is on; keep the first times.
+            if timedRange == nil {
+                timedRange = (startDate, endDate)
+            }
+            let dayStart = calendar.startOfDay(for: startDate)
             startDate = dayStart
-            endDate = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)
+            endDate = calendar.date(byAdding: .day, value: 1, to: dayStart)
                 ?? dayStart.addingTimeInterval(24 * 60 * 60)
-        } else if endDate <= startDate {
-            endDate = startDate.addingTimeInterval(60 * 60)
+        } else {
+            // Back to the times chosen before, moved to the day now selected.
+            let previous = timedRange ?? (
+                InviteTimeAdjustmentPolicy.defaultStart(forDay: startDate),
+                InviteTimeAdjustmentPolicy.defaultStart(forDay: startDate).addingTimeInterval(60 * 60)
+            )
+            let duration = max(InviteTimeAdjustmentPolicy.minimumDuration, previous.1.timeIntervalSince(previous.0))
+            let time = calendar.dateComponents([.hour, .minute], from: previous.0)
+            let dayStart = calendar.startOfDay(for: startDate)
+            startDate = calendar.date(bySettingHour: time.hour ?? 10, minute: time.minute ?? 0, second: 0, of: dayStart)
+                ?? dayStart.addingTimeInterval(10 * 60 * 60)
+            endDate = startDate.addingTimeInterval(duration)
+            timedRange = nil
         }
     }
 

@@ -515,6 +515,21 @@ enum InvitationReuploadPolicy {
 enum InviteTimeAdjustmentPolicy {
     static let minimumDuration: TimeInterval = 60 * 60
 
+    /// Where a new event starts: 10:00 on the chosen day, or the next full hour when
+    /// that day is today and 10:00 has passed, so the default can always be invited to.
+    static func defaultStart(
+        forDay day: Date,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> Date {
+        let dayStart = calendar.startOfDay(for: day)
+        let morning = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: dayStart)
+            ?? dayStart.addingTimeInterval(10 * 60 * 60)
+        guard calendar.isDate(day, inSameDayAs: now), morning <= now else { return morning }
+        let hourStart = calendar.dateInterval(of: .hour, for: now)?.start ?? now
+        return hourStart.addingTimeInterval(60 * 60)
+    }
+
     static func endDate(
         forNewStart newStart: Date,
         previousStart: Date,

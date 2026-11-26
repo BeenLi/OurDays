@@ -20,11 +20,17 @@ struct CreateInviteView: View {
     @State private var conflictMessage: String?
     @State private var isShowingConflict = false
     @State private var isSending = false
+    @State private var calendarChoices: [CalendarDescriptor] = []
+    @State private var calendarID: String?
+    /// Off: the sheet only adds an event of one's own to the calendar.
+    @State private var wantsToInvite = true
+    /// The times chosen before 全天 was switched on, put back when it goes off.
+    @State private var timedRange: (start: Date, end: Date)?
 
     init(selectedDate: Binding<Date>, mode: Binding<CalendarMode>) {
         _selectedDate = selectedDate
         _mode = mode
-        let defaultStart = Self.defaultStartDate(for: selectedDate.wrappedValue)
+        let defaultStart = InviteTimeAdjustmentPolicy.defaultStart(forDay: selectedDate.wrappedValue)
         _title = State(initialValue: "")
         _startDate = State(initialValue: defaultStart)
         _endDate = State(initialValue: defaultStart.addingTimeInterval(60 * 60))
@@ -65,16 +71,52 @@ struct CreateInviteView: View {
                         .lineLimit(3...6)
                 }
 
-                if let errorMessage {
+                Section(strings.inviteSection) {
+                    Toggle(isOn: $wantsToInvite) {
+                        HStack(spacing: 12) {
+                            MemberAvatarView(
+                                avatar: settings.partnerAvatar,
+                                fallbackText: settings.partnerAvatarFallbackText,
+                                identity: .partner,
+                                size: 36
+                            )
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(strings.invitePartnerToggleLabel(partnerName: settings.partnerDisplayName))
+                                    .foregroundStyle(OurDaysTheme.ink)
+                                    .lineLimit(1)
+                                Text(strings.invitePartnerRowHint(isPaired: isPaired, invitesPartner: invitesPartner))
+                                    .font(.footnote)
+                                    .foregroundStyle(OurDaysTheme.secondaryInk)
+                            }
+                        }
+                    }
+                    .tint(OurDaysTheme.inkFill)
+                    .disabled(!isPaired)
+                    .accessibilityIdentifier("create-invite-partner-toggle")
+                }
+
+                if invitesPartner {
                     Section {
-                        Text(errorMessage)
-                            .font(.caption)
-                            .foregroundStyle(.red)
+                        LabeledContent(strings.inviteCalendarLabel, value: ShareCalCalendarBootstrapPolicy.calendarTitle)
+                    } footer: {
+                        Text(strings.inviteCalendarFootnote(invitesPartner: true))
+                    }
+                } else if !calendarChoices.isEmpty {
+                    Section {
+                        Picker(strings.inviteCalendarLabel, selection: $calendarID) {
+                            ForEach(calendarChoices) { calendar in
+                                Text(calendar.title).tag(Optional(calendar.id))
+                            }
+                        }
+                        .accessibilityIdentifier("create-invite-calendar-picker")
+                    } footer: {
+                        Text(strings.inviteCalendarFootnote(invitesPartner: false))
                     }
                 }
+
             }
             .ourDaysListBackground()
-            .navigationTitle(strings.newInviteTitle)
+            .navigationTitle(invitesPartner ? strings.newInviteTitle : strings.newEventTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -83,16 +125,29 @@ struct CreateInviteView: View {
                     }
                     .disabled(isSending)
                 }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        sendInvite()
-                    } label: {
-                        Label(strings.sendInviteButton, systemImage: "paperplane.fill")
-                    }
-                    .disabled(isSending)
-                }
             }
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 8) {
+                    // Above the button, where a failed tap is seen without scrolling.
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(OurDaysTheme.destructive)
+                            .multilineTextAlignment(.center)
+                            .accessibilityIdentifier("create-invite-error")
+                    }
+                    Button(invitesPartner ? strings.sendInviteButton : strings.addToCalendarButton) {
+                        sendInvite()
+                    }
+                    .buttonStyle(OurDaysPrimaryButtonStyle())
+                    .disabled(isSending)
+                    .accessibilityIdentifier("create-invite-send-button")
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(OurDaysTheme.paper)
+            }
+            .onAppear(perform: loadCalendarChoices)
             .overlay {
                 if isSending {
                     ProgressView()
@@ -115,6 +170,27 @@ struct CreateInviteView: View {
                 adjustForAllDay(newValue)
             }
         }
+    }
+
+    private var isPaired: Bool {
+        settings.partnerShareOwnerID != nil
+    }
+
+    private var invitesPartner: Bool {
+        isPaired && wantsToInvite
+    }
+
+    private func loadCalendarChoices() {
+        let choices = InviteCalendarChoicePolicy.candidates(
+            calendars: services.calendarAccess.calendars(),
+            selectedCalendarIDs: settings.selectedCalendarIDs
+        )
+        calendarChoices = choices
+        calendarID = InviteCalendarChoicePolicy.defaultCalendarID(
+            candidates: choices,
+            lastUsedCalendarID: settings.lastOwnEventCalendarID,
+            systemDefaultCalendarID: services.calendarAccess.defaultCalendarIDForNewEvents()
+        )
     }
 
     private var dayBinding: Binding<Date> {
@@ -146,12 +222,6 @@ struct CreateInviteView: View {
         }
     }
 
-    private static func defaultStartDate(for selectedDate: Date, calendar: Calendar = .current) -> Date {
-        let dayStart = calendar.startOfDay(for: selectedDate)
-        return calendar.date(bySettingHour: 10, minute: 0, second: 0, of: dayStart)
-            ?? dayStart.addingTimeInterval(10 * 60 * 60)
-    }
-
     private func moveInvite(toDayContaining newDate: Date) {
         let calendar = Calendar.current
         let currentDuration = max(60 * 60, endDate.timeIntervalSince(startDate))
@@ -170,13 +240,29 @@ struct CreateInviteView: View {
     }
 
     private func adjustForAllDay(_ enabled: Bool) {
+        let calendar = Calendar.current
         if enabled {
-            let dayStart = Calendar.current.startOfDay(for: startDate)
+            // `moveInvite` re-enters here while 全天 is on; keep the first times.
+            if timedRange == nil {
+                timedRange = (startDate, endDate)
+            }
+            let dayStart = calendar.startOfDay(for: startDate)
             startDate = dayStart
-            endDate = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)
+            endDate = calendar.date(byAdding: .day, value: 1, to: dayStart)
                 ?? dayStart.addingTimeInterval(24 * 60 * 60)
-        } else if endDate <= startDate {
-            endDate = startDate.addingTimeInterval(60 * 60)
+        } else {
+            // Back to the times chosen before, moved to the day now selected.
+            let previous = timedRange ?? (
+                InviteTimeAdjustmentPolicy.defaultStart(forDay: startDate),
+                InviteTimeAdjustmentPolicy.defaultStart(forDay: startDate).addingTimeInterval(60 * 60)
+            )
+            let duration = max(InviteTimeAdjustmentPolicy.minimumDuration, previous.1.timeIntervalSince(previous.0))
+            let time = calendar.dateComponents([.hour, .minute], from: previous.0)
+            let dayStart = calendar.startOfDay(for: startDate)
+            startDate = calendar.date(bySettingHour: time.hour ?? 10, minute: time.minute ?? 0, second: 0, of: dayStart)
+                ?? dayStart.addingTimeInterval(10 * 60 * 60)
+            endDate = startDate.addingTimeInterval(duration)
+            timedRange = nil
         }
     }
 
@@ -195,11 +281,12 @@ struct CreateInviteView: View {
         guard !isSending else { return }
         errorMessage = nil
         let draft = currentDraft()
+        let invitesPartner = invitesPartner
 
         do {
-            _ = try CreateInvitePolicy.localCalendarDraft(from: draft)
+            _ = try CreateInvitePolicy.localCalendarDraft(from: draft, invitesPartner: invitesPartner)
 
-            if !skipConflictCheck {
+            if invitesPartner, !skipConflictCheck {
                 let candidate = try CreateInvitePolicy.conflictCandidateMirror(
                     from: draft,
                     ownerMemberID: settings.currentMemberID
@@ -221,21 +308,35 @@ struct CreateInviteView: View {
             }
 
             isSending = true
-            let localDraft = try CreateInvitePolicy.localCalendarDraft(from: draft)
-            let createdEvent = try services.calendarAccess.createShareCalEvent(from: localDraft)
+            let localDraft = try CreateInvitePolicy.localCalendarDraft(from: draft, invitesPartner: invitesPartner)
+            let createdEvent = try services.calendarAccess.createEvent(
+                from: localDraft,
+                // A joint event lives in the app's own calendar on both sides.
+                inCalendarWithID: invitesPartner ? nil : calendarID
+            )
             let mirror = try CreateInvitePolicy.mirror(
                 from: draft,
                 createdEvent: createdEvent,
-                ownerMemberID: settings.currentMemberID
+                ownerMemberID: settings.currentMemberID,
+                invitesPartner: invitesPartner
             )
-            let invitation = try CreateInvitePolicy.invitation(
-                from: draft,
-                creatorMemberID: settings.currentMemberID,
-                inviteeMemberID: settings.partnerOwnerIDForLocalData
-            )
-            invitation.createdLocalEventID = createdEvent.eventIdentifier
+            let cloudKit = services.cloudKitIfAvailable
+            let invitation: EventInvitation?
+            if invitesPartner {
+                let newInvitation = try CreateInvitePolicy.invitation(
+                    from: draft,
+                    creatorMemberID: settings.currentMemberID,
+                    inviteeMemberID: settings.partnerOwnerIDForLocalData
+                )
+                newInvitation.createdLocalEventID = createdEvent.eventIdentifier
+                // Mark "upload owed" so a failed/optimistic send self-heals on the next sync.
+                newInvitation.needsCloudKitUpload = cloudKit != nil
+                modelContext.insert(newInvitation)
+                invitation = newInvitation
+            } else {
+                invitation = nil
+            }
             try EventMirrorStore.upsert(mirror, modelContext: modelContext)
-            modelContext.insert(invitation)
             settings.selectedCalendarIDs = ShareCalCalendarBootstrapPolicy.selectedCalendarIDs(
                 afterEnsuring: CalendarDescriptor(
                     id: createdEvent.calendarIdentifier,
@@ -246,23 +347,30 @@ struct CreateInviteView: View {
                 currentSelection: settings.selectedCalendarIDs
             )
             try modelContext.save()
+            if !invitesPartner { settings.lastOwnEventCalendarID = createdEvent.calendarIdentifier }
             selectedDate = localDraft.startDate
             mode = .day
 
-            guard let cloudKit = services.cloudKitIfAvailable else {
-                dismiss()
-                return
-            }
+            // Optimistic send, as in the event detail: the event is in the calendar and
+            // the invitation (if any) in the local store, so the sheet closes now. The upload
+            // runs in the background; if it fails, `needsCloudKitUpload` keeps the invitation
+            // queued (InvitationReuploadPolicy.creationsNeedingReupload) and the next sync
+            // regenerates and uploads the mirror.
+            dismiss()
 
+            guard let cloudKit else { return }
+            let currentMemberID = settings.currentMemberID
+            let modelContext = modelContext
             Task {
                 do {
-                    try await cloudKit.ensureShareRoot(ownerMemberID: settings.currentMemberID)
+                    try await cloudKit.ensureShareRoot(ownerMemberID: currentMemberID)
                     try await cloudKit.saveMirrorsForSync([mirror])
-                    try await cloudKit.saveInvitationForSync(invitation, currentMemberID: settings.currentMemberID)
-                    dismiss()
+                    guard let invitation else { return }
+                    try await cloudKit.saveInvitationForSync(invitation, currentMemberID: currentMemberID)
+                    invitation.needsCloudKitUpload = false
+                    try? modelContext.save()
                 } catch {
-                    errorMessage = CloudKitSharingFailureMessage.userFacingMessage(for: error)
-                    isSending = false
+                    // Leave the flag set; the next sync retries.
                 }
             }
         } catch {

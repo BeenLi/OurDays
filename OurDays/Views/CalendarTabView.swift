@@ -307,7 +307,9 @@ struct CalendarTabView: View {
         .background(OurDaysTheme.paper)
         .ourDaysStatusBarCover()
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(item: $activeCalendarSheet) { sheet in
+        // An event just added in the sheet is in the system calendar already; show it
+        // without waiting for the next sync.
+        .sheet(item: $activeCalendarSheet, onDismiss: refreshLocalDisplayMirrors) { sheet in
             switch sheet {
             case .datePicker:
                 HierarchicalDatePickerSheet(selectedDate: $selectedDate, mode: $mode)

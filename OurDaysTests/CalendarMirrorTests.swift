@@ -441,6 +441,64 @@ final class CalendarSharingWindowPolicyTests: XCTestCase {
     }
 }
 
+final class InviteCalendarChoicePolicyTests: XCTestCase {
+    private func calendar(_ id: String, title: String? = nil, writable: Bool = true) -> CalendarDescriptor {
+        CalendarDescriptor(id: id, title: title ?? id, colorHex: "#000000", allowsContentModifications: writable)
+    }
+
+    func testOffersOnlySharedWritableCalendars() {
+        let calendars = [
+            calendar("home"),
+            calendar("work"),
+            calendar("holidays", writable: false)
+        ]
+
+        let candidates = InviteCalendarChoicePolicy.candidates(
+            calendars: calendars,
+            selectedCalendarIDs: ["home", "holidays"]
+        )
+
+        XCTAssertEqual(candidates.map(\.id), ["home"])
+    }
+
+    func testDefaultPrefersLastUsedThenSystemDefaultThenOwnCalendar() {
+        let candidates = [calendar("home"), calendar("own", title: "ShareCal"), calendar("work")]
+
+        XCTAssertEqual(
+            InviteCalendarChoicePolicy.defaultCalendarID(
+                candidates: candidates, lastUsedCalendarID: "work", systemDefaultCalendarID: "home"
+            ),
+            "work"
+        )
+        XCTAssertEqual(
+            InviteCalendarChoicePolicy.defaultCalendarID(
+                candidates: candidates, lastUsedCalendarID: "gone", systemDefaultCalendarID: "home"
+            ),
+            "home"
+        )
+        XCTAssertEqual(
+            InviteCalendarChoicePolicy.defaultCalendarID(
+                candidates: candidates, lastUsedCalendarID: nil, systemDefaultCalendarID: "unshared"
+            ),
+            "own"
+        )
+        XCTAssertEqual(
+            InviteCalendarChoicePolicy.defaultCalendarID(
+                candidates: [calendar("home"), calendar("work")], lastUsedCalendarID: nil, systemDefaultCalendarID: nil
+            ),
+            "home"
+        )
+    }
+
+    func testNoDefaultWhenNothingWritableIsShared() {
+        XCTAssertNil(
+            InviteCalendarChoicePolicy.defaultCalendarID(
+                candidates: [], lastUsedCalendarID: "home", systemDefaultCalendarID: "home"
+            )
+        )
+    }
+}
+
 final class ShareCalCalendarBootstrapPolicyTests: XCTestCase {
     func testOffersCreationWhenShareCalCalendarIsMissing() {
         let calendars = [

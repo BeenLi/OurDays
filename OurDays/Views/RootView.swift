@@ -183,6 +183,13 @@ struct RootView: View {
             settings.acceptingShareOwnerID = nil
             settings.shareAcceptanceFailureMessage = ShareCalShareAcceptanceProgressSignal.message(in: notification)
         }
+        .onReceive(NotificationCenter.default.publisher(for: ShareAccessRequestSender.uninvitedLinkNotification)) { _ in
+            Task { await sendPendingShareAccessRequest() }
+        }
+        .task {
+            // A link tapped on a cold start arrived before the observer above existed.
+            await sendPendingShareAccessRequest()
+        }
         .onReceive(NotificationCenter.default.publisher(for: ShareCalAcceptedShareSignal.notificationName)) { _ in
             Task {
                 checkPendingShareReplacement()
@@ -208,6 +215,9 @@ struct RootView: View {
             syncAppIconBadge()
             Task {
                 await syncAfterSceneBecameActiveIfNeeded()
+                if let cloudKit = services.cloudKitIfAvailable, !hasUnresolvedExistingICloudRecoveryDecision {
+                    await ShareAccessRequestSender.adoptApprovedShareIfAny(cloudKit: cloudKit, settings: settings)
+                }
             }
         }
         .onChange(of: selectedTab) { _, newTab in
@@ -387,6 +397,27 @@ struct RootView: View {
     }
 
     @MainActor
+    /// Sends the request to join for an uninvited invite-only link that was tapped.
+    private func sendPendingShareAccessRequest() async {
+        guard let cloudKit = services.cloudKitIfAvailable,
+              let link = ShareAccessRequestSender.consumeUninvitedLink() else { return }
+        guard case .url(let url) = link else {
+            // The tapped link reached us without its URL: only the paste box can ask.
+            settings.shareAcceptanceFailureMessage = settings.strings.shareAccessRequestNeedsPastedLink
+            return
+        }
+        do {
+            let sent = try await ShareAccessRequestSender.send(url: url, cloudKit: cloudKit, settings: settings)
+            if !sent {
+                settings.shareAcceptanceFailureMessage = settings.strings.inviteLinkFailure(.inviteOnly)
+            }
+        } catch {
+            settings.shareAcceptanceFailureMessage = settings.strings.shareAccessRequestSendFailed(
+                CloudKitSharingFailureMessage.userFacingMessage(for: error)
+            )
+        }
+    }
+
     private func checkPendingShareReplacement() {
         if let incomingOwnerID = ShareCalPendingShareReplacement.incomingOwnerID {
             pendingReplacementOwnerID = incomingOwnerID

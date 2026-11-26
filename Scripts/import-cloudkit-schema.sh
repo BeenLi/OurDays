@@ -84,6 +84,10 @@ for field in ___recordID eventMirrorID authorMemberID body createdAt editedAt de
   require_schema_field "EventComment" "$field"
 done
 
+for field in ___recordID kind text; do
+  require_schema_field "PartnerNudge" "$field"
+done
+
 for field in ___recordID cloudkit.thumbnailImageData cloudkit.title cloudkit.type; do
   require_schema_field '"cloudkit.share"' "$field"
 done

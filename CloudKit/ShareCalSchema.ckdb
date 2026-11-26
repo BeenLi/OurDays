@@ -84,6 +84,12 @@ DEFINE SCHEMA
         updatedAt TIMESTAMP
     );
 
+    RECORD TYPE PartnerNudge (
+        "___recordID" REFERENCE QUERYABLE,
+        kind STRING QUERYABLE,
+        text STRING
+    );
+
     RECORD TYPE "cloudkit.share" (
         "___recordID" REFERENCE,
         "cloudkit.thumbnailImageData" BYTES,

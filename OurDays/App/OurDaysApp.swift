@@ -35,7 +35,8 @@ final class ShareCalAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         if notification.request.trigger is UNPushNotificationTrigger {
-            // The only visible push is the partner's new comment (decision 0004). Show
+            // The visible pushes are the partner's new comment (decision 0004) and
+            // their invitation nudges (decision 0005). Show
             // it, and kick off a sync so the comment itself is on screen too (the
             // scenePhase sync won't fire — the app is already active). The sync does
             // not post that comment again (LocalNotificationPolicy).
@@ -133,6 +134,18 @@ enum ShareCalNotificationSetup {
             settings.commentAlertPushMemberID = memberID
         } catch {
             NSLog("ShareCal comment alert subscription error: \(error)")
+        }
+        do {
+            let strings = settings.strings
+            let partnerName = settings.partnerStatusDisplayName
+            try await cloudKit.configureNudgeSubscriptions(titles: [
+                .invitationReceived: strings.notifInvitePushTitle(partnerName),
+                .invitationAccepted: strings.notifInviteAcceptedPushTitle(partnerName),
+                .invitationDeclined: strings.notifInviteDeclinedPushTitle(partnerName),
+            ])
+            settings.partnerNudgePushMemberID = memberID
+        } catch {
+            NSLog("ShareCal nudge subscription error: \(error)")
         }
     }
 }

@@ -162,6 +162,12 @@ final class SettingsStore {
     var commentAlertPushMemberID: String? {
         didSet { defaults.set(commentAlertPushMemberID, forKey: Key.commentAlertPushMemberID) }
     }
+    /// The member ID this device last saved the nudge subscriptions for
+    /// (`PartnerNudgePolicy`). While it matches `currentMemberID`, an invitation the
+    /// partner nudged about is not posted again as a local notification.
+    var partnerNudgePushMemberID: String? {
+        didSet { defaults.set(partnerNudgePushMemberID, forKey: Key.partnerNudgePushMemberID) }
+    }
     /// App Store rating moments already used on this install (`ReviewPromptPolicy`).
     /// Kept across unpair/re-pair: each moment asks once per install.
     /// Accepted invitations whose joint event this device has seen in its own system
@@ -257,6 +263,7 @@ final class SettingsStore {
         macUploadsOwnEventsAt = defaults.object(forKey: Key.macUploadsOwnEventsAt) as? Date
         lastNotifiedAt = defaults.object(forKey: Key.lastNotifiedAt) as? Date
         commentAlertPushMemberID = defaults.string(forKey: Key.commentAlertPushMemberID)
+        partnerNudgePushMemberID = defaults.string(forKey: Key.partnerNudgePushMemberID)
         invitationIDsWithLocalEventSeen = Set(defaults.stringArray(forKey: Key.invitationIDsWithLocalEventSeen) ?? [])
         reviewPromptedMoments = Set((defaults.stringArray(forKey: Key.reviewPromptedMoments) ?? []).compactMap(ReviewPromptMoment.init(rawValue:)))
         lastReviewPromptAt = defaults.object(forKey: Key.lastReviewPromptAt) as? Date
@@ -591,6 +598,7 @@ final class SettingsStore {
         static let macUploadsOwnEventsAt = "macUploadsOwnEventsAt"
         static let lastNotifiedAt = "lastNotifiedAt"
         static let commentAlertPushMemberID = "commentAlertPushMemberID"
+        static let partnerNudgePushMemberID = "partnerNudgePushMemberID"
         static let reviewPromptedMoments = "reviewPromptedMoments"
         static let invitationIDsWithLocalEventSeen = "invitationIDsWithLocalEventSeen"
         static let lastReviewPromptAt = "lastReviewPromptAt"

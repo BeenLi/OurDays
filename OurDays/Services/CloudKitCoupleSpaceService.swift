@@ -1181,9 +1181,92 @@ final class CloudKitCoupleSpaceService {
             try await ensureZone()
             try await ensureShareRoot(ownerMemberID: currentMemberID)
             try await saveInvitationsForSync([invitation], in: zoneID, database: privateDatabase)
+            await sendNudge(
+                PartnerNudgePolicy.nudge(afterSaving: invitation, currentMemberID: currentMemberID),
+                partnerMemberID: invitation.inviteeMemberID,
+                knownPartnerZoneID: nil
+            )
         case .acceptedSharedZone:
             let targetZoneID = try await acceptedSharedZoneID(containingInvitationRecordName: invitation.cloudKitRecordName ?? invitation.id)
             try await saveInvitationsForSync([invitation], in: targetZoneID, database: sharedDatabase)
+            await sendNudge(
+                PartnerNudgePolicy.nudge(afterSaving: invitation, currentMemberID: currentMemberID),
+                partnerMemberID: invitation.creatorMemberID,
+                knownPartnerZoneID: targetZoneID
+            )
+        }
+    }
+
+    /// Drops a nudge into the partner's zone so iCloud shows them a push right away
+    /// (notifications decision 0005). Best-effort and silent: a partner on an older
+    /// schema, a nudge that already exists, or no accepted share just means they hear
+    /// about it the old way, after their next sync.
+    @MainActor
+    private func sendNudge(
+        _ nudge: PartnerNudge?,
+        partnerMemberID: String,
+        knownPartnerZoneID: CKRecordZone.ID?
+    ) async {
+        guard let nudge else { return }
+        do {
+            let partnerZoneID: CKRecordZone.ID
+            if let knownPartnerZoneID {
+                partnerZoneID = knownPartnerZoneID
+            } else {
+                partnerZoneID = try await acceptedSharedZoneID(ownerMemberID: partnerMemberID)
+            }
+            let record = CKRecord(
+                recordType: PartnerNudgePolicy.recordType,
+                recordID: CKRecord.ID(
+                    recordName: PartnerNudgePolicy.recordName(kind: nudge.kind, subjectID: nudge.subjectID),
+                    zoneID: partnerZoneID
+                )
+            )
+            CloudKitShareHierarchyPolicy.attach(
+                record,
+                toShareRoot: CloudKitShareHierarchyPolicy.rootRecordID(zoneID: partnerZoneID)
+            )
+            record[PartnerNudgePolicy.kindKey] = nudge.kind.rawValue as CKRecordValue
+            record[PartnerNudgePolicy.textKey] = nudge.text as CKRecordValue
+            _ = try await modifyRecords(
+                saving: [record],
+                deleting: [],
+                savePolicy: .ifServerRecordUnchanged,
+                atomically: false,
+                database: sharedDatabase
+            )
+            cloudKitSharingInfo("sendNudge saved record=\(record.recordID.recordName) zoneOwner=\(partnerZoneID.ownerName)")
+        } catch {
+            cloudKitSharingInfo("sendNudge skipped kind=\(nudge.kind.rawValue) error=\(describeCloudKitFailure(error))")
+        }
+    }
+
+    /// Record names of the nudges the partner left in my zone, so the sync does not
+    /// repeat as a local notification what iCloud already pushed. Also clears nudges
+    /// older than `PartnerNudgePolicy.retention`. Best-effort: any failure reads as
+    /// "no nudges", which at worst shows one notification twice.
+    func fetchPartnerNudgeRecordNames(now: Date = .now) async -> Set<String> {
+        do {
+            // Record name and creation date are all that is needed, so the type needs
+            // no entry in CloudKitForegroundQueryPolicy (no keys are read).
+            let records = try await fetchRecords(
+                recordType: PartnerNudgePolicy.recordType,
+                in: zoneID,
+                database: privateDatabase
+            )
+            let expired = records.filter { PartnerNudgePolicy.isExpired(createdAt: $0.creationDate, now: now) }
+            if !expired.isEmpty {
+                _ = try? await modifyRecords(
+                    saving: [],
+                    deleting: expired.map(\.recordID),
+                    savePolicy: .changedKeys,
+                    atomically: false
+                )
+            }
+            return Set(records.map(\.recordID.recordName))
+        } catch {
+            cloudKitSharingInfo("fetchPartnerNudgeRecordNames failed error=\(describeCloudKitFailure(error))")
+            return []
         }
     }
 
@@ -1517,11 +1600,17 @@ final class CloudKitCoupleSpaceService {
             cloudKitSharingInfo("purgeExPartnerRecordsFromPrivateZone zone missing; nothing to clean")
             return
         }
+        // Every nudge in my zone was written by the ex-partner.
+        let nudgeRecordIDs = ((try? await fetchRecords(
+            recordType: PartnerNudgePolicy.recordType,
+            in: zoneID,
+            database: privateDatabase
+        )) ?? []).map(\.recordID)
         let recordIDs = CloudKitExPartnerCleanupPolicy.recordIDsToDelete(
             commentRecords: commentRecords,
             invitationRecords: invitationRecords,
             currentMemberID: currentMemberID
-        )
+        ) + nudgeRecordIDs
         guard !recordIDs.isEmpty else {
             cloudKitSharingInfo("purgeExPartnerRecordsFromPrivateZone nothing to delete")
             return
@@ -1969,6 +2058,38 @@ final class CloudKitCoupleSpaceService {
 
         let operation = CKModifySubscriptionsOperation(
             subscriptionsToSave: [subscription],
+            subscriptionIDsToDelete: nil
+        )
+        try await withCheckedThrowingContinuation { continuation in
+            operation.modifySubscriptionsResultBlock = { result in
+                continuation.resume(with: result)
+            }
+            privateDatabase.add(operation)
+        }
+    }
+
+    /// One visible-push subscription per nudge kind on my private database (decision
+    /// 0005): each kind has its own fixed title, the body is the nudge's `text`.
+    func configureNudgeSubscriptions(titles: [PartnerNudgeKind: String]) async throws {
+        let subscriptions: [CKSubscription] = PartnerNudgeKind.allCases.compactMap { kind in
+            guard let title = titles[kind] else { return nil }
+            let subscription = CKQuerySubscription(
+                recordType: PartnerNudgePolicy.recordType,
+                predicate: NSPredicate(format: PartnerNudgePolicy.predicateFormat, kind.rawValue),
+                subscriptionID: PartnerNudgePolicy.subscriptionID(for: kind),
+                options: [.firesOnRecordCreation]
+            )
+            subscription.zoneID = zoneID
+            let notificationInfo = CKSubscription.NotificationInfo()
+            notificationInfo.title = title
+            notificationInfo.alertLocalizationKey = PartnerNudgePolicy.bodyFormatKey
+            notificationInfo.alertLocalizationArgs = PartnerNudgePolicy.bodyArgumentKeys
+            notificationInfo.soundName = "default"
+            subscription.notificationInfo = notificationInfo
+            return subscription
+        }
+        let operation = CKModifySubscriptionsOperation(
+            subscriptionsToSave: subscriptions,
             subscriptionIDsToDelete: nil
         )
         try await withCheckedThrowingContinuation { continuation in

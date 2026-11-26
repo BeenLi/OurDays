@@ -191,7 +191,8 @@ enum LocalNotificationPolicy {
         accessRequests: [CalendarAccessRequest],
         currentMemberID: String,
         since lastNotifiedAt: Date?,
-        commentsArriveByAlertPush: Bool = false
+        commentsArriveByAlertPush: Bool = false,
+        nudgedRecordNames: Set<String> = []
     ) -> [PlannedLocalNotification] {
         guard let since = lastNotifiedAt else { return [] }
         var result: [PlannedLocalNotification] = []
@@ -225,7 +226,8 @@ enum LocalNotificationPolicy {
             && invite.creatorMemberID != currentMemberID
             && invite.archivedAt == nil
             && invite.status == .pending
-            && invite.createdAt > since {
+            && invite.createdAt > since
+            && !PartnerNudgePolicy.isNudged(.invitationReceived, invite, in: nudgedRecordNames) {
             result.append(
                 PlannedLocalNotification(
                     id: "invite-recv-\(invite.id)",
@@ -240,6 +242,10 @@ enum LocalNotificationPolicy {
         where invite.creatorMemberID == currentMemberID
             && invite.updatedAt > since {
             switch invite.status {
+            case .accepted where PartnerNudgePolicy.isNudged(.invitationAccepted, invite, in: nudgedRecordNames),
+                 .declined where PartnerNudgePolicy.isNudged(.invitationDeclined, invite, in: nudgedRecordNames):
+                // iCloud already showed this answer as a visible push (decision 0005).
+                break
             case .accepted:
                 result.append(
                     PlannedLocalNotification(
@@ -323,6 +329,95 @@ enum CommentAlertPushPolicy {
     static func coversComments(subscribedMemberID: String?, currentMemberID: String) -> Bool {
         guard canSubscribe(currentMemberID: currentMemberID) else { return false }
         return MemberIDPolicy.normalized(subscribedMemberID) == MemberIDPolicy.normalized(currentMemberID)
+    }
+}
+
+/// What a nudge tells the partner about. Raw values are part of the CloudKit record
+/// name and of the `kind` field the subscriptions match on; don't rename.
+enum PartnerNudgeKind: String, CaseIterable {
+    case invitationReceived = "invitation"
+    case invitationAccepted = "invitation-accepted"
+    case invitationDeclined = "invitation-declined"
+}
+
+struct PartnerNudge: Equatable {
+    let kind: PartnerNudgeKind
+    /// Record name of what the nudge is about (the invitation).
+    let subjectID: String
+    /// Shown as the push body (the invitation title).
+    let text: String
+}
+
+/// The "reminder inbox" (notifications decision 0005). An invitation lives in its
+/// creator's zone, which the invitee only sees through the shared database, where no
+/// query subscription is possible. So whoever wants the partner alerted also writes a
+/// tiny `PartnerNudge` record into the PARTNER's zone; the partner's private database
+/// has one query subscription per kind and iCloud shows the push at once.
+enum PartnerNudgePolicy {
+    static let recordType = "PartnerNudge"
+    static let recordNamePrefix = "nudge:"
+    static let kindKey = "kind"
+    static let textKey = "text"
+    static let predicateFormat = "kind == %@"
+    static let bodyFormatKey = "%1$@"
+    static let bodyArgumentKeys = [textKey]
+    /// Nudges only matter until every device of the receiver has synced once.
+    static let retention: TimeInterval = 7 * 24 * 60 * 60
+
+    static func subscriptionID(for kind: PartnerNudgeKind) -> String {
+        "couplecalendar-nudge-\(kind.rawValue)-subscription"
+    }
+
+    /// One nudge per kind and subject: saving it a second time is refused by the
+    /// server, so a retried upload never alerts twice.
+    static func recordName(kind: PartnerNudgeKind, subjectID: String) -> String {
+        "\(recordNamePrefix)\(kind.rawValue):\(subjectID)"
+    }
+
+    static func subjectID(for invitation: EventInvitation) -> String {
+        invitation.cloudKitRecordName ?? invitation.id
+    }
+
+    /// The nudge to send after `invitation` was saved to CloudKit by me, if any: a new
+    /// pending invitation of mine, or my accept / decline of the partner's. Cancels,
+    /// withdrawals and archived invitations stay quiet.
+    static func nudge(afterSaving invitation: EventInvitation, currentMemberID: String) -> PartnerNudge? {
+        let kind: PartnerNudgeKind
+        if invitation.creatorMemberID == currentMemberID {
+            guard invitation.status == .pending, invitation.archivedAt == nil else { return nil }
+            kind = .invitationReceived
+        } else {
+            switch invitation.status {
+            case .accepted: kind = .invitationAccepted
+            case .declined: kind = .invitationDeclined
+            case .pending, .canceled: return nil
+            }
+        }
+        return PartnerNudge(kind: kind, subjectID: subjectID(for: invitation), text: invitation.title)
+    }
+
+    static func isNudged(
+        _ kind: PartnerNudgeKind,
+        _ invitation: EventInvitation,
+        in nudgedRecordNames: Set<String>
+    ) -> Bool {
+        nudgedRecordNames.contains(recordName(kind: kind, subjectID: subjectID(for: invitation)))
+    }
+
+    /// True when the planned notifications contain something a nudge could already
+    /// have announced, i.e. when it is worth reading the inbox before posting.
+    static func mayBeNudged(_ planned: [PlannedLocalNotification]) -> Bool {
+        planned.contains { notification in
+            switch notification.kind {
+            case .invitationReceived, .invitationAccepted, .invitationDeclined: true
+            case .partnerCommentedOnMyEvent, .accessRequestReceived, .accessRequestAnswered: false
+            }
+        }
+    }
+
+    static func isExpired(createdAt: Date?, now: Date) -> Bool {
+        guard let createdAt else { return false }
+        return now.timeIntervalSince(createdAt) > retention
     }
 }
 

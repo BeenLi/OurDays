@@ -784,24 +784,41 @@ struct SyncCoordinator {
         settings: SettingsStore,
         syncedAt: Date
     ) async {
-        let planned: [PlannedLocalNotification]
+        var planned: [PlannedLocalNotification]
         do {
             let comments = try modelContext.fetch(FetchDescriptor<EventComment>())
             let mirrors = try modelContext.fetch(FetchDescriptor<EventMirror>())
             let invitations = try modelContext.fetch(FetchDescriptor<EventInvitation>())
             let accessRequests = try modelContext.fetch(FetchDescriptor<CalendarAccessRequest>())
-            planned = LocalNotificationPolicy.pending(
-                comments: comments,
-                mirrors: mirrors,
-                invitations: invitations,
-                accessRequests: accessRequests,
-                currentMemberID: settings.currentMemberID,
-                since: settings.lastNotifiedAt,
-                commentsArriveByAlertPush: CommentAlertPushPolicy.coversComments(
-                    subscribedMemberID: settings.commentAlertPushMemberID,
-                    currentMemberID: settings.currentMemberID
+            func pending(nudgedRecordNames: Set<String>) -> [PlannedLocalNotification] {
+                LocalNotificationPolicy.pending(
+                    comments: comments,
+                    mirrors: mirrors,
+                    invitations: invitations,
+                    accessRequests: accessRequests,
+                    currentMemberID: settings.currentMemberID,
+                    since: settings.lastNotifiedAt,
+                    commentsArriveByAlertPush: CommentAlertPushPolicy.coversComments(
+                        subscribedMemberID: settings.commentAlertPushMemberID,
+                        currentMemberID: settings.currentMemberID
+                    ),
+                    nudgedRecordNames: nudgedRecordNames
                 )
-            )
+            }
+            planned = pending(nudgedRecordNames: [])
+            // Only when an invitation is about to be announced, and this device gets
+            // nudge pushes, look in the inbox for the ones iCloud already showed.
+            if PartnerNudgePolicy.mayBeNudged(planned),
+               let cloudKit,
+               CommentAlertPushPolicy.coversComments(
+                   subscribedMemberID: settings.partnerNudgePushMemberID,
+                   currentMemberID: settings.currentMemberID
+               ) {
+                let nudged = await cloudKit.fetchPartnerNudgeRecordNames()
+                if !nudged.isEmpty {
+                    planned = pending(nudgedRecordNames: nudged)
+                }
+            }
         } catch {
             // Notifications are best-effort; never let them fail a sync.
             settings.lastNotifiedAt = syncedAt

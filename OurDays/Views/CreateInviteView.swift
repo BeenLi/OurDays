@@ -69,19 +69,6 @@ struct CreateInviteView: View {
                         .lineLimit(3...6)
                 }
 
-                if !calendarChoices.isEmpty {
-                    Section {
-                        Picker(strings.inviteCalendarLabel, selection: $calendarID) {
-                            ForEach(calendarChoices) { calendar in
-                                Text(calendar.title).tag(Optional(calendar.id))
-                            }
-                        }
-                        .accessibilityIdentifier("create-invite-calendar-picker")
-                    } footer: {
-                        Text(strings.inviteCalendarFootnote)
-                    }
-                }
-
                 Section(strings.inviteSection) {
                     Toggle(isOn: $wantsToInvite) {
                         HStack(spacing: 12) {
@@ -104,6 +91,25 @@ struct CreateInviteView: View {
                     .tint(OurDaysTheme.inkFill)
                     .disabled(!isPaired)
                     .accessibilityIdentifier("create-invite-partner-toggle")
+                }
+
+                if invitesPartner {
+                    Section {
+                        LabeledContent(strings.inviteCalendarLabel, value: ShareCalCalendarBootstrapPolicy.calendarTitle)
+                    } footer: {
+                        Text(strings.inviteCalendarFootnote(invitesPartner: true))
+                    }
+                } else if !calendarChoices.isEmpty {
+                    Section {
+                        Picker(strings.inviteCalendarLabel, selection: $calendarID) {
+                            ForEach(calendarChoices) { calendar in
+                                Text(calendar.title).tag(Optional(calendar.id))
+                            }
+                        }
+                        .accessibilityIdentifier("create-invite-calendar-picker")
+                    } footer: {
+                        Text(strings.inviteCalendarFootnote(invitesPartner: false))
+                    }
                 }
 
                 if let errorMessage {
@@ -177,7 +183,7 @@ struct CreateInviteView: View {
         calendarChoices = choices
         calendarID = InviteCalendarChoicePolicy.defaultCalendarID(
             candidates: choices,
-            lastUsedCalendarID: settings.lastInviteCalendarID,
+            lastUsedCalendarID: settings.lastOwnEventCalendarID,
             systemDefaultCalendarID: services.calendarAccess.defaultCalendarIDForNewEvents()
         )
     }
@@ -288,7 +294,11 @@ struct CreateInviteView: View {
 
             isSending = true
             let localDraft = try CreateInvitePolicy.localCalendarDraft(from: draft, invitesPartner: invitesPartner)
-            let createdEvent = try services.calendarAccess.createEvent(from: localDraft, inCalendarWithID: calendarID)
+            let createdEvent = try services.calendarAccess.createEvent(
+                from: localDraft,
+                // A joint event lives in the app's own calendar on both sides.
+                inCalendarWithID: invitesPartner ? nil : calendarID
+            )
             let mirror = try CreateInvitePolicy.mirror(
                 from: draft,
                 createdEvent: createdEvent,
@@ -322,7 +332,7 @@ struct CreateInviteView: View {
                 currentSelection: settings.selectedCalendarIDs
             )
             try modelContext.save()
-            settings.lastInviteCalendarID = createdEvent.calendarIdentifier
+            if !invitesPartner { settings.lastOwnEventCalendarID = createdEvent.calendarIdentifier }
             selectedDate = localDraft.startDate
             mode = .day
 

@@ -51,7 +51,8 @@ enum ShareCalCalendarBootstrapPolicy {
     }
 }
 
-/// Which calendar a new invitation's event is created in (the "+" sheet).
+/// Which calendar the "+" sheet adds an event of one's own to. An invitation's event
+/// always goes to the app's own calendar, where the partner's accepted copy lands too.
 ///
 /// Only calendars the user already shares are offered: creating the event in an
 /// unshared calendar would have to switch that whole calendar on for the partner.

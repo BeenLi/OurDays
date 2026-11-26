@@ -114,8 +114,13 @@ struct ShareCalStrings {
     var sendInviteButton: String { text("Send Invite", "发送邀请") }
     var createInviteSection: String { text("Details", "详情") }
     var inviteCalendarLabel: String { text("Calendar", "日历") }
-    var inviteCalendarFootnote: String {
-        text("The event is added to this calendar of yours.", "日程会建在你的这个日历里。")
+    func inviteCalendarFootnote(invitesPartner: Bool) -> String {
+        invitesPartner
+            ? text(
+                "Events you do together live in the ShareCal calendar, on both your devices.",
+                "共同日程都放在「ShareCal」日历里，TA 接受后也会建在 TA 的这个日历里。"
+            )
+            : text("The event is added to this calendar of yours.", "日程会建在你的这个日历里。")
     }
     var newEventTitle: String { text("New Event", "新建日程") }
     var addToCalendarButton: String { text("Add to Calendar", "添加到日历") }

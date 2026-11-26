@@ -167,10 +167,10 @@ final class SettingsStore {
             defaults.set(invitationIDsWithLocalEventSeen.sorted(), forKey: Key.invitationIDsWithLocalEventSeen)
         }
     }
-    /// The calendar the last invitation's event was created in; the "+" sheet starts
-    /// there next time (`InviteCalendarChoicePolicy`). This device only.
-    var lastInviteCalendarID: String? {
-        didSet { saveOptionalString(lastInviteCalendarID, forKey: Key.lastInviteCalendarID) }
+    /// The calendar the "+" sheet last added an event of one's own to; it starts there
+    /// next time (`InviteCalendarChoicePolicy`). This device only.
+    var lastOwnEventCalendarID: String? {
+        didSet { saveOptionalString(lastOwnEventCalendarID, forKey: Key.lastOwnEventCalendarID) }
     }
     var reviewPromptedMoments: Set<ReviewPromptMoment> {
         didSet { defaults.set(reviewPromptedMoments.map(\.rawValue).sorted(), forKey: Key.reviewPromptedMoments) }
@@ -258,7 +258,7 @@ final class SettingsStore {
         invitationIDsWithLocalEventSeen = Set(defaults.stringArray(forKey: Key.invitationIDsWithLocalEventSeen) ?? [])
         reviewPromptedMoments = Set((defaults.stringArray(forKey: Key.reviewPromptedMoments) ?? []).compactMap(ReviewPromptMoment.init(rawValue:)))
         lastReviewPromptAt = defaults.object(forKey: Key.lastReviewPromptAt) as? Date
-        lastInviteCalendarID = defaults.string(forKey: Key.lastInviteCalendarID)
+        lastOwnEventCalendarID = defaults.string(forKey: Key.lastOwnEventCalendarID)
     }
 
     var hasSyncedMemberID: Bool {
@@ -592,7 +592,7 @@ final class SettingsStore {
         static let reviewPromptedMoments = "reviewPromptedMoments"
         static let invitationIDsWithLocalEventSeen = "invitationIDsWithLocalEventSeen"
         static let lastReviewPromptAt = "lastReviewPromptAt"
-        static let lastInviteCalendarID = "lastInviteCalendarID"
+        static let lastOwnEventCalendarID = "lastOwnEventCalendarID"
         static let partnerNoteUpdatedAt = "partnerNoteUpdatedAt"
         static let calendarSelectionUpdatedAt = "calendarSelectionUpdatedAt"
         static let defaultVisibilityUpdatedAt = "defaultVisibilityUpdatedAt"

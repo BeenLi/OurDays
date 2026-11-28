@@ -13,8 +13,9 @@ OurDays（原名 ShareCal）是一款**严格两人配对**的情侣共享日历
 
 ## 宣传片
 
-<p align="center"><a href="https://ourdays.cn/#video"><img src="docs/promo-cover.jpg" width="270" alt="OurDays 宣传片封面，点击在官网播放"></a></p>
-<p align="center">不到两分钟的宣传片（中文配音 + 字幕），点封面在 <a href="https://ourdays.cn/#video">ourdays.cn</a> 播放</p>
+https://github.com/user-attachments/assets/79f270a0-7684-406f-adc3-30a41f5591ab
+
+不到两分钟的宣传片（中文配音 + 字幕），也可以在 [ourdays.cn](https://ourdays.cn/#video) 观看。
 
 ## 功能特性
 

@@ -13,8 +13,9 @@ OurDays (formerly ShareCal) is a shared calendar iOS app for couples, **strictly
 
 ## Promo film
 
-<p align="center"><a href="https://ourdays.cn/#video"><img src="docs/promo-cover.jpg" width="270" alt="OurDays promo film cover, click to play on the website"></a></p>
-<p align="center">A short film, under two minutes (Chinese narration with subtitles). Click the cover to play it on <a href="https://ourdays.cn/#video">ourdays.cn</a></p>
+https://github.com/user-attachments/assets/79f270a0-7684-406f-adc3-30a41f5591ab
+
+A short film, under two minutes (Chinese narration with subtitles). Also on [ourdays.cn](https://ourdays.cn/#video).
 
 ## Features
 

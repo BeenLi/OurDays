@@ -102,6 +102,15 @@
   .shot .cap { margin-top: 16px; font-weight: 600; font-size: 1rem; }
   .shot .cap .en { display: block; font-weight: 400; font-size: .82rem; margin-top: 2px; }
 
+  /* ---------- Promo video ---------- */
+  .film { display: flex; justify-content: center; }
+  .film-frame { position: relative; width: 100%; max-width: 340px; border-radius: 28px; overflow: hidden; background: #f5f2ee; box-shadow: 0 24px 48px rgba(0,0,0,.18); aspect-ratio: 9 / 16; }
+  .film-frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .film-play { position: absolute; left: 50%; bottom: 13%; transform: translateX(-50%); width: 76px; height: 76px; border-radius: 50%; border: 0; background: rgba(29,29,31,.86); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform .12s ease; }
+  .film-play:hover { transform: translateX(-50%) scale(1.05); }
+  .film-play svg { width: 28px; height: 28px; fill: #fff; margin-left: 5px; }
+  .film-frame.playing .film-play { display: none; }
+
   /* ---------- Privacy band ---------- */
   .privacy-card {
     background: var(--card); border-radius: 22px; padding: 36px 28px; text-align: center;
@@ -156,7 +165,7 @@
       <div class="hero-copy">
         <img class="appicon" src="/assets/appicon.jpg" alt="OurDays 应用图标" width="84" height="84">
         <h1>OurDays</h1>
-        <p class="slogan">两人日历 · Calendar for Two · 1.5 现已上架</p>
+        <p class="slogan">两人日历 · Calendar for Two · 2.1 现已上架</p>
         <p class="lead">
           两个人的日历，放在你们自己的 iCloud 里。
           <span class="en">A calendar for two, kept in your own iCloud.</span>
@@ -176,6 +185,18 @@
       </div>
     </div>
   </header>
+
+  <!-- ===== Promo video ===== -->
+  <section id="video">
+    <h2 class="section-title">不到两分钟，看懂 OurDays</h2>
+    <p class="section-sub en">A short film, under two minutes (Chinese narration with subtitles)</p>
+    <div class="film">
+      <div class="film-frame">
+        <video id="promo" src="/assets/promo.mp4" poster="/assets/promo-poster.webp" width="720" height="1280" preload="none" playsinline></video>
+        <button class="film-play" type="button" aria-label="播放宣传片 Play the film"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4l15 8-15 8z"/></svg></button>
+      </div>
+    </div>
+  </section>
 
   <!-- ===== Features ===== -->
   <section>
@@ -321,5 +342,12 @@
     </div>
   </footer>
 
+  <script>
+    (function () {
+      var v = document.getElementById('promo'), f = v.parentNode;
+      f.querySelector('.film-play').addEventListener('click', function () { v.play(); });
+      v.addEventListener('play', function () { f.classList.add('playing'); v.controls = true; });
+    })();
+  </script>
 </body>
 </html>

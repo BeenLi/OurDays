@@ -11,6 +11,12 @@ OurDays (formerly ShareCal) is a shared calendar iOS app for couples, **strictly
 
 **Fully open source, free forever, no servers.** Data stays in each user's own iCloud. The project's only fixed cost is the yearly Apple Developer Program fee, so it doesn't need subscriptions or ads to keep going.
 
+## Promo film
+
+https://github.com/user-attachments/assets/42fc867b-9cdc-41ec-a2e4-041bf91b71c9
+
+A short film, under two minutes (Chinese narration with subtitles). Also on [ourdays.cn](https://ourdays.cn/#video).
+
 ## Features
 
 - **Two-person pairing**: pair through an iCloud share link; each side creates its own CKShare. The pairing card draws the exchange as four steps (I send → they accept → they send back → I accept), with one button per step; if a link won't open inside WeChat you can paste it into the app, and if the OurDays iCloud switch is off the app says where to turn it on. China mainland iCloud accounts, which cannot create link shares, fall back to an invite-only share: opening or pasting the link sends a request to join, the owner taps "Approve" on the pairing card, and the share-back is approved automatically. If a third person later joins through an old link, or a stranger shares with you, the app never silently kicks anyone out. It shows a "Pairing conflict / Replace partner" prompt and lets you choose; leftover old shared zones are left automatically. **Unpairing** takes effect on both sides: it deletes my CKShare and leaves the partner's share, both people return to step 1, and it removes the ex-partner's comments, invitations and history requests from my zone, so nothing carries over into the next pairing.
